@@ -1,7 +1,8 @@
-# 🏭 Business Warehouse Management System (BWMS)
+# 🏭 Boundless Warehouse Management System (BWMS)
 
 ## 📦 Description
-**BWMS** (Business Warehouse Management System) is a comprehensive, full-stack warehouse and inventory management system built with **Laravel** and **Vue.js**.  
+
+**BWMS** (Boundless Warehouse Management System) is a comprehensive, full-stack warehouse and inventory management system built with **Laravel** and **Vue.js**.  
 It empowers businesses to manage their entire supply chain operations — from inventory tracking to order processing and advanced reporting — all in one integrated platform.
 
 ---
@@ -9,102 +10,115 @@ It empowers businesses to manage their entire supply chain operations — from i
 ## ✨ Key Features
 
 ### 📊 Dashboard & Analytics
-- Real-time business metrics and KPIs  
-- Sales and purchase order statistics  
-- Inventory level monitoring  
-- Low stock alerts and notifications  
-- Visual charts and trend analysis  
+
+-   Real-time business metrics and KPIs
+-   Sales and purchase order statistics
+-   Inventory level monitoring
+-   Low stock alerts and notifications
+-   Visual charts and trend analysis
 
 ### 📦 Inventory Management
-- Multi-warehouse inventory tracking  
-- Real-time stock level monitoring  
-- Automatic stock allocation  
-- Low stock threshold alerts  
-- Product categorization and organization  
-- Barcode/SKU support  
+
+-   Multi-warehouse inventory tracking
+-   Real-time stock level monitoring
+-   Automatic stock allocation
+-   Low stock threshold alerts
+-   Product categorization and organization
+-   Barcode/SKU support
 
 ### 🏢 Customer & Supplier Management
-- Comprehensive customer and supplier database  
-- Contact and payment terms management  
-- Credit limit tracking  
-- Supplier order history  
+
+-   Comprehensive customer and supplier database
+-   Contact and payment terms management
+-   Credit limit tracking
+-   Supplier order history
 
 ### 🛒 Sales Order Processing
-- Create and manage sales orders  
-- Multi-item order support  
-- Dynamic pricing and discounts  
-- Tax and total calculations  
-- Order status lifecycle (Draft, Pending, Fulfilled, Cancelled)  
-- Customer order history and automatic stock deductions  
+
+-   Create and manage sales orders
+-   Multi-item order support
+-   Dynamic pricing and discounts
+-   Tax and total calculations
+-   Order status lifecycle (Draft, Pending, Fulfilled, Cancelled)
+-   Customer order history and automatic stock deductions
 
 ### 📥 Purchase Order Management
-- Generate and manage purchase orders  
-- Supplier order tracking  
-- Partial receiving capability  
-- Order status management  
-- Purchase history and cost tracking  
-- Automatic inventory updates upon receiving  
+
+-   Generate and manage purchase orders
+-   Supplier order tracking
+-   Partial receiving capability
+-   Order status management
+-   Purchase history and cost tracking
+-   Automatic inventory updates upon receiving
 
 ### 🏭 Warehouse Operations
-- Multiple warehouse support  
-- Warehouse-specific stock control  
-- Stock transfers between warehouses  
-- Location management and capacity tracking  
+
+-   Multiple warehouse support
+-   Warehouse-specific stock control
+-   Stock transfers between warehouses
+-   Location management and capacity tracking
 
 ### 📈 Advanced Reporting
-- Sales Reports: revenue, top customers, product performance  
-- Purchase Reports: supplier analysis, purchase trends  
-- Inventory Reports: stock valuation, warehouse distribution  
-- Product Performance: best sellers, slow movers  
-- Date range filtering and export (PDF/CSV)  
+
+-   Sales Reports: revenue, top customers, product performance
+-   Purchase Reports: supplier analysis, purchase trends
+-   Inventory Reports: stock valuation, warehouse distribution
+-   Product Performance: best sellers, slow movers
+-   Date range filtering and export (PDF/CSV)
 
 ### ⚙️ Settings & Configuration
-- Company and warehouse setup  
-- Inventory settings (thresholds, negative stock)  
-- Order configuration (prefixes, tax rates, payment terms)  
-- Notification and user preference management  
+
+-   Company and warehouse setup
+-   Inventory settings (thresholds, negative stock)
+-   Order configuration (prefixes, tax rates, payment terms)
+-   Notification and user preference management
 
 ### 👤 User Management & Profile
-- Secure authentication with **Laravel Sanctum**  
-- Role-based access control (RBAC)  
-- User profile and password management  
-- Avatar upload  
+
+-   Secure authentication with **Laravel Sanctum**
+-   Role-based access control (RBAC)
+-   User profile and password management
+-   Avatar upload
 
 ---
 
 ## 🛠️ Technology Stack
 
 ### Backend
-- **Framework:** Laravel 11.x  
-- **Authentication:** Laravel Sanctum  
-- **Database:** MySQL  
-- **API:** RESTful architecture  
-- **Storage:** Laravel Storage for uploads  
+
+-   **Framework:** Laravel 11.x
+-   **Authentication:** Laravel Sanctum
+-   **Database:** MySQL
+-   **API:** RESTful architecture
+-   **Storage:** Laravel Storage for uploads
 
 ### Frontend
-- **Framework:** Vue.js 3 (Composition API)  
-- **State Management:** Pinia  
-- **Routing:** Vue Router  
-- **HTTP Client:** Axios  
-- **Styling:** Tailwind CSS  
-- **Build Tool:** Vite  
+
+-   **Framework:** Vue.js 3 (Composition API)
+-   **State Management:** Pinia
+-   **Routing:** Vue Router
+-   **HTTP Client:** Axios
+-   **Styling:** Tailwind CSS
+-   **Build Tool:** Vite
 
 ---
 
 ## 🚀 Installation
 
 ### Prerequisites
-- PHP ≥ 8.2  
-- Composer  
-- Node.js ≥ 18.x  
-- MySQL ≥ 8.0  
-- npm or yarn  
+
+-   PHP ≥ 8.2
+-   Composer
+-   Node.js ≥ 18.x
+-   MySQL ≥ 8.0
+-   npm or yarn
 
 ---
 
 ### ⚙️ Setup Instructions
 
 #### 1️⃣ Clone the Repository
+
 ```bash
 git clone https://github.com/yourusername/bwms.git
 cd bwms
@@ -149,7 +163,7 @@ Access the application at:
 👉 http://127.0.0.1:8000
 
 🔑 Default Login Credentials
-Email: admin@bwms.com  
+Email: admin@bwms.com
 Password: password
 
 📱 Features Overview
@@ -316,3 +330,4 @@ or open an issue in the GitHub repository
 
 
 
+```
