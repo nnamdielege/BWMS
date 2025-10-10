@@ -272,9 +272,9 @@ This project is open-source software licensed under the MIT License.
 
 👨‍💻 Author
 
-Your Name – @yourhandle
+@nnamdielege
 
-📍 Project Link: https://github.com/yourusername/bwms
+📍 Project Link: https://github.com/nnamdielege/BWMS
 
 🙏 Acknowledgments
 
