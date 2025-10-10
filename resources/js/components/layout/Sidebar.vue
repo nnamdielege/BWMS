@@ -125,7 +125,7 @@
                 </div>
                 <div class="footer-content">
                     <p class="footer-title">Upgrade to Pro</p>
-                    <p class="footer-text">Get advanced features</p>
+                    <p class="footer-text">Enjoy advanced features</p>
                 </div>
             </div>
         </div>

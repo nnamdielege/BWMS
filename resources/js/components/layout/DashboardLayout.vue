@@ -19,7 +19,7 @@
             <footer class="page-footer">
                 <div class="footer-content">
                     <p class="footer-text">
-                        © {{ currentYear }} Warehouse Management System. All rights reserved.
+                        © {{ currentYear }} Boundless Warehouse Management System (BWMS). All rights reserved.
                     </p>
                     <div class="footer-links">
                         <a href="#" class="footer-link">Documentation</a>

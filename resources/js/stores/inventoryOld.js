@@ -15,15 +15,6 @@ export const useInventoryStore = defineStore('inventory', {
         },
     }),
 
-    getters: {
-        inventoryItems: (state) => {
-            return state.inventory.map(item => ({
-                ...item,
-                quantity_available: (item.quantity_on_hand || 0) - (item.quantity_allocated || 0)
-            }));
-        }
-    },
-
     actions: {
         async fetchInventory(params = {}) {
             this.loading = true;
@@ -32,7 +23,7 @@ export const useInventoryStore = defineStore('inventory', {
             try {
                 console.log('Fetching inventory with params:', params);
                 const response = await inventoryService.getAll(params);
-
+                
                 console.log('Inventory response:', response.data);
 
                 if (response.data.data) {
@@ -44,7 +35,7 @@ export const useInventoryStore = defineStore('inventory', {
                         last_page: response.data.last_page,
                     };
                 } else {
-                    this.inventory = Array.isArray(response.data) ? response.data : [];
+                    this.inventory = response.data;
                 }
             } catch (error) {
                 console.error('Fetch inventory error:', error);
@@ -72,10 +63,10 @@ export const useInventoryStore = defineStore('inventory', {
 
         async transferStock(data) {
             this.loading = true;
-            this.error = null;
+            this.error = null;          
 
             try {
-                const response = await inventoryService.transfer(data);
+                const response = await inventoryService.transfer(data);                
                 return response.data;
             } catch (error) {
                 this.error = error.response?.data?.message || 'Failed to transfer stock';
@@ -91,11 +82,11 @@ export const useInventoryStore = defineStore('inventory', {
 
             try {
                 const response = await inventoryService.getTransactions(params);
-
+                
                 if (response.data.data) {
                     this.transactions = response.data.data;
                 } else {
-                    this.transactions = Array.isArray(response.data) ? response.data : [];
+                    this.transactions = response.data;
                 }
             } catch (error) {
                 this.error = error.response?.data?.message || 'Failed to fetch transactions';

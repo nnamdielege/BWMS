@@ -92,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, h } from 'vue';
+import { ref, onMounted, watch, h } from 'vue';
 import reportService from '../../services/reportService';
 import { useWarehouseStore } from '../../stores/warehouse';
 import SalesReport from './SalesReport.vue';
@@ -143,12 +143,23 @@ onMounted(async () => {
     await generateReport();
 });
 
+// Watch for tab changes and regenerate report
+watch(activeTab, async (newTab, oldTab) => {
+    if (newTab !== oldTab) {
+        console.log('Tab changed from', oldTab, 'to', newTab);
+        reportData.value = null; // Clear old data
+        await generateReport();
+    }
+});
+
 const generateReport = async () => {
     loading.value = true;
-    reportData.value = null;
+    reportData.value = null; // Clear previous data
 
     try {
         let response;
+
+        console.log('Generating report for:', activeTab.value, 'with filters:', filters.value);
 
         switch (activeTab.value) {
             case 'sales':
@@ -166,10 +177,10 @@ const generateReport = async () => {
         }
 
         reportData.value = response.data;
-        console.log('Report data:', reportData.value);
+        console.log('Report data loaded:', reportData.value);
     } catch (error) {
         console.error('Error generating report:', error);
-        alert('Failed to generate report');
+        alert('Failed to generate report: ' + (error.response?.data?.message || error.message));
     } finally {
         loading.value = false;
     }

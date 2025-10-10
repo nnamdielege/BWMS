@@ -295,57 +295,116 @@ const clearProduct = () => {
     sourceStock.value = null;
     destinationStock.value = null;
 };
+// const loadSourceStock = async () => {
+//     if (!form.value.product_id || !form.value.from_warehouse_id) {
+//         sourceStock.value = null;
+//         return;
+//     }
+// try {
+//     await inventoryStore.fetchInventory({
+//         product_id: form.value.product_id,
+//         warehouse_id: form.value.from_warehouse_id,
+//     });
+
+
+//     if (inventoryStore.inventoryItems.length > 0) {
+//         sourceStock.value = inventoryStore.inventoryItems[0];
+//             console.log('sourceStock', inventoryStore.inventoryItems[0]);
+//     } else {
+//         sourceStock.value = {
+//             quantity_on_hand: 0,
+//             quantity_available: 0,
+//             quantity_allocated: 0,
+//             bin_location: null,
+//         };
+//     }
+//     calculateNewQuantities();
+// } catch (error) {
+//     console.error('Error loading source stock:', error);
+// }};
+
+// const loadDestinationStock = async () => {
+//     if (!form.value.product_id || !form.value.to_warehouse_id) {
+//         destinationStock.value = null;
+//         return;
+//     }
+// try {
+//     await inventoryStore.fetchInventory({
+//         product_id: form.value.product_id,
+//         warehouse_id: form.value.to_warehouse_id,
+//     });
+
+//     if (inventoryStore.inventoryItems.length > 0) {
+//         destinationStock.value = inventoryStore.inventoryItems[0];
+//     } else {
+//         destinationStock.value = {
+//             quantity_on_hand: 0,
+//             quantity_available: 0,
+//             quantity_allocated: 0,
+//             bin_location: null,
+//         };
+//     }
+//     calculateNewQuantities();
+// } catch (error) {
+//     console.error('Error loading destination stock:', error);
+// }};
+
+
 const loadSourceStock = async () => {
     if (!form.value.product_id || !form.value.from_warehouse_id) {
-    sourceStock.value = null;
-    return;
-}
-try {
-    await inventoryStore.fetchInventory({
-        product_id: form.value.product_id,
-        warehouse_id: form.value.from_warehouse_id,
-    });
-
-    if (inventoryStore.inventoryItems.length > 0) {
-        sourceStock.value = inventoryStore.inventoryItems[0];
-    } else {
-        sourceStock.value = {
-            quantity_on_hand: 0,
-            quantity_available: 0,
-            quantity_allocated: 0,
-            bin_location: null,
-        };
+        sourceStock.value = null;
+        return;
     }
-    calculateNewQuantities();
-} catch (error) {
-    console.error('Error loading source stock:', error);
-}};
+    try {
+        await inventoryStore.fetchInventory({
+            product_id: form.value.product_id,
+            warehouse_id: form.value.from_warehouse_id,
+        });
+
+        if (inventoryStore.inventoryItems.length > 0) {
+            sourceStock.value = inventoryStore.inventoryItems[0];
+            console.log('sourceStock', sourceStock.value);
+        } else {
+            sourceStock.value = {
+                quantity_on_hand: 0,
+                quantity_available: 0,
+                quantity_allocated: 0,
+                bin_location: null,
+            };
+        }
+        calculateNewQuantities();
+    } catch (error) {
+        console.error('Error loading source stock:', error);
+    }
+};
+
 
 const loadDestinationStock = async () => {
     if (!form.value.product_id || !form.value.to_warehouse_id) {
-    destinationStock.value = null;
-    return;
-}
-try {
-    await inventoryStore.fetchInventory({
-        product_id: form.value.product_id,
-        warehouse_id: form.value.to_warehouse_id,
-    });
-
-    if (inventoryStore.inventoryItems.length > 0) {
-        destinationStock.value = inventoryStore.inventoryItems[0];
-    } else {
-        destinationStock.value = {
-            quantity_on_hand: 0,
-            quantity_available: 0,
-            quantity_allocated: 0,
-            bin_location: null,
-        };
+        destinationStock.value = null;
+        return;
     }
-    calculateNewQuantities();
-} catch (error) {
-    console.error('Error loading destination stock:', error);
-}};
+    try {
+        await inventoryStore.fetchInventory({
+            product_id: form.value.product_id,
+            warehouse_id: form.value.to_warehouse_id,
+        });
+
+        if (inventoryStore.inventoryItems.length > 0) {
+            destinationStock.value = inventoryStore.inventoryItems[0];
+        } else {
+            destinationStock.value = {
+                quantity_on_hand: 0,
+                quantity_available: 0,
+                quantity_allocated: 0,
+                bin_location: null,
+            };
+        }
+        calculateNewQuantities();
+    } catch (error) {
+        console.error('Error loading destination stock:', error);
+    }
+};
 
 const calculateNewQuantities = () => {
     if (!form.value.quantity || sourceStock.value === null) {
@@ -391,8 +450,13 @@ const getStockClass = (quantity) => {
             isValid = false;
         }
 
-        const available = sourceStock.value?.quantity_available || 0;
+        // const available = sourceStock.value?.quantity_available || 0;
+        const available = sourceStock.value?.quantity_available ?? 0;
+        console.log('Available:', available);
         const qty = parseInt(form.value.quantity) || 0;
+
+        console.log(available);
+        console.log(qty);
         if (qty > available) {
             errors.value.quantity = `Cannot transfer more than available stock (${available})`;
             isValid = false;
@@ -405,7 +469,7 @@ const getStockClass = (quantity) => {
             return;
         }
         try {
-            await inventoryStore.transferInventory({
+            await inventoryStore.transferStock({
                 product_id: form.value.product_id,
                 from_warehouse_id: form.value.from_warehouse_id,
                 to_warehouse_id: form.value.to_warehouse_id,
@@ -414,11 +478,12 @@ const getStockClass = (quantity) => {
             });
 
             successMessage.value = 'Stock transferred successfully!';
+            showSuccess.value = true;
     
             // Reset form and redirect
             setTimeout(() => {
                 router.push('/inventory');
-            }, 2000);
+            }, 1500); // 1.5 seconds
         } catch (error) {
             if (error.response?.data?.errors) {
                 errors.value = error.response.data.errors;

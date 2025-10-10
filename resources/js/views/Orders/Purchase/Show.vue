@@ -313,6 +313,7 @@ const initializeReceiveItems = () => {
         sku: item.product?.sku,
         quantity: item.quantity,
         received_quantity: item.received_quantity,
+        // receiving_quantity: 0, 
         receiving_quantity: Math.max(0, item.quantity - item.received_quantity),
     }));
 };

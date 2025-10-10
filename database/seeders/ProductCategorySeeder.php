@@ -11,16 +11,16 @@ class ProductCategorySeeder extends Seeder
     public function run()
     {
         $categories = [
-            'Electronics',
-            'Furniture',
-            'Office Supplies',
-            'Food & Beverage',
-            'Clothing',
-            'Books',
-            'Toys & Games',
-            'Sports & Outdoors',
-            'Home & Garden',
-            'Automotive',
+            'Coffee Beans',
+            'Syrups & Flavours',
+            'Drinking Chocolate',
+            'Chai Latte Powders',
+            'Tea & Infusions',
+            'Equipment & Accessories',
+            'Cafe Essentials',
+            'Bulk Beverages',
+            'Merchandise',
+            'Wholesale Supplies',
         ];
 
         foreach ($categories as $category) {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Inventory;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -127,6 +128,15 @@ class PurchaseOrderController extends Controller
                     'tax' => $itemData['tax'] ?? 0,
                     'subtotal' => $itemData['subtotal'],
                 ]);
+
+                $inventory = Inventory::firstOrCreate([
+                    'product_id' => $itemData['product_id'],
+                    'warehouse_id' => $order->warehouse_id,
+                ]);
+
+                // Increment the quantity_on_order field
+                $inventory->quantity_on_order += $itemData['quantity'];
+                $inventory->save();
             }
 
             DB::commit();
@@ -293,7 +303,7 @@ class PurchaseOrderController extends Controller
                 $item = PurchaseOrderItem::findOrFail($itemData['id']);
 
                 if ($item->purchase_order_id !== $order->id) {
-                    throw new \Exception('Item does not belong to this order');
+                    throw new Exception('Item does not belong to this order');
                 }
 
                 $receivedQty = $itemData['received_quantity'];
@@ -303,20 +313,41 @@ class PurchaseOrderController extends Controller
                 $item->save();
 
                 // Update inventory
-                $inventory = Inventory::firstOrCreate(
-                    [
-                        'product_id' => $item->product_id,
-                        'warehouse_id' => $order->warehouse_id,
-                    ],
-                    [
-                        'quantity_on_hand' => 0,
-                        'quantity_allocated' => 0,
-                    ]
-                );
+                // $inventory = Inventory::firstOrCreate(
+                //     [
+                //         'product_id' => $item->product_id,
+                //         'warehouse_id' => $order->warehouse_id,
+                //     ],
+                //     [
+                //         'quantity_on_hand' => 0,
+                //         'quantity_allocated' => 0,
+                //     ]
+                // );
 
-                $inventory->quantity_on_hand += $receivedQty;
+                // $inventory->quantity_on_hand += $receivedQty;
+                // $inventory->save();
+
+                // quantity_on_hand → physical stock count
+
+                // quantity_allocated → reserved stock count
+
+                // quantity_on_order → stock already ordered from suppliers
+
+                // quantity_available → calculated as quantity_on_hand - quantity_allocated
+
+                $inventory = Inventory::updateOrCreate([
+                    'product_id' => $item->product_id,
+                    'warehouse_id' => $order->warehouse_id
+                ]);
+
+                $onHand = $inventory->quantity_on_hand += $receivedQty;
+                $inventory->quantity_available = $onHand - $inventory->quantity_allocated;
+                $inventory->quantity_on_order -= $receivedQty;
                 $inventory->save();
             }
+
+            // Reload items so we have updated quantities
+            $order->load('items');
 
             // Check if all items are fully received
             $allReceived = true;
@@ -352,6 +383,7 @@ class PurchaseOrderController extends Controller
             ], 500);
         }
     }
+
 
     public function cancel($id)
     {

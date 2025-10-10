@@ -4,9 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
-use App\Models\Customer;
-use App\Models\Supplier;
-use App\Models\Warehouse;
 use App\Models\SalesOrder;
 use App\Models\PurchaseOrder;
 use App\Models\Inventory;
@@ -25,55 +22,67 @@ class ReportController extends Controller
     public function salesReport(Request $request)
     {
         try {
-            $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->toDateString());
-            $endDate = $request->get('end_date', Carbon::now()->endOfMonth()->toDateString());
+            $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
+            $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
+
+            Log::info('Sales Report Request', ['start_date' => $startDate, 'end_date' => $endDate]);
 
             // Sales summary
+            $totalOrders = SalesOrder::whereBetween('order_date', [$startDate, $endDate])->count();
+            $totalRevenue = SalesOrder::whereBetween('order_date', [$startDate, $endDate])->sum('total') ?? 0;
+            $pendingOrders = SalesOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->where('status', 'pending')->count();
+            $fulfilledOrders = SalesOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->where('status', 'fulfilled')->count();
+            $averageOrderValue = $totalOrders > 0 ? $totalRevenue / $totalOrders : 0;
+
             $summary = [
-                'total_orders' => SalesOrder::whereBetween('order_date', [$startDate, $endDate])->count(),
-                'total_revenue' => SalesOrder::whereBetween('order_date', [$startDate, $endDate])->sum('total'),
-                'pending_orders' => SalesOrder::whereBetween('order_date', [$startDate, $endDate])->where('status', 'pending')->count(),
-                'fulfilled_orders' => SalesOrder::whereBetween('order_date', [$startDate, $endDate])->where('status', 'fulfilled')->count(),
-                'average_order_value' => SalesOrder::whereBetween('order_date', [$startDate, $endDate])->avg('total'),
+                'total_orders' => $totalOrders,
+                'total_revenue' => (float) $totalRevenue,
+                'pending_orders' => $pendingOrders,
+                'fulfilled_orders' => $fulfilledOrders,
+                'average_order_value' => (float) $averageOrderValue,
             ];
 
             // Sales by status
-            $salesByStatus = SalesOrder::select('status', DB::raw('count(*) as count'), DB::raw('SUM(total) as total'))
-                ->whereBetween('order_date', [$startDate, $endDate])
+            $salesByStatus = SalesOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->select('status', DB::raw('count(*) as count'), DB::raw('COALESCE(SUM(total), 0) as total'))
                 ->groupBy('status')
                 ->get();
 
             // Sales by customer
             $salesByCustomer = SalesOrder::with('customer')
-                ->select('customer_id', DB::raw('count(*) as order_count'), DB::raw('SUM(total) as total_amount'))
                 ->whereBetween('order_date', [$startDate, $endDate])
+                ->whereNotNull('customer_id')
+                ->select('customer_id', DB::raw('count(*) as order_count'), DB::raw('COALESCE(SUM(total), 0) as total_amount'))
                 ->groupBy('customer_id')
-                ->orderBy('total_amount', 'desc')
+                ->orderByDesc('total_amount')
                 ->limit(10)
                 ->get();
 
             // Daily sales trend
-            $dailySales = SalesOrder::select(
-                DB::raw('DATE(order_date) as date'),
-                DB::raw('count(*) as order_count'),
-                DB::raw('SUM(total) as total_sales')
-            )
-                ->whereBetween('order_date', [$startDate, $endDate])
+            $dailySales = SalesOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->select(
+                    DB::raw('DATE(order_date) as date'),
+                    DB::raw('count(*) as order_count'),
+                    DB::raw('COALESCE(SUM(total), 0) as total_sales')
+                )
                 ->groupBy('date')
                 ->orderBy('date', 'asc')
                 ->get();
 
             // Top products by revenue
-            $topProducts = SalesOrderItem::with('product')
-                ->join('sales_orders', 'sales_order_items.sales_order_id', '=', 'sales_orders.id')
+            $topProducts = SalesOrderItem::whereHas('salesOrder', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('order_date', [$startDate, $endDate]);
+            })
+                ->with('product')
                 ->select(
-                    'sales_order_items.product_id',
-                    DB::raw('SUM(sales_order_items.quantity) as total_quantity'),
-                    DB::raw('SUM(sales_order_items.subtotal) as total_revenue')
+                    'product_id',
+                    DB::raw('COALESCE(SUM(quantity), 0) as total_quantity'),
+                    DB::raw('COALESCE(SUM(subtotal), 0) as total_revenue')
                 )
-                ->whereBetween('sales_orders.order_date', [$startDate, $endDate])
-                ->groupBy('sales_order_items.product_id')
-                ->orderBy('total_revenue', 'desc')
+                ->groupBy('product_id')
+                ->orderByDesc('total_revenue')
                 ->limit(10)
                 ->get();
 
@@ -90,6 +99,7 @@ class ReportController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Sales report error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return response()->json([
                 'message' => 'Failed to generate sales report',
@@ -104,55 +114,67 @@ class ReportController extends Controller
     public function purchaseReport(Request $request)
     {
         try {
-            $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->toDateString());
-            $endDate = $request->get('end_date', Carbon::now()->endOfMonth()->toDateString());
+            $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
+            $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
+
+            Log::info('Purchase Report Request', ['start_date' => $startDate, 'end_date' => $endDate]);
 
             // Purchase summary
+            $totalOrders = PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->count();
+            $totalAmount = PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->sum('total') ?? 0;
+            $pendingOrders = PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->where('status', 'pending')->count();
+            $receivedOrders = PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->where('status', 'received')->count();
+            $averageOrderValue = $totalOrders > 0 ? $totalAmount / $totalOrders : 0;
+
             $summary = [
-                'total_orders' => PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->count(),
-                'total_amount' => PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->sum('total'),
-                'pending_orders' => PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->where('status', 'pending')->count(),
-                'received_orders' => PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->where('status', 'received')->count(),
-                'average_order_value' => PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->avg('total'),
+                'total_orders' => $totalOrders,
+                'total_amount' => (float) $totalAmount,
+                'pending_orders' => $pendingOrders,
+                'received_orders' => $receivedOrders,
+                'average_order_value' => (float) $averageOrderValue,
             ];
 
             // Purchase by status
-            $purchaseByStatus = PurchaseOrder::select('status', DB::raw('count(*) as count'), DB::raw('SUM(total) as total'))
-                ->whereBetween('order_date', [$startDate, $endDate])
+            $purchaseByStatus = PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->select('status', DB::raw('count(*) as count'), DB::raw('COALESCE(SUM(total), 0) as total'))
                 ->groupBy('status')
                 ->get();
 
             // Purchase by supplier
             $purchaseBySupplier = PurchaseOrder::with('supplier')
-                ->select('supplier_id', DB::raw('count(*) as order_count'), DB::raw('SUM(total) as total_amount'))
                 ->whereBetween('order_date', [$startDate, $endDate])
+                ->whereNotNull('supplier_id')
+                ->select('supplier_id', DB::raw('count(*) as order_count'), DB::raw('COALESCE(SUM(total), 0) as total_amount'))
                 ->groupBy('supplier_id')
-                ->orderBy('total_amount', 'desc')
+                ->orderByDesc('total_amount')
                 ->limit(10)
                 ->get();
 
             // Daily purchase trend
-            $dailyPurchases = PurchaseOrder::select(
-                DB::raw('DATE(order_date) as date'),
-                DB::raw('count(*) as order_count'),
-                DB::raw('SUM(total) as total_purchases')
-            )
-                ->whereBetween('order_date', [$startDate, $endDate])
+            $dailyPurchases = PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])
+                ->select(
+                    DB::raw('DATE(order_date) as date'),
+                    DB::raw('count(*) as order_count'),
+                    DB::raw('COALESCE(SUM(total), 0) as total_purchases')
+                )
                 ->groupBy('date')
                 ->orderBy('date', 'asc')
                 ->get();
 
             // Top purchased products
-            $topProducts = PurchaseOrderItem::with('product')
-                ->join('purchase_orders', 'purchase_order_items.purchase_order_id', '=', 'purchase_orders.id')
+            $topProducts = PurchaseOrderItem::whereHas('purchaseOrder', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('order_date', [$startDate, $endDate]);
+            })
+                ->with('product')
                 ->select(
-                    'purchase_order_items.product_id',
-                    DB::raw('SUM(purchase_order_items.quantity) as total_quantity'),
-                    DB::raw('SUM(purchase_order_items.subtotal) as total_cost')
+                    'product_id',
+                    DB::raw('COALESCE(SUM(quantity), 0) as total_quantity'),
+                    DB::raw('COALESCE(SUM(subtotal), 0) as total_cost')
                 )
-                ->whereBetween('purchase_orders.order_date', [$startDate, $endDate])
-                ->groupBy('purchase_order_items.product_id')
-                ->orderBy('total_cost', 'desc')
+                ->groupBy('product_id')
+                ->orderByDesc('total_cost')
                 ->limit(10)
                 ->get();
 
@@ -169,6 +191,7 @@ class ReportController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Purchase report error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return response()->json([
                 'message' => 'Failed to generate purchase report',
@@ -185,6 +208,8 @@ class ReportController extends Controller
         try {
             $warehouseId = $request->get('warehouse_id');
 
+            Log::info('Inventory Report Request', ['warehouse_id' => $warehouseId]);
+
             $query = Inventory::with(['product', 'warehouse']);
 
             if ($warehouseId) {
@@ -194,27 +219,33 @@ class ReportController extends Controller
             $inventory = $query->get();
 
             // Summary
+            $totalStock = $inventory->sum('quantity_on_hand');
+            $allocatedStock = $inventory->sum('quantity_allocated');
+            $availableStock = $inventory->sum(function ($item) {
+                return max(0, $item->quantity_on_hand - $item->quantity_allocated);
+            });
+            $lowStockCount = $inventory->filter(function ($item) {
+                return $item->quantity_on_hand <= 20;
+            })->count();
+            $outOfStockCount = $inventory->filter(function ($item) {
+                return $item->quantity_on_hand == 0;
+            })->count();
+
             $summary = [
                 'total_products' => $inventory->count(),
-                'total_stock' => $inventory->sum('quantity_on_hand'),
-                'allocated_stock' => $inventory->sum('quantity_allocated'),
-                'available_stock' => $inventory->sum(function ($item) {
-                    return $item->quantity_on_hand - $item->quantity_allocated;
-                }),
-                'low_stock_items' => $inventory->filter(function ($item) {
-                    return $item->quantity_on_hand <= 20;
-                })->count(),
-                'out_of_stock' => $inventory->filter(function ($item) {
-                    return $item->quantity_on_hand == 0;
-                })->count(),
+                'total_stock' => (int) $totalStock,
+                'allocated_stock' => (int) $allocatedStock,
+                'available_stock' => (int) $availableStock,
+                'low_stock_items' => $lowStockCount,
+                'out_of_stock' => $outOfStockCount,
             ];
 
             // Inventory by warehouse
             $inventoryByWarehouse = Inventory::with('warehouse')
                 ->select(
                     'warehouse_id',
-                    DB::raw('SUM(quantity_on_hand) as total_stock'),
-                    DB::raw('SUM(quantity_allocated) as allocated_stock'),
+                    DB::raw('COALESCE(SUM(quantity_on_hand), 0) as total_stock'),
+                    DB::raw('COALESCE(SUM(quantity_allocated), 0) as allocated_stock'),
                     DB::raw('COUNT(DISTINCT product_id) as product_count')
                 )
                 ->groupBy('warehouse_id')
@@ -222,8 +253,7 @@ class ReportController extends Controller
 
             // Low stock items
             $lowStockItems = Inventory::with(['product', 'warehouse'])
-                ->whereColumn('quantity_on_hand', '<=', DB::raw('quantity_allocated + 10'))
-                ->orWhere('quantity_on_hand', '<=', 20)
+                ->where('quantity_on_hand', '<=', 20)
                 ->orderBy('quantity_on_hand', 'asc')
                 ->limit(20)
                 ->get();
@@ -237,7 +267,7 @@ class ReportController extends Controller
                     'products.price',
                     DB::raw('(inventory.quantity_on_hand * products.price) as stock_value')
                 )
-                ->orderBy('stock_value', 'desc')
+                ->orderByDesc('stock_value')
                 ->limit(10)
                 ->get();
 
@@ -246,10 +276,10 @@ class ReportController extends Controller
                 'inventory_by_warehouse' => $inventoryByWarehouse,
                 'low_stock_items' => $lowStockItems,
                 'stock_value' => $stockValue,
-                'inventory' => $inventory,
             ]);
         } catch (\Exception $e) {
             Log::error('Inventory report error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return response()->json([
                 'message' => 'Failed to generate inventory report',
@@ -264,52 +294,59 @@ class ReportController extends Controller
     public function productPerformanceReport(Request $request)
     {
         try {
-            $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->toDateString());
-            $endDate = $request->get('end_date', Carbon::now()->endOfMonth()->toDateString());
+            $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
+            $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
 
-            // Top selling products
-            $topSellingProducts = SalesOrderItem::with('product')
-                ->join('sales_orders', 'sales_order_items.sales_order_id', '=', 'sales_orders.id')
+            Log::info('Product Performance Report Request', ['start_date' => $startDate, 'end_date' => $endDate]);
+
+            // Top selling products by quantity
+            $topSellingProducts = SalesOrderItem::whereHas('salesOrder', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('order_date', [$startDate, $endDate]);
+            })
+                ->with('product')
                 ->select(
-                    'sales_order_items.product_id',
-                    DB::raw('SUM(sales_order_items.quantity) as total_quantity'),
-                    DB::raw('SUM(sales_order_items.subtotal) as total_revenue'),
-                    DB::raw('COUNT(DISTINCT sales_order_items.sales_order_id) as order_count')
+                    'product_id',
+                    DB::raw('COALESCE(SUM(quantity), 0) as total_quantity'),
+                    DB::raw('COALESCE(SUM(subtotal), 0) as total_revenue'),
+                    DB::raw('COUNT(DISTINCT sales_order_id) as order_count')
                 )
-                ->whereBetween('sales_orders.order_date', [$startDate, $endDate])
-                ->groupBy('sales_order_items.product_id')
-                ->orderBy('total_quantity', 'desc')
+                ->groupBy('product_id')
+                ->orderByDesc('total_quantity')
                 ->limit(20)
                 ->get();
 
             // Products by revenue
-            $productsByRevenue = SalesOrderItem::with('product')
-                ->join('sales_orders', 'sales_order_items.sales_order_id', '=', 'sales_orders.id')
+            $productsByRevenue = SalesOrderItem::whereHas('salesOrder', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('order_date', [$startDate, $endDate]);
+            })
+                ->with('product')
                 ->select(
-                    'sales_order_items.product_id',
-                    DB::raw('SUM(sales_order_items.quantity) as total_quantity'),
-                    DB::raw('SUM(sales_order_items.subtotal) as total_revenue')
+                    'product_id',
+                    DB::raw('COALESCE(SUM(quantity), 0) as total_quantity'),
+                    DB::raw('COALESCE(SUM(subtotal), 0) as total_revenue')
                 )
-                ->whereBetween('sales_orders.order_date', [$startDate, $endDate])
-                ->groupBy('sales_order_items.product_id')
-                ->orderBy('total_revenue', 'desc')
+                ->groupBy('product_id')
+                ->orderByDesc('total_revenue')
                 ->limit(20)
                 ->get();
 
             // Slow moving products
-            $slowMovingProducts = Product::with(['salesOrderItems' => function ($query) use ($startDate, $endDate) {
-                $query->join('sales_orders', 'sales_order_items.sales_order_id', '=', 'sales_orders.id')
-                    ->whereBetween('sales_orders.order_date', [$startDate, $endDate]);
-            }])
-                ->select('products.*')
-                ->leftJoin('sales_order_items', 'products.id', '=', 'sales_order_items.product_id')
-                ->leftJoin('sales_orders', 'sales_order_items.sales_order_id', '=', 'sales_orders.id')
-                ->selectRaw('COALESCE(SUM(sales_order_items.quantity), 0) as total_sold')
-                ->whereBetween('sales_orders.order_date', [$startDate, $endDate])
-                ->groupBy('products.id')
-                ->orderBy('total_sold', 'asc')
+            $soldProductIds = SalesOrderItem::whereHas('salesOrder', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('order_date', [$startDate, $endDate]);
+            })
+                ->select('product_id')
+                ->groupBy('product_id')
+                ->havingRaw('SUM(quantity) > 10')
+                ->pluck('product_id')
+                ->toArray();
+
+            $slowMovingProducts = Product::whereNotIn('id', $soldProductIds)
                 ->limit(20)
-                ->get();
+                ->get()
+                ->map(function ($product) {
+                    $product->total_sold = 0;
+                    return $product;
+                });
 
             return response()->json([
                 'top_selling_products' => $topSellingProducts,
@@ -322,10 +359,11 @@ class ReportController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Product performance report error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return response()->json([
                 'message' => 'Failed to generate product performance report',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
