@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SettingController;
@@ -104,6 +105,44 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [SettingController::class, 'store']);
         Route::put('/', [SettingController::class, 'update']);
     });
+
+    // Notifications
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::put('/{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::put('/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    });
+
+    // Route::get('/test-notifications', function () {
+    //     return response()->json([
+    //         'total_notifications' => \App\Models\Notification::count(),
+    //         'user_id' => auth()->id(),
+    //         'user_notifications' => \App\Models\Notification::where('user_id', auth()->id())->count(),
+    //         'all_notifications' => \App\Models\Notification::all(),
+    //     ]);
+    // });
+
+    // Route::post('/create-test-notification', function () {
+    //     $user = auth()->user();
+
+    //     $notification = \App\Models\Notification::create([
+    //         'user_id' => $user->id,
+    //         'type' => 'system',
+    //         'title' => 'Test Notification',
+    //         'message' => 'This is a test notification created at ' . now()->format('H:i:s'),
+    //         'icon' => 'info',
+    //         'color' => 'blue',
+    //         'link' => '/dashboard',
+    //         'is_read' => false,
+    //     ]);
+
+    //     return response()->json([
+    //         'message' => 'Test notification created',
+    //         'notification' => $notification
+    //     ]);
+    // });
 
 
     // Warehouse Locations

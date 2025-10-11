@@ -384,7 +384,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-
     public function cancel($id)
     {
         $order = PurchaseOrder::findOrFail($id);

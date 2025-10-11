@@ -8,7 +8,12 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
-
+use App\Models\Inventory;
+use App\Models\PurchaseOrder;
+use App\Models\SalesOrder;
+use App\Observers\InventoryObserver;
+use App\Observers\PurchaseOrderObserver;
+use App\Observers\SalesOrderObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -27,6 +32,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureRateLimiting();
+        SalesOrder::observe(SalesOrderObserver::class);
+        PurchaseOrder::observe(PurchaseOrderObserver::class);
+        Inventory::observe(InventoryObserver::class);
     }
 
     protected function configureRateLimiting(): void

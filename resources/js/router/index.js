@@ -224,6 +224,14 @@ const routes = [
         meta: { requiresAuth: true },
     },
 
+    // Notifications
+    {
+        path: '/notifications',
+        name: 'notifications',
+        component: () => import('../views/Notifications/Index.vue'),
+        meta: { requiresAuth: true },
+    },
+
     // 404 Not Found
     {
         path: '/:pathMatch(.*)*',

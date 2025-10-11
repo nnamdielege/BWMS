@@ -25,22 +25,18 @@
 
             <!-- Right Side: Notifications & User Menu -->
             <div class="header-right">
-                <!-- Notifications -->
-                <button class="icon-btn" title="Notifications">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                    </svg>
-                    <span class="notification-badge">3</span>
-                </button>
+                <!-- Notification Bell Component -->
+                <NotificationBell />
 
                 <!-- User Menu -->
                 <div class="user-menu" @click="toggleUserDropdown">
                     <div class="user-avatar">
-                        <span class="avatar-text">{{ userInitials }}</span>
+                        <img v-if="avatarUrl" :src="avatarUrl" alt="Avatar" class="avatar-image" />
+                        <span v-else class="avatar-text">{{ userInitials }}</span>
                     </div>
                     <div class="user-info hidden md:block">
                         <p class="user-name">{{ authStore.user?.name }}</p>
-                        <p class="user-role">Administrator</p>
+                        <p class="user-role">{{ authStore.user?.role || 'User' }}</p>
                     </div>
                     <svg class="dropdown-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -48,37 +44,40 @@
                 </div>
 
                 <!-- User Dropdown Menu -->
-                <div v-if="showUserDropdown" class="user-dropdown">
-                    <router-link to="/profile" class="dropdown-item">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        My Profile
-                    </router-link>
-                    <router-link to="/settings" class="dropdown-item">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        <span>Settings</span>
-                    </router-link>
-                    <div class="dropdown-divider"></div>
-                    <button @click="handleLogout" class="dropdown-item text-red-600">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                        <span>Logout</span>
-                    </button>
-                </div>
+                <transition name="dropdown">
+                    <div v-if="showUserDropdown" class="user-dropdown">
+                        <router-link to="/profile" class="dropdown-item" @click="showUserDropdown = false">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            My Profile
+                        </router-link>
+                        <router-link to="/settings" class="dropdown-item" @click="showUserDropdown = false">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span>Settings</span>
+                        </router-link>
+                        <div class="dropdown-divider"></div>
+                        <button @click="handleLogout" class="dropdown-item text-red-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span>Logout</span>
+                        </button>
+                    </div>
+                </transition>
             </div>
         </div>
     </header>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
+import NotificationBell from './NotificationBell.vue';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -94,25 +93,42 @@ const userInitials = computed(() => {
     return names[0][0] + (names[0][1] || '');
 });
 
+const avatarUrl = computed(() => {
+    if (!authStore.user?.avatar) return null;
+    const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    return `${baseUrl}/storage/${authStore.user.avatar}`;
+});
+
 const toggleUserDropdown = () => {
     showUserDropdown.value = !showUserDropdown.value;
 };
 
 const handleLogout = async () => {
-    await authStore.logout();
-    router.push('/login');
+    try {
+        await authStore.logout();
+        router.push('/login');
+    } catch (error) {
+        console.error('Logout error:', error);
+    }
 };
 
 // Close dropdown when clicking outside
 const handleClickOutside = (event) => {
-    if (!event.target.closest('.user-menu') && !event.target.closest('.user-dropdown')) {
+    const userMenu = event.target.closest('.user-menu');
+    const userDropdown = event.target.closest('.user-dropdown');
+    
+    if (!userMenu && !userDropdown) {
         showUserDropdown.value = false;
     }
 };
 
-if (typeof document !== 'undefined') {
+onMounted(() => {
     document.addEventListener('click', handleClickOutside);
-}
+});
+
+onBeforeUnmount(() => {
+    document.removeEventListener('click', handleClickOutside);
+});
 </script>
 
 <style scoped>
@@ -148,20 +164,16 @@ if (typeof document !== 'undefined') {
     @apply flex items-center gap-4 relative;
 }
 
-.icon-btn {
-    @apply relative p-2 rounded-lg hover:bg-gray-100 transition-colors;
-}
-
-.notification-badge {
-    @apply absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold;
-}
-
 .user-menu {
     @apply flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-100 transition-colors;
 }
 
 .user-avatar {
-    @apply w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center;
+    @apply w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center overflow-hidden;
+}
+
+.avatar-image {
+    @apply w-full h-full object-cover;
 }
 
 .avatar-text {
@@ -177,7 +189,7 @@ if (typeof document !== 'undefined') {
 }
 
 .user-role {
-    @apply text-xs text-gray-500;
+    @apply text-xs text-gray-500 capitalize;
 }
 
 .dropdown-icon {
@@ -194,5 +206,17 @@ if (typeof document !== 'undefined') {
 
 .dropdown-divider {
     @apply border-t border-gray-200 my-2;
+}
+
+/* Dropdown animation */
+.dropdown-enter-active,
+.dropdown-leave-active {
+    transition: all 0.2s ease;
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-10px);
 }
 </style>
