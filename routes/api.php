@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\WarehouseLocationController;
@@ -27,6 +28,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
+
+    // Global Search
+    Route::get('/search', [SearchController::class, 'search']);
 
     // Profile routes
     Route::prefix('profile')->group(function () {
@@ -143,6 +147,25 @@ Route::middleware('auth:sanctum')->group(function () {
     //         'message' => 'Test notification created',
     //         'notification' => $notification
     //     ]);
+    // });
+
+
+    // Route::get('/test-search', function () {
+    //     try {
+    //         $salesOrders = \App\Models\SalesOrder::with('customer')->limit(5)->get();
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'count' => $salesOrders->count(),
+    //             'sample' => $salesOrders->first(),
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'error' => $e->getMessage(),
+    //             'trace' => $e->getTraceAsString(),
+    //         ], 500);
+    //     }
     // });
 
 

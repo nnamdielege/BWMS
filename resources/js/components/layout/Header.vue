@@ -10,21 +10,19 @@
                     </svg>
                 </button>
 
-                <!-- Search Bar (Desktop) -->
-                <div class="search-bar hidden md:flex">
-                    <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input
-                        type="text"
-                        placeholder="Search products, orders, customers..."
-                        class="search-input"
-                    />
-                </div>
+                <!-- Global Search Component (Desktop Only) -->
+                <GlobalSearch class="hidden md:flex" />
             </div>
 
-            <!-- Right Side: Notifications & User Menu -->
+            <!-- Right Side: Mobile Search, Notifications & User Menu -->
             <div class="header-right">
+                <!-- Mobile Search Button -->
+                <button @click="showMobileSearch = true" class="icon-btn md:hidden" title="Search">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </button>
+
                 <!-- Notification Bell Component -->
                 <NotificationBell />
 
@@ -70,6 +68,9 @@
                 </transition>
             </div>
         </div>
+
+        <!-- Mobile Search Modal -->
+        <MobileSearch :show="showMobileSearch" @close="showMobileSearch = false" />
     </header>
 </template>
 
@@ -78,11 +79,14 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
 import NotificationBell from './NotificationBell.vue';
+import GlobalSearch from './GlobalSearch.vue';
+import MobileSearch from './MobileSearch.vue';
 
 const router = useRouter();
 const authStore = useAuthStore();
 
 const showUserDropdown = ref(false);
+const showMobileSearch = ref(false);
 
 const userInitials = computed(() => {
     if (!authStore.user?.name) return 'U';
@@ -122,12 +126,21 @@ const handleClickOutside = (event) => {
     }
 };
 
+// Close mobile search on Escape key
+const handleEscapeKey = (event) => {
+    if (event.key === 'Escape') {
+        showMobileSearch.value = false;
+    }
+};
+
 onMounted(() => {
     document.addEventListener('click', handleClickOutside);
+    document.addEventListener('keydown', handleEscapeKey);
 });
 
 onBeforeUnmount(() => {
     document.removeEventListener('click', handleClickOutside);
+    document.removeEventListener('keydown', handleEscapeKey);
 });
 </script>
 
@@ -148,20 +161,12 @@ onBeforeUnmount(() => {
     @apply p-2 rounded-lg hover:bg-gray-100 transition-colors lg:hidden;
 }
 
-.search-bar {
-    @apply relative flex items-center flex-1 max-w-md;
-}
-
-.search-icon {
-    @apply absolute left-3 w-5 h-5 text-gray-400;
-}
-
-.search-input {
-    @apply w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm;
-}
-
 .header-right {
     @apply flex items-center gap-4 relative;
+}
+
+.icon-btn {
+    @apply p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600;
 }
 
 .user-menu {
