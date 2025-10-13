@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderItem;
 use App\Models\Inventory;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -91,8 +92,14 @@ class SalesOrderController extends Controller
         DB::beginTransaction();
 
         try {
+            // Try to find the threshold setting by key
+            $setting = Setting::where('key', 'order_prefix_sales')->first();
+
+            // Use setting value if available, otherwise default to 20
+            $orderPrefix = $setting?->value ?? 'SO-';
+
             // Generate order number
-            $orderNumber = 'SO-' . date('Ymd') . '-' . str_pad(SalesOrder::whereDate('created_at', today())->count() + 1, 4, '0', STR_PAD_LEFT);
+            $orderNumber = $orderPrefix . date('Ymd') . '-' . str_pad(SalesOrder::whereDate('created_at', today())->count() + 1, 4, '0', STR_PAD_LEFT);
 
             // Convert empty strings to null for date fields
             $expectedDate = !empty($validated['expected_date']) ? $validated['expected_date'] : null;

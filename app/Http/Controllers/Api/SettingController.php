@@ -111,4 +111,12 @@ class SettingController extends Controller
             ], 500);
         }
     }
+
+    public function displaySettings()
+    {
+        // You can return all, or specific settings
+        $settings = Setting::whereIn('key', ['default_tax_rate', 'order_prefix_purchase'])->pluck('value', 'key');
+
+        return response()->json($settings);
+    }
 }

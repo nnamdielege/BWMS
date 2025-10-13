@@ -389,6 +389,7 @@ import { useRouter } from 'vue-router';
 import { useOrderStore } from '../../../stores/order';
 import { useWarehouseStore } from '../../../stores/warehouse';
 import { useProductStore } from '../../../stores/product';
+import { useSettingStore } from '../../../stores/setting';
 import customerService from '../../../services/customerService';
 import inventoryService from '../../../services/inventoryService';
 import FormInput from '../../../components/common/FormInput.vue';
@@ -401,6 +402,7 @@ const router = useRouter();
 const orderStore = useOrderStore();
 const warehouseStore = useWarehouseStore();
 const productStore = useProductStore();
+const settingStore = useSettingStore();
 
 const form = ref({
     customer_id: '',
@@ -812,9 +814,41 @@ const handleAddItemClick = async () => {
 };
 
 onMounted(async () => {
+    console.log('Component mounted - Loading initial data');
+    
+    // Load warehouses
     await warehouseStore.fetchWarehouses();
     warehouses.value = warehouseStore.warehouses;
+
+    // Add click outside handler
     document.addEventListener('click', handleClickOutside);
+
+    // Load settings and populate tax rate
+    try {
+        console.log('Fetching settings...');
+        await settingStore.fetchSettings();
+        
+        console.log('Settings loaded:', settingStore.settings);
+        
+        // Get default tax rate using the helper method
+        const taxRate = settingStore.getDefaultTaxRate();
+        
+        console.log('Default tax rate from settings:', taxRate);
+        
+        if (taxRate > 0) {
+            form.value.tax_rate = taxRate;
+            console.log('Tax rate set to:', form.value.tax_rate);
+            
+            // Recalculate totals with the new tax rate
+            calculateTotals();
+        } else {
+            console.log('No valid tax rate found, using 0');
+            form.value.tax_rate = 0;
+        }
+    } catch (error) {
+        console.error('Failed to load settings:', error);
+        form.value.tax_rate = 0;
+    }
 });
 </script>
 

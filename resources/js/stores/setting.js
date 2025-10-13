@@ -62,6 +62,26 @@ export const useSettingStore = defineStore('setting', {
             return setting ? setting.value : null;
         },
 
+        // New helper method to get raw setting value
+        getRawSetting(key) {
+            if (this.settings._raw) {
+                return this.settings._raw[key];
+            }
+            return null;
+        },
+
+        // Get default tax rate specifically
+        getDefaultTaxRate() {
+            // Try raw settings first
+            if (this.settings._raw && this.settings._raw.default_tax_rate !== undefined) {
+                return parseFloat(this.settings._raw.default_tax_rate);
+            }
+            
+            // Fallback to grouped settings
+            const taxRate = this.getSetting('orders', 'default_tax_rate');
+            return taxRate ? parseFloat(taxRate) : 0;
+        },
+
         clearError() {
             this.error = null;
         },

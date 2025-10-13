@@ -104,6 +104,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{key}', [SettingController::class, 'show']);
         Route::post('/', [SettingController::class, 'store']);
         Route::put('/', [SettingController::class, 'update']);
+        Route::get('/displaySettings', [SettingController::class, 'displaySettings']);
     });
 
     // Notifications
