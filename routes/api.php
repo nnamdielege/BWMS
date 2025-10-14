@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\ExportController;
+use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReportController;
@@ -118,6 +120,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}/read', [NotificationController::class, 'markAsRead']);
         Route::put('/mark-all-read', [NotificationController::class, 'markAllAsRead']);
         Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    });
+
+    // Export Routes
+    Route::prefix('export')->group(function () {
+        Route::get('/products', [ExportController::class, 'exportProducts']);
+        Route::get('/customers', [ExportController::class, 'exportCustomers']);
+        Route::get('/suppliers', [ExportController::class, 'exportSuppliers']);
+        Route::get('/sales-orders', [ExportController::class, 'exportSalesOrders']);
+        Route::get('/purchase-orders', [ExportController::class, 'exportPurchaseOrders']);
+        Route::get('/inventory', [ExportController::class, 'exportInventory']);
+    });
+
+    // Import Routes
+    Route::prefix('import')->group(function () {
+        Route::post('/products', [ImportController::class, 'importProducts']);
+        Route::post('/customers', [ImportController::class, 'importCustomers']);
+        Route::get('/template/{type}', [ImportController::class, 'downloadTemplate']);
     });
 
     // Route::get('/test-notifications', function () {

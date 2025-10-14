@@ -7,12 +7,22 @@
                 <p class="page-subtitle">Manage your product catalog</p>
             </div>
             <div class="page-actions">
-                <button @click="exportProducts" class="btn btn-secondary">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <!-- Export Button -->
+                <button @click="showExportModal = true" class="btn btn-secondary">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                     Export
                 </button>
+
+                <!-- Import Button -->
+                <button @click="showImportModal = true" class="btn btn-secondary">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Import
+                </button>
+
                 <router-link to="/products/create" class="btn btn-primary">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -185,6 +195,47 @@
                 </button>
             </template>
         </Modal>
+
+        <!-- Export Modal -->
+        <ExportModal
+            :show="showExportModal"
+            @close="showExportModal = false"
+            @export="handleExport"
+            title="Products"
+            :total-records="totalProducts"
+            ref="exportModalRef"
+        >
+            <template #filters>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                        <select v-model="exportFilters.category_id" class="form-select">
+                            <option value="">All Categories</option>
+                            <option v-for="category in categories" :key="category.id" :value="category.id">
+                                {{ category.name }}
+                            </option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select v-model="exportFilters.is_active" class="form-select">
+                            <option value="">All Products</option>
+                            <option value="1">Active Only</option>
+                            <option value="0">Inactive Only</option>
+                        </select>
+                    </div>
+                </div>
+            </template>
+        </ExportModal>
+
+        <!-- Import Modal -->
+        <ImportModal
+            :show="showImportModal"
+            @close="showImportModal = false"
+            @imported="handleImported"
+            title="Products"
+            type="products"
+        />
     </div>
 </template>
 
@@ -197,6 +248,9 @@ import FormSelect from '../../components/common/FormSelect.vue';
 import Badge from '../../components/common/Badge.vue';
 import Alert from '../../components/common/Alert.vue';
 import Modal from '../../components/common/Modal.vue';
+import ExportModal from '../../components/common/ExportModal.vue';
+import ImportModal from '../../components/common/ImportModal.vue';
+import exportImportService from '../../services/exportImportService';
 
 const productStore = useProductStore();
 
@@ -216,6 +270,17 @@ const successMessage = ref('');
 const showDeleteModal = ref(false);
 const productToDelete = ref(null);
 const deleting = ref(false);
+
+const showExportModal = ref(false);
+const showImportModal = ref(false);
+const exportModalRef = ref(null);
+const exportFilters = ref({
+    category_id: '',
+    is_active: '',
+});
+
+// Use store getter for total products
+const totalProducts = computed(() => productStore.totalProducts);
 
 const columns = [
     { key: 'image', label: 'Image', sortable: false },
@@ -280,11 +345,6 @@ const deleteProduct = async () => {
     }
 };
 
-const exportProducts = () => {
-    // TODO: Implement export functionality
-    alert('Export functionality coming soon!');
-};
-
 const formatNumber = (num) => {
     return parseFloat(num || 0).toFixed(2);
 };
@@ -297,9 +357,43 @@ const getStockClass = (stock, reorderPoint) => {
 
 onMounted(async () => {
     await productStore.fetchProducts();
-    await productStore.fetchCategories();
-    categories.value = productStore.categories;
+    
+    // Try to fetch categories
+    try {
+        await productStore.fetchCategories();
+        categories.value = productStore.categories;
+    } catch (error) {
+        console.log('Categories not available');
+        categories.value = [];
+    }
 });
+
+const handleExport = async (format) => {
+    try {
+        exportModalRef.value?.setLoading(true);
+
+        const params = {
+            format,
+            search: filters.value?.search || '',
+            ...exportFilters.value,
+        };
+
+        const response = await exportImportService.exportProducts(params);
+        const filename = `products_${new Date().toISOString().split('T')[0]}.${format}`;
+        exportImportService.downloadFile(response.data, filename);
+
+        showExportModal.value = false;
+    } catch (error) {
+        console.error('Export error:', error);
+        alert('Failed to export products');
+    } finally {
+        exportModalRef.value?.setLoading(false);
+    }
+};
+
+const handleImported = async () => {
+    await productStore.fetchProducts();
+};
 </script>
 
 <style scoped>
@@ -421,5 +515,9 @@ onMounted(async () => {
 
 .spinner-small {
     @apply inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin;
+}
+
+.form-select {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent;
 }
 </style>
