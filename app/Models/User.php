@@ -32,4 +32,7 @@ class User extends Authenticatable
         'password' => 'hashed',
         'is_active' => 'boolean',
     ];
+
+    // Add guard name for API
+    // protected $guard_name = 'sanctum';
 }

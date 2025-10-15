@@ -9,8 +9,8 @@
                     </svg>
                 </div>
                 <div class="logo-text">
-                    <h1 class="brand-name">Boundless</h1>
-                    <p class="brand-tagline">Warehouse Systems</p>
+                    <h1 class="brand-name">WMS</h1>
+                    <p class="brand-tagline">Warehouse System</p>
                 </div>
             </div>
             
@@ -125,7 +125,7 @@
                 </div>
                 <div class="footer-content">
                     <p class="footer-title">Upgrade to Pro</p>
-                    <p class="footer-text">Enjoy advanced features</p>
+                    <p class="footer-text">Get advanced features</p>
                 </div>
             </div>
         </div>
