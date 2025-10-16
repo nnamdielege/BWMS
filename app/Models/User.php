@@ -12,6 +12,8 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable, HasRoles;
 
+    protected $guard_name = 'api';
+
     protected $fillable = [
         'name',
         'email',
@@ -32,4 +34,7 @@ class User extends Authenticatable
         'password' => 'hashed',
         'is_active' => 'boolean',
     ];
+
+    // Add guard name for API
+    // protected $guard_name = 'sanctum';
 }

@@ -16,9 +16,11 @@ use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\SupplierController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WarehouseLocationController;
 
 // Public routes
@@ -27,29 +29,58 @@ Route::post('/login', [AuthController::class, 'login']);
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
+
+    // -------------------------------
     // Auth
+    // -------------------------------
+    Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
 
-    // Global Search
-    Route::get('/search', [SearchController::class, 'search']);
-
-    // Profile routes
-    Route::prefix('profile')->group(function () {
-        Route::get('/', [ProfileController::class, 'show']);
-        Route::put('/', [ProfileController::class, 'update']);
-        Route::put('/password', [ProfileController::class, 'updatePassword']);
-        Route::post('/avatar', [ProfileController::class, 'uploadAvatar']);
-        Route::delete('/avatar', [ProfileController::class, 'deleteAvatar']);
+    // -------------------------------
+    // Dashboard
+    // -------------------------------
+    Route::prefix('dashboard')->group(function () {
+        Route::get('/', [DashboardController::class, 'index'])->middleware('permission:view-reports');
+        Route::get('/inventory-stats', [DashboardController::class, 'inventoryStats'])->middleware('permission:view-reports');
+        Route::get('/transactions', [DashboardController::class, 'recentTransactions'])->middleware('permission:view-reports');
     });
 
-    // Dashboard
-    Route::get('dashboard', [DashboardController::class, 'index']);
-    Route::get('dashboard/inventory-stats', [DashboardController::class, 'inventoryStats']);
-    Route::get('dashboard/transactions', [DashboardController::class, 'recentTransactions']);
+    // -------------------------------
+    // Roles & Permissions - Admin only
+    // -------------------------------
+    Route::middleware('role:admin')->group(function () {
+        Route::apiResource('roles', RoleController::class);
+        Route::get('permissions', [RoleController::class, 'permissions']);
+        Route::put('roles/{role}/permissions', [RoleController::class, 'updatePermissions']);
+        Route::delete('roles/{role}/permissions/{permission}', [RoleController::class, 'removePermission']);
+        Route::delete('roles/{role}/permissions', [RoleController::class, 'removeAllPermissions']);
+        Route::delete('permissions/{permission}', [RoleController::class, 'destroyPermission']);
+    });
 
-    // Products
-    Route::apiResource('products', ProductController::class);
+
+    // -------------------------------
+    // Users - Admin or Warehouse Manager
+    // -------------------------------
+    Route::middleware('role:admin,warehouse-manager')->group(function () {
+        Route::get('users', [UserController::class, 'index']);
+        Route::post('users/{user}/assign-role', [UserController::class, 'assignRole']);
+        Route::post('users/{user}/assign-roles', [UserController::class, 'assignRoles']);
+        Route::delete('users/{user}/roles/{role}', [UserController::class, 'removeRole']);
+        Route::delete('users/{user}/roles', [UserController::class, 'removeAllRoles']);
+    });
+
+
+    // -------------------------------
+    // Products - Permission-based
+    // -------------------------------
+
+    // Route::apiResource('products', ProductController::class);
+    Route::get('products', [ProductController::class, 'index'])->middleware('permission:view-products');
+    Route::post('products', [ProductController::class, 'store'])->middleware('permission:create-products');
+    Route::put('products/{product}', [ProductController::class, 'update'])->middleware('permission:edit-products');
+    Route::delete('products/{product}', [ProductController::class, 'destroy'])->middleware('permission:delete-products');
+
     Route::get('products/{product}/inventory', [ProductController::class, 'getInventory']);
     Route::get('product-categories', [ProductController::class, 'getCategories']);
     Route::get('products-search', [ProductController::class, 'search']);
@@ -64,12 +95,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('products/{product}/pricing-history', [ProductController::class, 'pricingHistory']);
     Route::get('products/{product}/movement-history', [ProductController::class, 'movementHistory']);
 
+
+    // -------------------------------
     // Inventory
-    Route::get('inventory', [InventoryController::class, 'index']);
-    Route::get('inventory/product/{product}', [InventoryController::class, 'getByProduct']);
-    Route::get('inventory/warehouse/{warehouse}', [InventoryController::class, 'getByWarehouse']);
-    Route::post('inventory/adjust', [InventoryController::class, 'adjust']);
-    Route::post('inventory/transfer', [InventoryController::class, 'transfer']);
+    // -------------------------------
+    Route::get('inventory', [InventoryController::class, 'index'])->middleware('permission:view-inventory');
+    Route::get('inventory/product/{product}', [InventoryController::class, 'getByProduct'])->middleware('permission:view-inventory');
+    Route::get('inventory/warehouse/{warehouse}', [InventoryController::class, 'getByWarehouse'])->middleware('permission:view-inventory');
+    Route::post('inventory/adjust', [InventoryController::class, 'adjust'])->middleware('permission:adjust-stock');
+    Route::post('inventory/transfer', [InventoryController::class, 'transfer'])->middleware('permission:transfer-stock');
     Route::get('inventory/transactions', [InventoryController::class, 'getTransactions']);
     Route::get('inventory/low-stock', [InventoryController::class, 'lowStock']);
     Route::get('inventory/out-of-stock', [InventoryController::class, 'outOfStock']);
@@ -77,35 +111,48 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('inventory/value', [InventoryController::class, 'inventoryValue']);
     Route::post('inventory/stock-count', [InventoryController::class, 'stockCount']);
 
+
+    // -------------------------------
     // Sales Orders
+    // -------------------------------
     Route::apiResource('sales-orders', SalesOrderController::class);
-    Route::post('sales-orders/{id}/fulfill', [SalesOrderController::class, 'fulfill']);
-    Route::post('sales-orders/{id}/cancel', [SalesOrderController::class, 'cancel']);
+    Route::post('sales-orders/{id}/fulfill', [SalesOrderController::class, 'fulfill'])->middleware('permission:approve-orders');
+    Route::post('sales-orders/{id}/cancel', [SalesOrderController::class, 'cancel'])->middleware('permission:approve-orders');
 
+    // -------------------------------
     // Purchase Orders
+    // -------------------------------
     Route::apiResource('purchase-orders', PurchaseOrderController::class);
-    Route::post('purchase-orders/{id}/receive', [PurchaseOrderController::class, 'receive']);
-    Route::post('purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel']);
+    Route::post('purchase-orders/{id}/receive', [PurchaseOrderController::class, 'receive'])->middleware('permission:approve-orders');
+    Route::post('purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->middleware('permission:approve-orders');
 
-    // Customers
-    Route::apiResource('customers', CustomerController::class);
+    // -------------------------------
+    // Customers & Suppliers
+    // -------------------------------
+    Route::apiResource('customers', CustomerController::class)->middleware('permission:view-customers');
+    Route::apiResource('suppliers', SupplierController::class)->middleware('permission:view-suppliers');
 
-    // Suppliers
-    Route::apiResource('suppliers', SupplierController::class);
-
+    // -------------------------------
     // Warehouses
-    Route::apiResource('warehouses', WarehouseController::class);
+    // -------------------------------
+    Route::apiResource('warehouses', WarehouseController::class)->middleware('permission:view-warehouses');
+    Route::apiResource('warehouse-locations', WarehouseLocationController::class)->middleware('permission:view-warehouses');
+    Route::apiResource('bins', BinController::class)->middleware('permission:view-warehouses');
 
+    // -------------------------------
     // Reports
+    // -------------------------------
     Route::prefix('reports')->group(function () {
-        Route::get('/sales', [ReportController::class, 'salesReport']);
-        Route::get('/purchases', [ReportController::class, 'purchaseReport']);
-        Route::get('/inventory', [ReportController::class, 'inventoryReport']);
-        Route::get('/product-performance', [ReportController::class, 'productPerformanceReport']);
+        Route::get('/sales', [ReportController::class, 'salesReport'])->middleware('permission:view-reports');
+        Route::get('/purchases', [ReportController::class, 'purchaseReport'])->middleware('permission:view-reports');
+        Route::get('/inventory', [ReportController::class, 'inventoryReport'])->middleware('permission:view-reports');
+        Route::get('/product-performance', [ReportController::class, 'productPerformanceReport'])->middleware('permission:view-reports');
     });
 
-    // Settings
-    Route::prefix('settings')->group(function () {
+    // -------------------------------
+    // Settings - Admin only
+    // -------------------------------
+    Route::prefix('settings')->middleware('role:admin')->group(function () {
         Route::get('/', [SettingController::class, 'index']);
         Route::get('/{key}', [SettingController::class, 'show']);
         Route::post('/', [SettingController::class, 'store']);
@@ -113,7 +160,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/displaySettings', [SettingController::class, 'displaySettings']);
     });
 
+    // -------------------------------
+    // Profile
+    // -------------------------------
+    Route::prefix('profile')->group(function () {
+        Route::get('/', [ProfileController::class, 'show']);
+        Route::put('/', [ProfileController::class, 'update']);
+        Route::put('/password', [ProfileController::class, 'updatePassword']);
+        Route::post('/avatar', [ProfileController::class, 'uploadAvatar']);
+        Route::delete('/avatar', [ProfileController::class, 'deleteAvatar']);
+    });
+
+    // -------------------------------
     // Notifications
+    // -------------------------------
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
         Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
@@ -122,7 +182,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [NotificationController::class, 'destroy']);
     });
 
-    // Export Routes
+    // -------------------------------
+    // Export & Import
+    // -------------------------------
     Route::prefix('export')->group(function () {
         Route::get('/products', [ExportController::class, 'exportProducts']);
         Route::get('/customers', [ExportController::class, 'exportCustomers']);
@@ -132,12 +194,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/inventory', [ExportController::class, 'exportInventory']);
     });
 
-    // Import Routes
     Route::prefix('import')->group(function () {
         Route::post('/products', [ImportController::class, 'importProducts']);
         Route::post('/customers', [ImportController::class, 'importCustomers']);
         Route::get('/template/{type}', [ImportController::class, 'downloadTemplate']);
     });
+
+
+    // -------------------------------
+    // Global Search
+    // -------------------------------
+    Route::get('/search', [SearchController::class, 'search']);
+
 
     // Route::get('/test-notifications', function () {
     //     return response()->json([
@@ -187,8 +255,4 @@ Route::middleware('auth:sanctum')->group(function () {
     //     }
     // });
 
-
-    // Warehouse Locations
-    Route::apiResource('warehouse-locations', WarehouseLocationController::class);
-    Route::apiResource('bins', BinController::class);
 });
