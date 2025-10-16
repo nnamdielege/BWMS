@@ -12,13 +12,16 @@
 <script setup>
 import { onMounted } from 'vue';
 import { useAuthStore } from './stores/auth';
+import { usePermissions } from '@/composables/usePermissions';
 import DashboardLayout from './components/layout/DashboardLayout.vue';
 
 const authStore = useAuthStore();
+const { fetchPermissions, loading } = usePermissions();
 
 onMounted(async () => {
     if (authStore.token) {
-        await authStore.checkAuth();
+        fetchPermissions();
+        await authStore.checkAuth();        
     }
 });
 </script>

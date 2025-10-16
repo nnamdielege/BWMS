@@ -3,159 +3,258 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
 
 class RoleController extends Controller
 {
+    /**
+     * Display a listing of roles.
+     */
     public function index()
     {
-        $roles = Role::with('permissions')->get();
+        $roles = Role::with('permissions')
+            ->orderBy('name')
+            ->get()
+            ->map(function ($role) {
+                // Manually count users for this role from the pivot table
+                $usersCount = DB::table('model_has_roles')
+                    ->where('role_id', $role->id)
+                    ->where('model_type', User::class)
+                    ->count();
+
+                return [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                    'guard_name' => $role->guard_name,
+                    'permissions_count' => $role->permissions->count(),
+                    'users_count' => $usersCount,
+                    'created_at' => $role->created_at,
+                    'updated_at' => $role->updated_at,
+                ];
+            });
 
         return response()->json([
+            'success' => true,
             'data' => $roles
         ]);
     }
 
+    /**
+     * Store a newly created role.
+     */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:roles,name',
-            'permissions' => 'nullable|array',
-            'permissions.*' => 'exists:permissions,name',
+        $request->validate([
+            'name' => 'required|string|unique:roles,name|max:255'
         ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
 
         $role = Role::create([
             'name' => $request->name,
-            'guard_name' => 'sanctum',
+            'guard_name' => 'api'
         ]);
 
-        if ($request->has('permissions')) {
-            $role->syncPermissions($request->permissions);
-        }
-
         return response()->json([
+            'success' => true,
             'message' => 'Role created successfully',
-            'data' => $role->load('permissions')
+            'data' => $role
         ], 201);
     }
 
-    public function show($id)
+    /**
+     * Display the specified role with its permissions.
+     */
+    public function show(Role $role)
     {
-        $role = Role::with('permissions')->findOrFail($id);
+        $role->load('permissions');
 
         return response()->json([
+            'success' => true,
             'data' => $role
         ]);
     }
 
-    public function update(Request $request, $id)
+    /**
+     * Update the specified role.
+     */
+    public function update(Request $request, Role $role)
     {
-        $role = Role::findOrFail($id);
-
-        // Prevent editing system roles
-        $systemRoles = ['super-admin', 'admin', 'manager', 'staff', 'viewer'];
-        if (in_array($role->name, $systemRoles)) {
-            return response()->json([
-                'message' => 'System roles cannot be edited. You can only modify their permissions.'
-            ], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:roles,name,' . $id,
-            'permissions' => 'nullable|array',
-            'permissions.*' => 'exists:permissions,name',
+        $request->validate([
+            'name' => 'required|string|max:255|unique:roles,name,' . $role->id
         ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
 
         $role->update([
-            'name' => $request->name,
+            'name' => $request->name
         ]);
 
-        if ($request->has('permissions')) {
-            $role->syncPermissions($request->permissions);
-        }
-
         return response()->json([
+            'success' => true,
             'message' => 'Role updated successfully',
-            'data' => $role->load('permissions')
+            'data' => $role
         ]);
     }
 
-    public function updatePermissions(Request $request, $id)
+    /**
+     * Remove the specified role.
+     */
+    public function destroy(Role $role)
     {
-        $role = Role::findOrFail($id);
-
-        $validator = Validator::make($request->all(), [
-            'permissions' => 'required|array',
-            'permissions.*' => 'exists:permissions,name',
-        ]);
-
-        if ($validator->fails()) {
+        // Prevent deletion of system roles
+        if (in_array($role->name, ['admin', 'user'])) {
             return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $role->syncPermissions($request->permissions);
-
-        return response()->json([
-            'message' => 'Permissions updated successfully',
-            'data' => $role->load('permissions')
-        ]);
-    }
-
-    public function destroy($id)
-    {
-        $role = Role::findOrFail($id);
-
-        // Prevent deleting system roles
-        $systemRoles = ['super-admin', 'admin', 'manager', 'staff', 'viewer'];
-        if (in_array($role->name, $systemRoles)) {
-            return response()->json([
-                'message' => 'System roles cannot be deleted'
+                'success' => false,
+                'message' => 'Cannot delete system roles'
             ], 403);
         }
 
-        // Check if role has users
-        if ($role->users()->count() > 0) {
-            return response()->json([
-                'message' => 'Cannot delete role with assigned users. Please reassign users first.'
-            ], 422);
-        }
+        $roleId = $role->id;
 
-        $role->delete();
+        // Manually detach all users from this role before deleting
+        DB::table('model_has_roles')
+            ->where('role_id', $roleId)
+            ->delete();
+
+        // Manually detach all permissions from this role before deleting
+        DB::table('role_has_permissions')
+            ->where('role_id', $roleId)
+            ->delete();
+
+        // Delete directly from database to avoid model events
+        DB::table('roles')
+            ->where('id', $roleId)
+            ->delete();
+
+        // Clear permission cache
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
         return response()->json([
+            'success' => true,
             'message' => 'Role deleted successfully'
         ]);
     }
 
+    /**
+     * Get all permissions.
+     */
     public function permissions()
     {
-        $permissions = Permission::all()->groupBy(function ($permission) {
-            // Group by prefix (e.g., 'products', 'inventory', etc.)
-            return explode('.', $permission->name)[0];
-        });
+        $permissions = Permission::orderBy('name')->get();
 
         return response()->json([
+            'success' => true,
             'data' => $permissions
+        ]);
+    }
+
+    /**
+     * Update role permissions.
+     */
+    public function updatePermissions(Request $request, Role $role)
+    {
+        $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*' => 'exists:permissions,id'
+        ]);
+
+        // Manually sync permissions to avoid guard issues
+        // First, remove all existing permissions
+        DB::table('role_has_permissions')
+            ->where('role_id', $role->id)
+            ->delete();
+
+        // Then, add the new permissions
+        $permissionsData = collect($request->permissions)->map(function ($permissionId) use ($role) {
+            return [
+                'permission_id' => $permissionId,
+                'role_id' => $role->id,
+            ];
+        })->toArray();
+
+        if (count($permissionsData) > 0) {
+            DB::table('role_has_permissions')->insert($permissionsData);
+        }
+
+        // Clear permission cache
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+        // Reload permissions
+        $role->load('permissions');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Permissions updated successfully',
+            'data' => $role
+        ]);
+    }
+
+    /**
+     * Remove a specific permission from a role.
+     */
+    public function removePermission(Request $request, Role $role, $permissionId)
+    {
+        // Remove the permission from this role
+        DB::table('role_has_permissions')
+            ->where('role_id', $role->id)
+            ->where('permission_id', $permissionId)
+            ->delete();
+
+        // Clear permission cache
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Permission removed successfully'
+        ]);
+    }
+
+    /**
+     * Remove all permissions from a role.
+     */
+    public function removeAllPermissions(Role $role)
+    {
+        // Remove all permissions from this role
+        DB::table('role_has_permissions')
+            ->where('role_id', $role->id)
+            ->delete();
+
+        // Clear permission cache
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'All permissions removed successfully'
+        ]);
+    }
+
+    /**
+     * Delete a permission entirely from the system.
+     */
+    public function destroyPermission($permissionId)
+    {
+        // Remove permission from all roles
+        DB::table('role_has_permissions')
+            ->where('permission_id', $permissionId)
+            ->delete();
+
+        // Remove permission from all users
+        DB::table('model_has_permissions')
+            ->where('permission_id', $permissionId)
+            ->delete();
+
+        // Delete the permission
+        DB::table('permissions')
+            ->where('id', $permissionId)
+            ->delete();
+
+        // Clear permission cache
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Permission deleted successfully'
         ]);
     }
 }

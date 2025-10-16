@@ -224,6 +224,19 @@ const routes = [
         meta: { requiresAuth: true },
     },
 
+    {
+        path: '/roles',
+        name: 'roles.index',
+        component: () => import('../views/Roles/Index.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/users',
+        name: 'users.index',
+        component: () => import('../views/Users/Index.vue'),
+        meta: { requiresAuth: true }
+    },
+
     // Notifications
     {
         path: '/notifications',

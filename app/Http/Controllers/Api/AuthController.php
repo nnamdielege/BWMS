@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
 
 class AuthController extends Controller
 {
@@ -65,5 +67,96 @@ class AuthController extends Controller
     public function user(Request $request)
     {
         return response()->json($request->user());
+    }
+
+    /**
+     * Get current user with roles and permissions.
+     */
+    public function me(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        // Get user's role IDs
+        $roleIds = DB::table('model_has_roles')
+            ->where('model_id', $user->id)
+            ->where('model_type', get_class($user))
+            ->pluck('role_id');
+
+        // Get roles
+        $roles = DB::table('roles')
+            ->whereIn('id', $roleIds)
+            ->get();
+
+        // Get permission IDs from user's roles
+        $permissionIds = DB::table('role_has_permissions')
+            ->whereIn('role_id', $roleIds)
+            ->pluck('permission_id')
+            ->unique();
+
+        // Get permissions
+        $permissions = DB::table('permissions')
+            ->whereIn('id', $permissionIds)
+            ->pluck('name');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'user' => $user,
+                'roles' => $roles->pluck('name'),
+                'permissions' => $permissions
+            ]
+        ]);
+    }
+
+    /**
+     * Check if current user has a specific permission.
+     */
+    public function checkPermission(Request $request, string $permission)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'has_permission' => false
+            ]);
+        }
+
+        // Get user's role IDs
+        $roleIds = DB::table('model_has_roles')
+            ->where('model_id', $user->id)
+            ->where('model_type', get_class($user))
+            ->pluck('role_id');
+
+        // Get permission ID
+        $permissionRecord = DB::table('permissions')
+            ->where('name', $permission)
+            ->first();
+
+        if (!$permissionRecord) {
+            return response()->json([
+                'success' => false,
+                'has_permission' => false,
+                'message' => 'Permission not found'
+            ]);
+        }
+
+        // Check if any of user's roles have this permission
+        $hasPermission = DB::table('role_has_permissions')
+            ->whereIn('role_id', $roleIds)
+            ->where('permission_id', $permissionRecord->id)
+            ->exists();
+
+        return response()->json([
+            'success' => true,
+            'has_permission' => $hasPermission
+        ]);
     }
 }
