@@ -66,11 +66,15 @@ class Subscription extends Model
         return $this->status === 'active' && (!$this->current_period_end || $this->current_period_end->isFuture());
     }
 
-    // Get days remaining in trial
+    /**
+     * Get days remaining in trial
+     */
     public function trialDaysRemaining()
     {
         if (!$this->isInTrial()) return 0;
-        return $this->trial_ends_at->diffInDays(Carbon::now());
+
+        $daysRemaining = $this->trial_ends_at->diffInDays(Carbon::now(), absolute: true);
+        return (int) ceil($daysRemaining);
     }
 
     // Get data usage percentage
