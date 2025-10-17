@@ -19,6 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Exclude webhook from CSRF protection
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/*',
+            'api/v1/webhooks/*',
+        ]);
 
         // Global middleware
         $middleware->use([

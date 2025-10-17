@@ -33,12 +33,8 @@ Route::post('/login', [AuthController::class, 'login']);
 // Get subscription plans (public info)
 Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
 
-// Webhooks (no auth required)
-Route::post('/webhooks/stripe', [SubscriptionController::class, 'handleStripeWebhook'])
-    ->withoutMiddleware(VerifyCsrfToken::class);
-
-Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
-    ->name('webhooks.stripe');
+// Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
+//     ->name('webhooks.stripe');
 
 Route::post('/webhooks/paypal', [SubscriptionController::class, 'handlePaypalWebhook'])
     ->withoutMiddleware(VerifyCsrfToken::class);
