@@ -130,7 +130,7 @@ onMounted(async () => {
 
 const fetchPlans = async () => {
   try {
-    const response = await axios.get('/api/subscription/plans');
+    const response = await axios.get('/api/v1/subscription/plans');
     plans.value = response.data.data;
   } catch (error) {
     console.error('Error fetching plans:', error);
@@ -139,7 +139,7 @@ const fetchPlans = async () => {
 
 const fetchCurrentSubscription = async () => {
   try {
-    const response = await axios.get('/api/subscription/current');
+    const response = await axios.get('/api/v1/subscription/current');
     currentSubscription.value = response.data.data;
   } catch (error) {
     // No current subscription
@@ -157,7 +157,7 @@ const handlePlanSelection = async (plan) => {
   try {
     if (!currentSubscription.value) {
       // Start trial
-      const response = await axios.post('/api/subscription/start-trial', {
+      const response = await axios.post('/api/v1/subscription/start-trial', {
         plan_id: plan.id,
       });
 
@@ -170,8 +170,9 @@ const handlePlanSelection = async (plan) => {
       }
     } else {
       // Create Stripe checkout for upgrade
-      const response = await axios.post('/api/subscription/stripe/checkout', {
+      const response = await axios.post('/api/v1/subscription/stripe/checkout', {
         plan_id: plan.id,
+        success_url: `${window.location.origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
       });
 
       if (response.data.checkout_url) {

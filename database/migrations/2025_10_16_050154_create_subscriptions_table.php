@@ -21,7 +21,7 @@ return new class extends Migration
             $table->dateTime('current_period_end')->nullable();
             $table->string('stripe_subscription_id')->nullable()->unique();
             $table->string('paypal_subscription_id')->nullable()->unique();
-            $table->string('payment_method'); // stripe or paypal
+            $table->string('payment_method')->nullable(); // stripe or paypal
             $table->boolean('cancel_at_period_end')->default(false);
             $table->dateTime('cancelled_at')->nullable();
             $table->timestamps();

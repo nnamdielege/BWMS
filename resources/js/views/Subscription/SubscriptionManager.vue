@@ -208,7 +208,7 @@ onMounted(async () => {
 const fetchSubscription = async () => {
   loading.value = true;
   try {
-    const response = await axios.get('/api/subscription/current');
+    const response = await axios.get('/api/v1/subscription/current');
     subscription.value = response.data.data;
   } catch (error) {
     console.error('Error fetching subscription:', error);
@@ -219,7 +219,7 @@ const fetchSubscription = async () => {
 
 const fetchUsage = async () => {
   try {
-    const response = await axios.get('/api/subscription/usage');
+    const response = await axios.get('/api/v1/subscription/usage');
     usage.value = response.data.data;
   } catch (error) {
     console.error('Error fetching usage:', error);
@@ -228,7 +228,7 @@ const fetchUsage = async () => {
 
 const fetchInvoices = async () => {
   try {
-    const response = await axios.get('/api/subscription/invoices');
+    const response = await axios.get('/api/v1/subscription/invoices');
     invoices.value = response.data.data;
   } catch (error) {
     console.error('Error fetching invoices:', error);
@@ -238,7 +238,7 @@ const fetchInvoices = async () => {
 const cancelSubscription = async () => {
   cancelLoading.value = true;
   try {
-    const response = await axios.post('/api/subscription/cancel');
+    const response = await axios.post('/api/v1/subscription/cancel');
     if (response.data.success) {
       showCancelModal.value = false;
       await fetchSubscription();

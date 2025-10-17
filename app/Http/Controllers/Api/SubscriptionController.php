@@ -143,7 +143,7 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'success' => true,
-                'checkout_url' => $session->url,
+                'success_url' => config('app.url') . '/subscription/success?session_id={CHECKOUT_SESSION_ID}',
                 'session_id' => $session->id,
             ]);
         } catch (\Exception $e) {
@@ -329,6 +329,110 @@ class SubscriptionController extends Controller
                 'daily_records' => $usage,
             ]
         ]);
+    }
+
+
+    /**
+     * Handle Stripe payment success
+     */
+    public function handleStripeSuccess(Request $request)
+    {
+        $request->validate([
+            'session_id' => 'required|string',
+        ]);
+
+        $user = $request->user();
+        $sessionId = $request->session_id;
+
+        try {
+            // Retrieve session from Stripe
+            $session = \Stripe\Checkout\Session::retrieve($sessionId);
+
+            if ($session->payment_status !== 'paid') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment not completed'
+                ], 400);
+            }
+
+            // Find or create subscription
+            $subscription = Subscription::where('stripe_subscription_id', $session->subscription)
+                ->orWhere('user_id', $user->id)
+                ->first();
+
+            if (!$subscription) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Subscription not found'
+                ], 404);
+            }
+
+            // Verify subscription is for correct user
+            if ($subscription->user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            // Update subscription status
+            $subscription->update([
+                'status' => 'active',
+                'stripe_subscription_id' => $session->subscription,
+                'current_period_start' => Carbon::now(),
+                'current_period_end' => Carbon::now()->addMonth(),
+            ]);
+
+            // Record payment if not already recorded
+            $payment = Payment::where('transaction_id', $session->payment_intent)->first();
+
+            if (!$payment) {
+                Payment::create([
+                    'subscription_id' => $subscription->id,
+                    'user_id' => $user->id,
+                    'amount' => $session->amount_total / 100,
+                    'currency' => strtoupper($session->currency),
+                    'status' => 'completed',
+                    'transaction_id' => $session->payment_intent,
+                    'payment_provider' => 'stripe',
+                    'processed_at' => Carbon::now(),
+                ]);
+            }
+
+            // Generate invoice if not already generated
+            $invoice = Invoice::where('subscription_id', $subscription->id)
+                ->where('status', 'paid')
+                ->first();
+
+            if (!$invoice) {
+                Invoice::create([
+                    'subscription_id' => $subscription->id,
+                    'invoice_number' => Invoice::generateInvoiceNumber(),
+                    'amount' => $session->amount_total / 100,
+                    'currency' => strtoupper($session->currency),
+                    'issued_at' => Carbon::now(),
+                    'due_at' => Carbon::now()->addDays(30),
+                    'status' => 'paid',
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment verified successfully',
+                'data' => [
+                    'subscription' => $subscription,
+                    'plan' => $subscription->plan,
+                    'status' => $subscription->status,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Stripe success verification error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to verify payment: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     private function handleSubscriptionCreated($stripeSubscription) {}

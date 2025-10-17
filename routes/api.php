@@ -243,6 +243,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Get usage
     Route::get('/subscription/usage', [SubscriptionController::class, 'getUsage']);
 
+    Route::get('/v1/subscription/stripe/success', [SubscriptionController::class, 'handleStripeSuccess']);
+
 
     // Route::get('/test-notifications', function () {
     //     return response()->json([

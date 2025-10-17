@@ -250,6 +250,13 @@ const routes = [
         meta: { requiresAuth: true }, // Only authenticated users
     },
 
+    {
+        path: '/subscription/success',
+        name: 'subscription-success',
+        component: () => import('../views/Subscription/StripeSuccess.vue'),
+        meta: { requiresAuth: true },
+    },
+
     // Notifications
     {
         path: '/notifications',
