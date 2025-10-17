@@ -35,6 +35,8 @@ class User extends Authenticatable
         'is_active' => 'boolean',
     ];
 
-    // Add guard name for API
-    // protected $guard_name = 'sanctum';
+    public function subscription()
+    {
+        return $this->hasOne(Subscription::class);
+    }
 }

@@ -19,13 +19,25 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SettingController;
+use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WarehouseLocationController;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+
+// Get subscription plans (public info)
+Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
+
+// Webhooks (no auth required)
+Route::post('/webhooks/stripe', [SubscriptionController::class, 'handleStripeWebhook'])
+    ->withoutMiddleware(VerifyCsrfToken::class);
+
+Route::post('/webhooks/paypal', [SubscriptionController::class, 'handlePaypalWebhook'])
+    ->withoutMiddleware(VerifyCsrfToken::class);
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -205,6 +217,31 @@ Route::middleware('auth:sanctum')->group(function () {
     // Global Search
     // -------------------------------
     Route::get('/search', [SearchController::class, 'search']);
+
+
+    // ───────────────────────────────────────────────────────────
+    // SUBSCRIPTION ROUTES
+    // ───────────────────────────────────────────────────────────
+
+
+
+    // Get current user subscription
+    Route::get('/subscription/current', [SubscriptionController::class, 'getCurrentSubscription']);
+
+    // Start free trial
+    Route::post('/subscription/start-trial', [SubscriptionController::class, 'startTrial']);
+
+    // Create Stripe checkout
+    Route::post('/subscription/stripe/checkout', [SubscriptionController::class, 'createStripeCheckout']);
+
+    // Cancel subscription
+    Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);
+
+    // Get invoices
+    Route::get('/subscription/invoices', [SubscriptionController::class, 'getInvoices']);
+
+    // Get usage
+    Route::get('/subscription/usage', [SubscriptionController::class, 'getUsage']);
 
 
     // Route::get('/test-notifications', function () {

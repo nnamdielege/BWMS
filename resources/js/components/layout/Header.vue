@@ -57,6 +57,21 @@
                             </svg>
                             <span>Settings</span>
                         </router-link>
+                        <router-link to="/pricing" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.105 0-2 .895-2 2v8h8v-8c0-1.105-.895-2-2-2h-4zM4 12v8h4v-8H4z" />
+                            </svg>
+                            Pricing
+                        </router-link>
+
+                        <router-link to="/subscription/manage" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 8h18M3 12h18M3 16h18M6 8v8M18 8v8" />
+                            </svg>
+                            My Subscription
+                        </router-link>
+
                         <div class="dropdown-divider"></div>
                         <button @click="handleLogout" class="dropdown-item text-red-600">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

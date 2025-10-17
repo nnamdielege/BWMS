@@ -45,6 +45,28 @@ export const useAuthStore = defineStore('auth', {
 
     actions: {
         /**
+         * Check authentication status
+         */
+        async checkAuth() {
+            if (!this.token) {
+                return false;
+            }
+
+            try {
+                console.log('🔐 Checking auth status...');
+                const response = await authService.getUser();
+                this.user = response.data;
+                localStorage.setItem('user', JSON.stringify(this.user));
+                console.log('✅ Auth check passed');
+                return true;
+            } catch (error) {
+                console.error('❌ Auth check failed:', error);
+                this.logout();
+                return false;
+            }
+        },
+
+        /**
          * Login user
          */
         async login(credentials) {
@@ -106,6 +128,8 @@ export const useAuthStore = defineStore('auth', {
                 this.error = null;
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
+                // Refresh page
+                window.location.href = '/login';
             }
         },
 

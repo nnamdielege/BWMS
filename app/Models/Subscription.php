@@ -2,9 +2,82 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
 class Subscription extends Model
 {
-    //
+    protected $fillable = [
+        'user_id',
+        'plan_id',
+        'status',
+        'trial_ends_at',
+        'current_period_start',
+        'current_period_end',
+        'stripe_subscription_id',
+        'paypal_subscription_id',
+        'payment_method',
+        'cancel_at_period_end',
+        'cancelled_at',
+    ];
+
+    protected $casts = [
+        'trial_ends_at' => 'datetime',
+        'current_period_start' => 'datetime',
+        'current_period_end' => 'datetime',
+        'cancelled_at' => 'datetime',
+        'cancel_at_period_end' => 'boolean',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function plan()
+    {
+        return $this->belongsTo(SubscriptionPlan::class, 'plan_id');
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    public function invoices()
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
+    public function usageRecords()
+    {
+        return $this->hasMany(UsageRecord::class);
+    }
+
+    // Check if user is in trial period
+    public function isInTrial()
+    {
+        return $this->status === 'trial' && $this->trial_ends_at && $this->trial_ends_at->isFuture();
+    }
+
+    // Check if subscription is active
+    public function isActive()
+    {
+        return $this->status === 'active' && (!$this->current_period_end || $this->current_period_end->isFuture());
+    }
+
+    // Get days remaining in trial
+    public function trialDaysRemaining()
+    {
+        if (!$this->isInTrial()) return 0;
+        return $this->trial_ends_at->diffInDays(Carbon::now());
+    }
+
+    // Get data usage percentage
+    public function getDataUsagePercentage()
+    {
+        $limit = $this->plan->data_limit_gb * 1024; // Convert to MB
+        $used = $this->usageRecords()->sum('data_used_mb');
+        return round(($used / $limit) * 100, 2);
+    }
 }

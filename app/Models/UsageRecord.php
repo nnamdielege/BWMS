@@ -4,23 +4,21 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class Payment extends Model
+class UsageRecord extends Model
 {
     protected $fillable = [
         'subscription_id',
         'user_id',
-        'amount',
-        'currency',
-        'status',
-        'transaction_id',
-        'payment_provider',
-        'metadata',
-        'processed_at',
+        'data_used_mb',
+        'api_calls',
+        'items_tracked',
+        'reset_at',
+        'recorded_date',
     ];
 
     protected $casts = [
-        'metadata' => 'array',
-        'processed_at' => 'datetime',
+        'reset_at' => 'datetime',
+        'recorded_date' => 'date',
     ];
 
     public function subscription()
@@ -31,10 +29,5 @@ class Payment extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
-    }
-
-    public function invoice()
-    {
-        return $this->hasOne(Invoice::class);
     }
 }

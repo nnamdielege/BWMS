@@ -10,8 +10,8 @@
           </svg>
         </div>
         <div class="logo-text">
-          <h1 class="brand-name">WMS</h1>
-          <p class="brand-tagline">Warehouse System</p>
+          <h1 class="brand-name">BWMS</h1>
+          <p class="brand-tagline">Boundless Warehouse Systems</p>
         </div>
       </div>
 

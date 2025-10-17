@@ -237,6 +237,19 @@ const routes = [
         meta: { requiresAuth: true }
     },
 
+    {
+        path: '/pricing',
+        name: 'pricing',
+        component: () => import('../views/Subscription/PricingPlans.vue'),
+        meta: { requiresAuth: false }, // Allow non-authenticated users
+    },
+    {
+        path: '/subscription/manage',
+        name: 'subscription-manage',
+        component: () => import('../views/Subscription/SubscriptionManager.vue'),
+        meta: { requiresAuth: true }, // Only authenticated users
+    },
+
     // Notifications
     {
         path: '/notifications',
