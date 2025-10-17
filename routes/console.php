@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Schedule your low-stock command here
 Schedule::command('inventory:check-low-stock')->dailyAt('09:00');
+
+// Retry failed webhooks every hour
+Schedule::command('webhooks:retry')->hourly()->withoutOverlapping();

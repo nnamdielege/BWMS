@@ -1,0 +1,338 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\WebhookEvent;
+use App\Models\Subscription;
+use App\Models\User;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
+class StripeWebhookService
+{
+    /**
+     * Process webhook event
+     */
+    public function process(WebhookEvent $webhookEvent)
+    {
+        try {
+            $payload = $webhookEvent->payload;
+            $eventType = $webhookEvent->event_type;
+
+            Log::info('Processing webhook', [
+                'event_type' => $eventType,
+                'event_id' => $webhookEvent->stripe_event_id
+            ]);
+
+            // Route to appropriate handler
+            switch ($eventType) {
+                case 'invoice.payment_succeeded':
+                    $this->handleInvoicePaymentSucceeded($payload);
+                    break;
+
+                case 'invoice.payment_failed':
+                    $this->handleInvoicePaymentFailed($payload);
+                    break;
+
+                case 'customer.subscription.created':
+                    $this->handleSubscriptionCreated($payload);
+                    break;
+
+                case 'customer.subscription.updated':
+                    $this->handleSubscriptionUpdated($payload);
+                    break;
+
+                case 'customer.subscription.deleted':
+                    $this->handleSubscriptionDeleted($payload);
+                    break;
+
+                case 'customer.subscription.trial_will_end':
+                    $this->handleTrialWillEnd($payload);
+                    break;
+
+                default:
+                    Log::info('Unhandled webhook event type', ['type' => $eventType]);
+            }
+
+            $webhookEvent->markAsProcessed();
+        } catch (\Exception $e) {
+            Log::error('Webhook processing failed', [
+                'webhook_id' => $webhookEvent->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            $webhookEvent->markAsFailed($e->getMessage());
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Handle successful invoice payment (recurring payments)
+     */
+    protected function handleInvoicePaymentSucceeded(array $payload)
+    {
+        $invoice = $payload['data']['object'];
+        $stripeSubscriptionId = $invoice['subscription'] ?? null;
+
+        if (!$stripeSubscriptionId) {
+            Log::warning('No subscription in invoice', ['invoice_id' => $invoice['id']]);
+            return;
+        }
+
+        $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
+
+        if (!$subscription) {
+            Log::warning('Subscription not found', ['stripe_subscription_id' => $stripeSubscriptionId]);
+            return;
+        }
+
+        DB::transaction(function () use ($subscription, $invoice) {
+            // Update subscription
+            $subscription->update([
+                'status' => 'active',
+                'last_payment_at' => now(),
+                'current_period_end' => $invoice['period_end'] ? Carbon::createFromTimestamp($invoice['period_end']) : null,
+                'failed_payment_count' => 0, // Reset failed payment counter
+                'cancel_at_period_end' => false, // Reset cancellation flag on successful payment
+            ]);
+
+            // If subscription was in trial, end the trial
+            if ($subscription->isInTrial()) {
+                $subscription->update([
+                    'trial_ends_at' => now(),
+                ]);
+            }
+
+            Log::info('Subscription payment successful', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+                'amount' => $invoice['amount_paid'] / 100, // Stripe amounts are in cents
+                'currency' => $invoice['currency'],
+            ]);
+        });
+    }
+
+    /**
+     * Handle failed invoice payment
+     */
+    protected function handleInvoicePaymentFailed(array $payload)
+    {
+        $invoice = $payload['data']['object'];
+        $stripeSubscriptionId = $invoice['subscription'] ?? null;
+
+        if (!$stripeSubscriptionId) {
+            Log::warning('No subscription in failed invoice', ['invoice_id' => $invoice['id']]);
+            return;
+        }
+
+        $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
+
+        if (!$subscription) {
+            Log::warning('Subscription not found for payment failed', ['stripe_subscription_id' => $stripeSubscriptionId]);
+            return;
+        }
+
+        DB::transaction(function () use ($subscription, $invoice) {
+            $failedCount = $subscription->failed_payment_count + 1;
+
+            $subscription->update([
+                'failed_payment_count' => $failedCount,
+            ]);
+
+            // After 3 failed payments, suspend the subscription
+            if ($failedCount >= 3) {
+                $subscription->update([
+                    'status' => 'suspended',
+                ]);
+
+                Log::warning('Subscription suspended after 3 failed payments', [
+                    'subscription_id' => $subscription->id,
+                    'user_id' => $subscription->user_id,
+                ]);
+            } else {
+                Log::warning('Payment failed', [
+                    'subscription_id' => $subscription->id,
+                    'user_id' => $subscription->user_id,
+                    'failed_count' => $failedCount,
+                    'attempt_count' => $invoice['attempt_count'],
+                ]);
+            }
+        });
+    }
+
+    /**
+     * Handle subscription creation
+     */
+    protected function handleSubscriptionCreated(array $payload)
+    {
+        $stripeSubscription = $payload['data']['object'];
+        $stripeSubscriptionId = $stripeSubscription['id'];
+        $stripeCustomerId = $stripeSubscription['customer'];
+
+        $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
+
+        if ($subscription) {
+            $subscription->update([
+                'status' => $stripeSubscription['status'],
+                'stripe_customer_id' => $stripeCustomerId,
+            ]);
+
+            Log::info('Subscription created via webhook', [
+                'subscription_id' => $subscription->id,
+                'stripe_subscription_id' => $stripeSubscriptionId,
+            ]);
+        }
+    }
+
+    /**
+     * Handle subscription updates
+     */
+    protected function handleSubscriptionUpdated(array $payload)
+    {
+        $stripeSubscription = $payload['data']['object'];
+        $stripeSubscriptionId = $stripeSubscription['id'];
+
+        $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
+
+        if (!$subscription) {
+            Log::warning('Subscription not found for update', ['stripe_subscription_id' => $stripeSubscriptionId]);
+            return;
+        }
+
+        DB::transaction(function () use ($subscription, $stripeSubscription) {
+            $updates = [
+                'status' => $this->mapStripeStatus($stripeSubscription['status']),
+            ];
+
+            // Update current period end
+            if (isset($stripeSubscription['current_period_end'])) {
+                $updates['current_period_end'] = Carbon::createFromTimestamp($stripeSubscription['current_period_end']);
+            }
+
+            // Update current period start
+            if (isset($stripeSubscription['current_period_start'])) {
+                $updates['current_period_start'] = Carbon::createFromTimestamp($stripeSubscription['current_period_start']);
+            }
+
+            // Handle trial end
+            if (isset($stripeSubscription['trial_end']) && $stripeSubscription['trial_end']) {
+                $updates['trial_ends_at'] = Carbon::createFromTimestamp($stripeSubscription['trial_end']);
+            }
+
+            // Handle cancellation - check both cancel_at_period_end and canceled_at
+            if (isset($stripeSubscription['cancel_at_period_end'])) {
+                $updates['cancel_at_period_end'] = $stripeSubscription['cancel_at_period_end'];
+            }
+
+            if (isset($stripeSubscription['canceled_at']) && $stripeSubscription['canceled_at']) {
+                $updates['cancelled_at'] = Carbon::createFromTimestamp($stripeSubscription['canceled_at']);
+            }
+
+            $subscription->update($updates);
+
+            Log::info('Subscription updated', [
+                'subscription_id' => $subscription->id,
+                'stripe_status' => $stripeSubscription['status'],
+                'updates' => $updates,
+            ]);
+        });
+    }
+
+    /**
+     * Handle subscription deletion/cancellation
+     */
+    protected function handleSubscriptionDeleted(array $payload)
+    {
+        $stripeSubscription = $payload['data']['object'];
+        $stripeSubscriptionId = $stripeSubscription['id'];
+
+        $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
+
+        if (!$subscription) {
+            Log::warning('Subscription not found for deletion', ['stripe_subscription_id' => $stripeSubscriptionId]);
+            return;
+        }
+
+        DB::transaction(function () use ($subscription) {
+            $subscription->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancel_at_period_end' => false,
+            ]);
+
+            Log::info('Subscription cancelled via webhook', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+            ]);
+        });
+    }
+
+    /**
+     * Handle trial ending soon
+     */
+    protected function handleTrialWillEnd(array $payload)
+    {
+        $stripeSubscription = $payload['data']['object'];
+        $stripeSubscriptionId = $stripeSubscription['id'];
+
+        $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
+
+        if (!$subscription) {
+            return;
+        }
+
+        Log::info('Trial will end soon', [
+            'subscription_id' => $subscription->id,
+            'user_id' => $subscription->user_id,
+            'trial_ends_at' => $subscription->trial_ends_at,
+        ]);
+
+        // TODO: Send email notification (will be implemented in next step)
+    }
+
+    /**
+     * Map Stripe subscription status to our status
+     */
+    protected function mapStripeStatus(string $stripeStatus): string
+    {
+        return match ($stripeStatus) {
+            'active' => 'active',
+            'trialing' => 'trialing',
+            'past_due' => 'past_due',
+            'canceled' => 'cancelled',
+            'unpaid' => 'suspended',
+            'incomplete' => 'incomplete',
+            'incomplete_expired' => 'cancelled',
+            default => $stripeStatus,
+        };
+    }
+
+    /**
+     * Retry failed webhooks (can be called from a scheduled command)
+     */
+    public function retryFailedWebhooks()
+    {
+        $failedWebhooks = WebhookEvent::failedAndRetryable()
+            ->where('created_at', '>', now()->subDays(7)) // Only retry webhooks from last 7 days
+            ->get();
+
+        foreach ($failedWebhooks as $webhook) {
+            try {
+                Log::info('Retrying webhook', [
+                    'webhook_id' => $webhook->id,
+                    'retry_count' => $webhook->retry_count
+                ]);
+
+                $this->process($webhook);
+            } catch (\Exception $e) {
+                Log::error('Webhook retry failed', [
+                    'webhook_id' => $webhook->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+    }
+}

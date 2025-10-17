@@ -19,6 +19,10 @@ class Subscription extends Model
         'payment_method',
         'cancel_at_period_end',
         'cancelled_at',
+        'stripe_customer_id',
+        'last_payment_at',
+        'failed_payment_count',
+
     ];
 
     protected $casts = [
@@ -27,6 +31,7 @@ class Subscription extends Model
         'current_period_end' => 'datetime',
         'cancelled_at' => 'datetime',
         'cancel_at_period_end' => 'boolean',
+        'last_payment_at' => 'datetime',
     ];
 
     public function user()

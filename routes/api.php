@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SettingController;
+use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\UserController;
@@ -35,6 +36,9 @@ Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
 // Webhooks (no auth required)
 Route::post('/webhooks/stripe', [SubscriptionController::class, 'handleStripeWebhook'])
     ->withoutMiddleware(VerifyCsrfToken::class);
+
+Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
+    ->name('webhooks.stripe');
 
 Route::post('/webhooks/paypal', [SubscriptionController::class, 'handlePaypalWebhook'])
     ->withoutMiddleware(VerifyCsrfToken::class);
@@ -243,7 +247,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Get usage
     Route::get('/subscription/usage', [SubscriptionController::class, 'getUsage']);
 
-    Route::get('/v1/subscription/stripe/success', [SubscriptionController::class, 'handleStripeSuccess']);
+    Route::get('/subscription/stripe/success', [SubscriptionController::class, 'handleStripeSuccess']);
 
 
     // Route::get('/test-notifications', function () {
