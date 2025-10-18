@@ -81,6 +81,12 @@ export const useAuthStore = defineStore('auth', {
                 localStorage.setItem('token', this.token);
                 localStorage.setItem('user', JSON.stringify(this.user));
 
+                // Refresh the page to load all necessary data
+                // Wait a brief moment for localStorage to sync
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 100);
+
                 return response.data;
             } catch (error) {
                 this.error = error.response?.data?.message || 'Login failed';
@@ -104,6 +110,12 @@ export const useAuthStore = defineStore('auth', {
 
                 localStorage.setItem('token', this.token);
                 localStorage.setItem('user', JSON.stringify(this.user));
+
+                // Refresh the page to load all necessary data
+                // Wait a brief moment for localStorage to sync
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 100);
 
                 return response.data;
             } catch (error) {
