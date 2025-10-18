@@ -55,6 +55,9 @@ class UsageTrackingService
             return [
                 'allowed' => false,
                 'reason' => 'No active subscription',
+                'limit' => 0,
+                'current' => 0,
+                'remaining' => 0,
             ];
         }
 
@@ -63,13 +66,18 @@ class UsageTrackingService
             ->where('action_type', $actionType)
             ->first();
 
-        // If no limit exists, allow the action
+        // If no limit exists, allow the action with unlimited count
         if (!$limit) {
-            return ['allowed' => true];
+            return [
+                'allowed' => true,
+                'limit' => 999999,
+                'current' => 0,
+                'remaining' => 999999,
+            ];
         }
 
-        // Get current usage for this billing cycle
-        $billingCycleStart = $this->getBillingCycleStart($subscription);
+        // Get current usage for this billing cycle using subscription's actual period
+        $billingCycleStart = $subscription->current_period_start ?? $subscription->created_at;
         $currentUsage = UsageTracking::where('subscription_id', $subscription->id)
             ->where('action_type', $actionType)
             ->where('tracked_at', '>=', $billingCycleStart)
@@ -81,6 +89,7 @@ class UsageTrackingService
                 'reason' => "Limit reached for {$actionType}",
                 'limit' => $limit->monthly_limit,
                 'current' => $currentUsage,
+                'remaining' => 0,
             ];
         }
 
@@ -106,7 +115,9 @@ class UsageTrackingService
             return null;
         }
 
-        $billingCycleStart = $this->getBillingCycleStart($subscription);
+        // Use the subscription's actual billing period
+        $billingCycleStart = $subscription->current_period_start ?? $subscription->created_at;
+        $billingCycleEnd = $subscription->current_period_end;
 
         // Get all limits for the plan
         $limits = SubscriptionLimit::where('plan_id', $subscription->plan_id)
@@ -133,7 +144,7 @@ class UsageTrackingService
             'subscription_id' => $subscription->id,
             'plan_name' => $subscription->plan->name,
             'billing_cycle_start' => $billingCycleStart,
-            'billing_cycle_end' => $this->getBillingCycleEnd($subscription),
+            'billing_cycle_end' => $billingCycleEnd,
             'stats' => $stats,
         ];
     }
@@ -149,10 +160,9 @@ class UsageTrackingService
             return false;
         }
 
-        $billingCycleEnd = $this->getBillingCycleEnd($subscription);
-
-        if (now() < $billingCycleEnd) {
-            return false; // Not time to reset yet
+        // Only reset if current billing period has ended
+        if (!$subscription->current_period_end || now() < $subscription->current_period_end) {
+            return false;
         }
 
         // Log the reset
@@ -161,39 +171,5 @@ class UsageTrackingService
         ]);
 
         return true;
-    }
-
-    /**
-     * Get billing cycle start date
-     */
-    private function getBillingCycleStart(Subscription $subscription)
-    {
-        $currentDate = now();
-        $billingDay = $subscription->billing_day ?? $subscription->created_at->day;
-
-        // If we haven't reached the billing day this month yet
-        if ($currentDate->day < $billingDay) {
-            return $currentDate->copy()
-                ->subMonth()
-                ->day($billingDay)
-                ->startOfDay();
-        }
-
-        return $currentDate->copy()
-            ->day($billingDay)
-            ->startOfDay();
-    }
-
-    /**
-     * Get billing cycle end date
-     */
-    private function getBillingCycleEnd(Subscription $subscription)
-    {
-        $billingDay = $subscription->billing_day ?? $subscription->created_at->day;
-
-        return now()->copy()
-            ->addMonth()
-            ->day($billingDay)
-            ->startOfDay();
     }
 }

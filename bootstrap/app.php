@@ -38,7 +38,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // API middleware group
         $middleware->group('api', [
             EnsureFrontendRequestsAreStateful::class,
-            'throttle:api',
+            // 'throttle:api',
+            'throttle:10000,1',
             SubstituteBindings::class
         ]);
 
