@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue';
 import axios from 'axios';
+import { useAuthStore } from '../stores/auth';
 
 const user = ref(null);
 const roles = ref([]);
@@ -8,6 +9,8 @@ const loading = ref(false);
 const loaded = ref(false);
 
 export function usePermissions() {
+    const authStore = useAuthStore();
+
     /**
      * Fetch current user's permissions
      */
@@ -95,6 +98,20 @@ export function usePermissions() {
     });
 
     /**
+     * Check if user has access to usage stats
+     * Can view if: admin OR has active subscription
+     */
+    const hasUsageAccess = computed(() => {
+        const isAdminUser = roles.value.includes('admin');
+        const hasActiveSubscription = authStore.user?.subscription?.status === 'active' ||
+                                      authStore.user?.subscription?.status === 'trialing';
+        
+        const result = isAdminUser || hasActiveSubscription;
+        console.log('hasUsageAccess:', result, 'isAdmin:', isAdminUser, 'hasSubscription:', hasActiveSubscription);
+        return result;
+    });
+
+    /**
      * Refresh permissions (call after role/permission changes)
      */
     const refreshPermissions = async () => {
@@ -116,6 +133,7 @@ export function usePermissions() {
         hasAnyRole,
         hasAllRoles,
         isAdmin,
-        refreshPermissions
+        refreshPermissions,
+        hasUsageAccess,
     };
 }

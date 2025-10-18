@@ -257,6 +257,13 @@ const routes = [
         meta: { requiresAuth: true },
     },
 
+    {
+        path: '/usage',
+        name: 'UsageStats',
+        component: () => import('@/views/UsageStatsPage.vue'),
+        meta: { requiresAuth: true }
+    },
+
     // Notifications
     {
         path: '/notifications',

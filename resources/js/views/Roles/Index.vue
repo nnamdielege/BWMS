@@ -199,127 +199,129 @@ export default {
         this.fetchRoles();
     },
     methods: {
-        async fetchRoles() {
-            this.loading = true;
-            try {
-                const response = await axios.get('roles');
-                this.roles = response.data.data;
-            } catch (error) {
-                console.error('Error fetching roles:', error);
-                alert('Failed to load roles');
-            } finally {
-                this.loading = false;
-            }
-        },
-        async createRole() {
-            if (!this.newRole.name) {
-                alert('Please enter a role name');
-                return;
-            }
+        // In your script section, update these methods:
 
-            try {
-                await axios.post('roles', this.newRole);
-                this.showCreateModal = false;
-                this.newRole.name = '';
-                this.fetchRoles();
-                alert('Role created successfully');
-            } catch (error) {
-                console.error('Error creating role:', error);
-                alert('Failed to create role');
-            }
-        },
-        async editRole(role) {
-            this.editingRole = role;
-            this.showEditModal = true;
-            this.loadingPermissions = true;
+    async fetchRoles() {
+        this.loading = true;
+        try {
+            const response = await axios.get('/api/v1/roles');
+            this.roles = response.data.data;
+        } catch (error) {
+            console.error('Error fetching roles:', error);
+            alert('Failed to load roles: ' + (error.response?.data?.message || error.message));
+        } finally {
+            this.loading = false;
+        }
+    },
+    async createRole() {
+        if (!this.newRole.name) {
+            alert('Please enter a role name');
+            return;
+        }
 
-            try {
-                // Fetch all permissions
-                const permissionsResponse = await axios.get('permissions');
-                this.allPermissions = permissionsResponse.data.data;
+        try {
+            await axios.post('/api/v1/roles', this.newRole);
+            this.showCreateModal = false;
+            this.newRole.name = '';
+            this.fetchRoles();
+            alert('Role created successfully');
+        } catch (error) {
+            console.error('Error creating role:', error);
+            alert('Failed to create role: ' + (error.response?.data?.message || error.message));
+        }
+    },
+    async editRole(role) {
+        this.editingRole = role;
+        this.showEditModal = true;
+        this.loadingPermissions = true;
 
-                // Fetch role's current permissions
-                const roleResponse = await axios.get(`roles/${role.id}`);
-                this.currentRolePermissions = roleResponse.data.data.permissions;
-                this.selectedPermissions = this.currentRolePermissions.map(p => p.id);
-            } catch (error) {
-                console.error('Error loading permissions:', error);
-                alert('Failed to load permissions');
-            } finally {
-                this.loadingPermissions = false;
-            }
-        },
-        async updateRolePermissions() {
-            try {
-                await axios.put(`roles/${this.editingRole.id}/permissions`, {
-                    permissions: this.selectedPermissions
-                });
-                this.showEditModal = false;
-                this.fetchRoles();
-                alert('Permissions updated successfully');
-            } catch (error) {
-                console.error('Error updating permissions:', error);
-                alert('Failed to update permissions');
-            }
-        },
-        async removePermission(permissionId) {
-            if (!confirm('Are you sure you want to remove this permission?')) {
-                return;
-            }
+        try {
+            // Fetch all permissions
+            const permissionsResponse = await axios.get('/api/v1/permissions');
+            this.allPermissions = permissionsResponse.data.data;
 
-            try {
-                await axios.delete(`roles/${this.editingRole.id}/permissions/${permissionId}`);
-                
-                // Remove from current permissions list
-                this.currentRolePermissions = this.currentRolePermissions.filter(p => p.id !== permissionId);
-                
-                // Uncheck in selected permissions
-                this.selectedPermissions = this.selectedPermissions.filter(id => id !== permissionId);
-                
-                // Refresh roles list
-                this.fetchRoles();
-                
-                alert('Permission removed successfully');
-            } catch (error) {
-                console.error('Error removing permission:', error);
-                alert('Failed to remove permission');
-            }
-        },
-        async removeAllPermissions() {
-            if (!confirm('Are you sure you want to remove ALL permissions from this role?')) {
-                return;
-            }
+            // Fetch role's current permissions
+            const roleResponse = await axios.get(`/api/v1/roles/${role.id}`);
+            this.currentRolePermissions = roleResponse.data.data.permissions;
+            this.selectedPermissions = this.currentRolePermissions.map(p => p.id);
+        } catch (error) {
+            console.error('Error loading permissions:', error);
+            alert('Failed to load permissions: ' + (error.response?.data?.message || error.message));
+        } finally {
+            this.loadingPermissions = false;
+        }
+    },
+    async updateRolePermissions() {
+        try {
+            await axios.put(`/api/v1/roles/${this.editingRole.id}/permissions`, {
+                permissions: this.selectedPermissions
+            });
+            this.showEditModal = false;
+            this.fetchRoles();
+            alert('Permissions updated successfully');
+        } catch (error) {
+            console.error('Error updating permissions:', error);
+            alert('Failed to update permissions: ' + (error.response?.data?.message || error.message));
+        }
+    },
+    async removePermission(permissionId) {
+        if (!confirm('Are you sure you want to remove this permission?')) {
+            return;
+        }
 
-            try {
-                await axios.delete(`roles/${this.editingRole.id}/permissions`);
-                
-                // Clear current and selected permissions
-                this.currentRolePermissions = [];
-                this.selectedPermissions = [];
-                
-                // Refresh roles list
-                this.fetchRoles();
-                
-                alert('All permissions removed successfully');
-            } catch (error) {
-                console.error('Error removing all permissions:', error);
-                alert('Failed to remove all permissions');
-            }
-        },
-        async deleteRole(role) {
-            if (!confirm(`Are you sure you want to delete the "${role.name}" role?`)) {
-                return;
-            }
+        try {
+            await axios.delete(`/api/v1/roles/${this.editingRole.id}/permissions/${permissionId}`);
+            
+            // Remove from current permissions list
+            this.currentRolePermissions = this.currentRolePermissions.filter(p => p.id !== permissionId);
+            
+            // Uncheck in selected permissions
+            this.selectedPermissions = this.selectedPermissions.filter(id => id !== permissionId);
+            
+            // Refresh roles list
+            this.fetchRoles();
+            
+            alert('Permission removed successfully');
+        } catch (error) {
+            console.error('Error removing permission:', error);
+            alert('Failed to remove permission: ' + (error.response?.data?.message || error.message));
+        }
+    },
+    async removeAllPermissions() {
+        if (!confirm('Are you sure you want to remove ALL permissions from this role?')) {
+            return;
+        }
 
-            try {
-                await axios.delete(`roles/${role.id}`);
-                this.fetchRoles();
-                alert('Role deleted successfully');
-            } catch (error) {
-                console.error('Error deleting role:', error);
-                alert('Failed to delete role');
-            }
-        },
+        try {
+            await axios.delete(`/api/v1/roles/${this.editingRole.id}/permissions`);
+            
+            // Clear current and selected permissions
+            this.currentRolePermissions = [];
+            this.selectedPermissions = [];
+            
+            // Refresh roles list
+            this.fetchRoles();
+            
+            alert('All permissions removed successfully');
+        } catch (error) {
+            console.error('Error removing all permissions:', error);
+            alert('Failed to remove all permissions: ' + (error.response?.data?.message || error.message));
+        }
+    },
+    async deleteRole(role) {
+        if (!confirm(`Are you sure you want to delete the "${role.name}" role?`)) {
+            return;
+        }
+
+        try {
+            await axios.delete(`/api/v1/roles/${role.id}`);
+            this.fetchRoles();
+            alert('Role deleted successfully');
+        } catch (error) {
+            console.error('Error deleting role:', error);
+            alert('Failed to delete role: ' + (error.response?.data?.message || error.message));
+        }
+    },
         isSystemRole(name) {
             return ['admin', 'user'].includes(name);
         },

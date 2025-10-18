@@ -22,10 +22,16 @@ class SubscriptionPlan extends Model
     protected $casts = [
         'features' => 'array',
         'is_active' => 'boolean',
+        'price_monthly' => 'decimal:2',
     ];
 
     public function subscriptions()
     {
         return $this->hasMany(Subscription::class, 'plan_id');
+    }
+
+    public function usageLimits()
+    {
+        return $this->hasMany(SubscriptionLimit::class, 'plan_id');
     }
 }

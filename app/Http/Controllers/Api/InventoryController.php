@@ -7,12 +7,20 @@ use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\Warehouse;
 use App\Models\InventoryTransaction;
+use App\Services\UsageTrackingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class InventoryController extends Controller
 {
+    protected $usageService;
+
+    public function __construct(UsageTrackingService $usageService)
+    {
+        $this->usageService = $usageService;
+    }
+
     public function index(Request $request)
     {
         try {
@@ -74,8 +82,26 @@ class InventoryController extends Controller
         }
     }
 
+    /**
+     * Adjust inventory (add/remove stock)
+     */
     public function adjust(Request $request)
     {
+        // CHECK USAGE LIMIT FIRST
+        $canAdjust = $this->usageService->canPerformAction(
+            $request->user()->id,
+            'inventory_adjusted'
+        );
+
+        if (!$canAdjust['allowed']) {
+            return response()->json([
+                'message' => 'Usage limit exceeded',
+                'error' => $canAdjust['reason'],
+                'limit' => $canAdjust['limit'] ?? null,
+                'current' => $canAdjust['current'] ?? null,
+            ], 403);
+        }
+
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
             'warehouse_id' => 'required|exists:warehouses,id',
@@ -123,11 +149,30 @@ class InventoryController extends Controller
                 'user_id' => auth()->id(),
             ]);
 
+            // TRACK USAGE
+            $this->usageService->track(
+                $request->user()->id,
+                'inventory_adjusted',
+                'inventory',
+                $inventory->id,
+                [
+                    'product_id' => $validated['product_id'],
+                    'warehouse_id' => $validated['warehouse_id'],
+                    'quantity_change' => $validated['quantity'],
+                    'type' => $validated['type'],
+                    'reason' => $validated['reason'],
+                ]
+            );
+
             DB::commit();
 
             return response()->json([
                 'message' => 'Inventory adjusted successfully',
-                'data' => $inventory->load(['product', 'warehouse'])
+                'data' => $inventory->load(['product', 'warehouse']),
+                'usage' => [
+                    'remaining' => $canAdjust['remaining'] - 1,
+                    'limit' => $canAdjust['limit'],
+                ]
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -141,8 +186,26 @@ class InventoryController extends Controller
         }
     }
 
+    /**
+     * Transfer stock between warehouses
+     */
     public function transfer(Request $request)
     {
+        // CHECK USAGE LIMIT FIRST
+        $canTransfer = $this->usageService->canPerformAction(
+            $request->user()->id,
+            'inventory_adjusted'
+        );
+
+        if (!$canTransfer['allowed']) {
+            return response()->json([
+                'message' => 'Usage limit exceeded',
+                'error' => $canTransfer['reason'],
+                'limit' => $canTransfer['limit'] ?? null,
+                'current' => $canTransfer['current'] ?? null,
+            ], 403);
+        }
+
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
             'from_warehouse_id' => 'required|exists:warehouses,id',
@@ -215,6 +278,20 @@ class InventoryController extends Controller
                 'user_id' => auth()->id(),
             ]);
 
+            // TRACK USAGE (both as separate actions or one combined)
+            $this->usageService->track(
+                $request->user()->id,
+                'inventory_adjusted',
+                'inventory_transfer',
+                $fromInventory->id,
+                [
+                    'product_id' => $validated['product_id'],
+                    'from_warehouse' => $validated['from_warehouse_id'],
+                    'to_warehouse' => $validated['to_warehouse_id'],
+                    'quantity' => $validated['quantity'],
+                ]
+            );
+
             DB::commit();
 
             return response()->json([
@@ -222,6 +299,10 @@ class InventoryController extends Controller
                 'data' => [
                     'from' => $fromInventory->load(['product', 'warehouse']),
                     'to' => $toInventory->load(['product', 'warehouse'])
+                ],
+                'usage' => [
+                    'remaining' => $canTransfer['remaining'] - 1,
+                    'limit' => $canTransfer['limit'],
                 ]
             ]);
         } catch (\Exception $e) {

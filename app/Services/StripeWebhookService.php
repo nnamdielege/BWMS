@@ -2,11 +2,16 @@
 
 namespace App\Services;
 
+use App\Mail\PaymentSuccessfulMail;
+use App\Mail\PaymentFailedMail;
+use App\Mail\SubscriptionActivatedMail;
+use App\Mail\SubscriptionSuspendedMail;
 use App\Models\WebhookEvent;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Carbon\Carbon;
 
 class StripeWebhookService
@@ -90,6 +95,8 @@ class StripeWebhookService
         }
 
         DB::transaction(function () use ($subscription, $invoice) {
+            $wasInTrial = $subscription->isInTrial();
+
             // Update subscription
             $subscription->update([
                 'status' => 'active',
@@ -100,17 +107,51 @@ class StripeWebhookService
             ]);
 
             // If subscription was in trial, end the trial
-            if ($subscription->isInTrial()) {
+            if ($wasInTrial) {
                 $subscription->update([
                     'trial_ends_at' => now(),
                 ]);
+
+                // Send subscription activated email
+                try {
+                    Mail::to($subscription->user->email)->send(
+                        new SubscriptionActivatedMail($subscription)
+                    );
+
+                    Log::info('✅ Subscription activated email sent', [
+                        'user_email' => $subscription->user->email,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('❌ Failed to send subscription activated email', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            } else {
+                // Send payment successful email for recurring payments
+                $amount = ($invoice['amount_paid'] ?? 0) / 100;
+
+                try {
+                    Mail::to($subscription->user->email)->send(
+                        new PaymentSuccessfulMail($subscription, $amount)
+                    );
+
+                    Log::info('✅ Payment successful email sent', [
+                        'user_email' => $subscription->user->email,
+                        'amount' => $amount,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('❌ Failed to send payment successful email', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             Log::info('Subscription payment successful', [
                 'subscription_id' => $subscription->id,
                 'user_id' => $subscription->user_id,
-                'amount' => $invoice['amount_paid'] / 100, // Stripe amounts are in cents
-                'currency' => $invoice['currency'],
+                'amount' => ($invoice['amount_paid'] ?? 0) / 100,
+                'currency' => $invoice['currency'] ?? 'usd',
+                'was_in_trial' => $wasInTrial,
             ]);
         });
     }
@@ -120,6 +161,7 @@ class StripeWebhookService
      */
     protected function handleInvoicePaymentFailed(array $payload)
     {
+        Log::info('🔥🔥🔥 PAYMENT FAILED METHOD CALLED 🔥🔥🔥');
         $invoice = $payload['data']['object'];
         $stripeSubscriptionId = $invoice['subscription'] ?? null;
 
@@ -142,22 +184,55 @@ class StripeWebhookService
                 'failed_payment_count' => $failedCount,
             ]);
 
+            $amount = ($invoice['amount_due'] ?? 0) / 100;
+
             // After 3 failed payments, suspend the subscription
             if ($failedCount >= 3) {
                 $subscription->update([
                     'status' => 'suspended',
                 ]);
 
+                // Send subscription suspended email
+                try {
+                    Mail::to($subscription->user->email)->send(
+                        new SubscriptionSuspendedMail($subscription)
+                    );
+
+                    Log::info('✅ Subscription suspended email sent', [
+                        'user_email' => $subscription->user->email,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('❌ Failed to send suspended email', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
                 Log::warning('Subscription suspended after 3 failed payments', [
                     'subscription_id' => $subscription->id,
                     'user_id' => $subscription->user_id,
                 ]);
             } else {
+                // Send payment failed email
+                try {
+                    Mail::to($subscription->user->email)->send(
+                        new PaymentFailedMail($subscription, $amount)
+                    );
+
+                    Log::info('✅ Payment failed email sent', [
+                        'user_email' => $subscription->user->email,
+                        'failed_count' => $failedCount,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('❌ Failed to send payment failed email', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
                 Log::warning('Payment failed', [
                     'subscription_id' => $subscription->id,
                     'user_id' => $subscription->user_id,
                     'failed_count' => $failedCount,
-                    'attempt_count' => $invoice['attempt_count'],
+                    'attempt_count' => $invoice['attempt_count'] ?? 0,
                 ]);
             }
         });
@@ -290,7 +365,20 @@ class StripeWebhookService
             'trial_ends_at' => $subscription->trial_ends_at,
         ]);
 
-        // TODO: Send email notification (will be implemented in next step)
+        // Send trial ending soon email
+        try {
+            Mail::to($subscription->user->email)->send(
+                new \App\Mail\TrialEndingSoonMail($subscription)
+            );
+
+            Log::info('✅ Trial ending soon email sent', [
+                'user_email' => $subscription->user->email,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('❌ Failed to send trial ending email', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

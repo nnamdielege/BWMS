@@ -89,4 +89,14 @@ class Subscription extends Model
         $used = $this->usageRecords()->sum('data_used_mb');
         return round(($used / $limit) * 100, 2);
     }
+
+    public function usageTracking()
+    {
+        return $this->hasMany(UsageTracking::class);
+    }
+
+    public function resetLogs()
+    {
+        return $this->hasMany(UsageResetLog::class);
+    }
 }

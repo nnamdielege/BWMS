@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\SupplierController;
+use App\Http\Controllers\Api\UsageTrackingController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WarehouseLocationController;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -244,6 +245,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subscription/usage', [SubscriptionController::class, 'getUsage']);
 
     Route::get('/subscription/stripe/success', [SubscriptionController::class, 'handleStripeSuccess']);
+
+    // ───────────────────────────────────────────────────────────
+    // Usage Tracking Routes
+    // ───────────────────────────────────────────────────────────
+
+
+    Route::prefix('usage')->group(function () {
+        Route::get('stats', [UsageTrackingController::class, 'getStats']);
+        Route::post('can-perform', [UsageTrackingController::class, 'canPerform']);
+        Route::post('track', [UsageTrackingController::class, 'track']);
+    });
 
 
     // Route::get('/test-notifications', function () {

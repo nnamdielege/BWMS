@@ -7,6 +7,7 @@ use App\Http\Requests\StoreProductRequest;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Inventory;
+use App\Services\UsageTrackingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -14,6 +15,13 @@ use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
+    protected $usageService;
+
+    public function __construct(UsageTrackingService $usageService)
+    {
+        $this->usageService = $usageService;
+    }
+
     /**
      * Display a listing of products
      */
@@ -80,16 +88,48 @@ class ProductController extends Controller
      */
     public function store(StoreProductRequest $request)
     {
+        // CHECK USAGE LIMIT FIRST
+        $canCreate = $this->usageService->canPerformAction(
+            $request->user()->id,
+            'product_created'
+        );
+
+        if (!$canCreate['allowed']) {
+            return response()->json([
+                'message' => 'Usage limit exceeded',
+                'error' => $canCreate['reason'],
+                'limit' => $canCreate['limit'] ?? null,
+                'current' => $canCreate['current'] ?? null,
+            ], 403);
+        }
+
         DB::beginTransaction();
 
         try {
             $product = Product::create($request->validated());
 
+            // TRACK USAGE
+            $this->usageService->track(
+                $request->user()->id,
+                'product_created',
+                'product',
+                $product->id,
+                [
+                    'sku' => $product->sku,
+                    'name' => $product->name,
+                    'category_id' => $product->category_id,
+                ]
+            );
+
             DB::commit();
 
             return response()->json([
                 'message' => 'Product created successfully',
-                'data' => $product->load('category')
+                'data' => $product->load('category'),
+                'usage' => [
+                    'remaining' => $canCreate['remaining'] - 1,
+                    'limit' => $canCreate['limit'],
+                ]
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -454,6 +494,19 @@ class ProductController extends Controller
      */
     public function duplicate($id)
     {
+        // CHECK USAGE LIMIT
+        $canCreate = $this->usageService->canPerformAction(
+            auth()->id(),
+            'product_created'
+        );
+
+        if (!$canCreate['allowed']) {
+            return response()->json([
+                'message' => 'Usage limit exceeded',
+                'error' => $canCreate['reason'],
+            ], 403);
+        }
+
         DB::beginTransaction();
 
         try {
@@ -466,6 +519,19 @@ class ProductController extends Controller
             $newProduct->name = $originalProduct->name . ' (Copy)';
             $newProduct->is_active = false; // Set as inactive by default
             $newProduct->save();
+
+            // TRACK USAGE
+            $this->usageService->track(
+                auth()->id(),
+                'product_created',
+                'product',
+                $newProduct->id,
+                [
+                    'sku' => $newProduct->sku,
+                    'name' => $newProduct->name,
+                    'duplicated_from' => $originalProduct->id,
+                ]
+            );
 
             DB::commit();
 
