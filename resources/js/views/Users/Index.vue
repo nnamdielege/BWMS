@@ -164,23 +164,24 @@ export default {
     },
     methods: {
         async fetchUsers() {
-            this.loading = true;
-            try {
-                const response = await axios.get('users');
-                this.users = response.data.data;
-            } catch (error) {
-                console.error('Error fetching users:', error);
-                alert('Failed to load users');
-            } finally {
-                this.loading = false;
-            }
+    this.loading = true;
+    try {
+        const response = await axios.get('/api/v1/users');
+        this.users = response.data.data;
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        alert('Failed to load users: ' + (error.response?.data?.message || error.message));
+    } finally {
+        this.loading = false;
+    }
         },
         async fetchRoles() {
             try {
-                const response = await axios.get('roles');
+                const response = await axios.get('/api/v1/roles');
                 this.roles = response.data.data;
             } catch (error) {
                 console.error('Error fetching roles:', error);
+                alert('Failed to load roles: ' + (error.response?.data?.message || error.message));
             }
         },
         editUserRole(user) {
@@ -194,17 +195,17 @@ export default {
             this.showEditModal = true;
         },
         async updateUserRole() {
-            try {
-                await axios.post(`users/${this.editingUser.id}/assign-roles`, {
-                    roles: this.selectedRoles
-                });
-                this.showEditModal = false;
-                this.fetchUsers();
-                alert('Roles updated successfully');
-            } catch (error) {
-                console.error('Error updating user roles:', error);
-                alert('Failed to update roles');
-            }
+    try {
+        await axios.post(`/api/v1/users/${this.editingUser.id}/assign-roles`, {
+            roles: this.selectedRoles
+        });
+        this.showEditModal = false;
+        this.fetchUsers();
+        alert('Roles updated successfully');
+    } catch (error) {
+        console.error('Error updating user roles:', error);
+        alert('Failed to update roles: ' + (error.response?.data?.message || error.message));
+    }
         },
         async removeRoleFromUser(user, roleId) {
             if (!confirm(`Are you sure you want to remove this role from ${user.name}?`)) {
@@ -212,60 +213,60 @@ export default {
             }
 
             try {
-                await axios.delete(`users/${user.id}/roles/${roleId}`);
+                await axios.delete(`/api/v1/users/${user.id}/roles/${roleId}`);
                 this.fetchUsers();
                 alert('Role removed successfully');
             } catch (error) {
                 console.error('Error removing role:', error);
-                alert('Failed to remove role');
+                alert('Failed to remove role: ' + (error.response?.data?.message || error.message));
             }
         },
         async removeRoleFromUserInModal(roleId) {
-            if (!confirm('Are you sure you want to remove this role?')) {
-                return;
-            }
+    if (!confirm('Are you sure you want to remove this role?')) {
+        return;
+    }
 
-            try {
-                await axios.delete(`users/${this.editingUser.id}/roles/${roleId}`);
-                
-                // Update current roles list
-                this.currentUserRoles = this.currentUserRoles.filter(r => r.id !== roleId);
-                
-                // Update selected roles
-                const removedRole = this.currentUserRoles.find(r => r.id === roleId);
-                if (removedRole) {
-                    this.selectedRoles = this.selectedRoles.filter(name => name !== removedRole.name);
-                }
-                
-                // Refresh users list
-                this.fetchUsers();
-                
-                alert('Role removed successfully');
-            } catch (error) {
-                console.error('Error removing role:', error);
-                alert('Failed to remove role');
-            }
+    try {
+        await axios.delete(`/api/v1/users/${this.editingUser.id}/roles/${roleId}`);
+        
+        // Update current roles list
+        this.currentUserRoles = this.currentUserRoles.filter(r => r.id !== roleId);
+        
+        // Update selected roles
+        const removedRole = this.currentUserRoles.find(r => r.id === roleId);
+        if (removedRole) {
+            this.selectedRoles = this.selectedRoles.filter(name => name !== removedRole.name);
+        }
+        
+        // Refresh users list
+        this.fetchUsers();
+        
+        alert('Role removed successfully');
+    } catch (error) {
+        console.error('Error removing role:', error);
+        alert('Failed to remove role: ' + (error.response?.data?.message || error.message));
+    }
         },
         async removeAllRolesFromUser() {
-            if (!confirm(`Are you sure you want to remove ALL roles from ${this.editingUser.name}?`)) {
-                return;
-            }
+    if (!confirm(`Are you sure you want to remove ALL roles from ${this.editingUser.name}?`)) {
+        return;
+    }
 
-            try {
-                await axios.delete(`users/${this.editingUser.id}/roles`);
-                
-                // Clear current and selected roles
-                this.currentUserRoles = [];
-                this.selectedRoles = [];
-                
-                // Refresh users list
-                this.fetchUsers();
-                
-                alert('All roles removed successfully');
-            } catch (error) {
-                console.error('Error removing all roles:', error);
-                alert('Failed to remove all roles');
-            }
+    try {
+        await axios.delete(`/api/v1/users/${this.editingUser.id}/roles`);
+        
+        // Clear current and selected roles
+        this.currentUserRoles = [];
+        this.selectedRoles = [];
+        
+        // Refresh users list
+        this.fetchUsers();
+        
+        alert('All roles removed successfully');
+    } catch (error) {
+        console.error('Error removing all roles:', error);
+        alert('Failed to remove all roles: ' + (error.response?.data?.message || error.message));
+    }
         },
         formatDate(date) {
             return new Date(date).toLocaleDateString();
