@@ -7,6 +7,7 @@ use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\Payment;
 use App\Models\Invoice;
+use App\Services\SubscriptionCancellationService;
 use Illuminate\Http\Request;
 use Stripe\Stripe;
 use Carbon\Carbon;
@@ -14,11 +15,18 @@ use Illuminate\Support\Facades\Log;
 
 class SubscriptionController extends Controller
 {
-    public function __construct()
-    {
-        Stripe::setApiKey(config('services.stripe.secret'));
-    }
+    protected $cancellationService;
 
+    public function __construct(SubscriptionCancellationService $cancellationService)
+    {
+        // Set Stripe key from config, not env
+        $key = config('services.stripe.secret');
+        if ($key) {
+            Stripe::setApiKey($key);
+        }
+
+        $this->cancellationService = $cancellationService;
+    }
     /**
      * Get all subscription plans
      */
@@ -58,6 +66,9 @@ class SubscriptionController extends Controller
                 'is_active' => $subscription->isActive(),
                 'is_in_trial' => $subscription->isInTrial(),
                 'current_period_end' => $subscription->current_period_end,
+                'cancel_at_period_end' => $subscription->cancel_at_period_end,
+                'cancels_at' => $subscription->cancels_at,
+                'cancellation_reason' => $subscription->cancellation_reason,
             ]
         ]);
     }
@@ -123,7 +134,7 @@ class SubscriptionController extends Controller
                                 'name' => $plan->name . ' Plan',
                                 'description' => $plan->description,
                             ],
-                            'unit_amount' => intval($plan->price_monthly * 100), // Convert to cents
+                            'unit_amount' => intval($plan->price_monthly * 100),
                             'recurring' => [
                                 'interval' => 'month',
                                 'interval_count' => 1,
@@ -235,9 +246,137 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Cancel subscription
+     * Cancel subscription immediately
+     * POST /api/v1/subscription/cancel
      */
     public function cancelSubscription(Request $request)
+    {
+        $request->validate([
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $user = $request->user();
+        $subscription = $user->subscription;
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active subscription'
+            ], 404);
+        }
+
+        if ($subscription->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Subscription is already cancelled'
+            ], 422);
+        }
+
+        try {
+            // Try to cancel on Stripe (optional - local cancellation is what matters)
+            if ($subscription->stripe_subscription_id) {
+                try {
+                    $key = config('services.stripe.secret');
+                    if ($key) {
+                        Stripe::setApiKey($key);
+                        \Stripe\Subscription::retrieve($subscription->stripe_subscription_id)->cancel();
+                    } else {
+                        Log::warning('Stripe API key not configured, skipping Stripe cancellation');
+                    }
+                } catch (\Exception $stripeError) {
+                    Log::warning('Stripe cancellation skipped: ' . $stripeError->getMessage());
+                    // Continue - local cancellation is what matters
+                }
+            }
+
+            // Local cancellation (this is what matters)
+            $result = $this->cancellationService->cancelImmediately(
+                $subscription,
+                $request->reason
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['message']
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to cancel subscription', [
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to cancel subscription'
+            ], 500);
+        }
+    }
+
+    /**
+     * Schedule cancellation at end of billing period
+     * POST /api/v1/subscription/cancel-at-period-end
+     */
+    public function scheduleCancellation(Request $request)
+    {
+        $request->validate([
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $user = $request->user();
+        $subscription = $user->subscription;
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active subscription'
+            ], 404);
+        }
+
+        if ($subscription->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Subscription is already cancelled'
+            ], 422);
+        }
+
+        try {
+            // Schedule Stripe cancellation if it exists
+            if ($subscription->stripe_subscription_id) {
+                \Stripe\Subscription::update(
+                    $subscription->stripe_subscription_id,
+                    ['cancel_at_period_end' => true]
+                );
+            }
+
+            // Use cancellation service
+            $result = $this->cancellationService->scheduleForCancellation(
+                $subscription,
+                $request->reason
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['message'],
+                'cancels_at' => $result['cancels_at'],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to schedule cancellation', [
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to schedule cancellation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Reactivate scheduled cancellation
+     * POST /api/v1/subscription/reactivate
+     */
+    public function reactivateSubscription(Request $request)
     {
         $user = $request->user();
         $subscription = $user->subscription;
@@ -249,26 +388,38 @@ class SubscriptionController extends Controller
             ], 404);
         }
 
+        if (!$subscription->cancel_at_period_end) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Subscription is not scheduled for cancellation'
+            ], 422);
+        }
+
         try {
-            // Cancel Stripe subscription
+            // Reactivate Stripe subscription if it exists
             if ($subscription->stripe_subscription_id) {
-                \Stripe\Subscription::retrieve($subscription->stripe_subscription_id)->cancel();
+                \Stripe\Subscription::update(
+                    $subscription->stripe_subscription_id,
+                    ['cancel_at_period_end' => false]
+                );
             }
 
-            // Update local subscription
-            $subscription->update([
-                'status' => 'cancelled',
-                'cancelled_at' => Carbon::now(),
-            ]);
+            // Use cancellation service
+            $result = $this->cancellationService->reactivate($subscription);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Subscription cancelled successfully'
+                'message' => $result['message']
             ]);
         } catch (\Exception $e) {
+            Log::error('Failed to reactivate subscription', [
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to cancel subscription: ' . $e->getMessage()
+                'message' => 'Failed to reactivate subscription: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -315,7 +466,7 @@ class SubscriptionController extends Controller
             ->whereDate('recorded_date', '>=', Carbon::now()->startOfMonth())
             ->get();
 
-        $totalDataUsed = $usage->sum('data_used_mb') / 1024; // Convert to GB
+        $totalDataUsed = $usage->sum('data_used_mb') / 1024;
         $totalApiCalls = $usage->sum('api_calls');
         $dataLimit = $subscription->plan->data_limit_gb;
 
@@ -331,7 +482,6 @@ class SubscriptionController extends Controller
         ]);
     }
 
-
     /**
      * Handle Stripe payment success
      */
@@ -345,7 +495,6 @@ class SubscriptionController extends Controller
         $sessionId = $request->session_id;
 
         try {
-            // Retrieve session from Stripe
             $session = \Stripe\Checkout\Session::retrieve($sessionId);
 
             if ($session->payment_status !== 'paid') {
@@ -355,7 +504,6 @@ class SubscriptionController extends Controller
                 ], 400);
             }
 
-            // Find or create subscription
             $subscription = Subscription::where('stripe_subscription_id', $session->subscription)
                 ->orWhere('user_id', $user->id)
                 ->first();
@@ -367,7 +515,6 @@ class SubscriptionController extends Controller
                 ], 404);
             }
 
-            // Verify subscription is for correct user
             if ($subscription->user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
@@ -375,7 +522,6 @@ class SubscriptionController extends Controller
                 ], 403);
             }
 
-            // Update subscription status
             $subscription->update([
                 'status' => 'active',
                 'stripe_subscription_id' => $session->subscription,
@@ -383,7 +529,6 @@ class SubscriptionController extends Controller
                 'current_period_end' => Carbon::now()->addMonth(),
             ]);
 
-            // Record payment if not already recorded
             $payment = Payment::where('transaction_id', $session->payment_intent)->first();
 
             if (!$payment) {
@@ -399,7 +544,6 @@ class SubscriptionController extends Controller
                 ]);
             }
 
-            // Generate invoice if not already generated
             $invoice = Invoice::where('subscription_id', $subscription->id)
                 ->where('status', 'paid')
                 ->first();

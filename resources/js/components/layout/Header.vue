@@ -81,7 +81,7 @@
 
                         <!-- My Subscription -->
                         <router-link 
-                            v-if="hasUsageAccess"
+                            
                             to="/subscription/manage" 
                             class="dropdown-item" 
                             @click="showUserDropdown = false"

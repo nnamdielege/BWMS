@@ -258,6 +258,13 @@ const routes = [
     },
 
     {
+        path: '/subscription/cancel',
+        name: 'SubscriptionCancel',
+        component: () => import('@/views/Subscription/CancellationForm.vue'),
+        meta: { requiresAuth: true }
+    },
+
+    {
         path: '/usage',
         name: 'UsageStats',
         component: () => import('@/views/UsageStatsPage.vue'),
