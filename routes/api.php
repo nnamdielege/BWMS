@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PlanChangeController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
@@ -245,6 +246,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subscription/usage', [SubscriptionController::class, 'getUsage']);
 
     Route::get('/subscription/stripe/success', [SubscriptionController::class, 'handleStripeSuccess']);
+
+    Route::get('/subscription/plans/available', [PlanChangeController::class, 'availablePlans']);
+    Route::post('/subscription/plans/calculate', [PlanChangeController::class, 'calculateChange']);
+    Route::post('/subscription/plans/change', [PlanChangeController::class, 'changePlan']);
 
     // ───────────────────────────────────────────────────────────
     // Usage Tracking Routes
