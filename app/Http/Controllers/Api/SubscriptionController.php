@@ -19,14 +19,18 @@ class SubscriptionController extends Controller
 
     public function __construct(SubscriptionCancellationService $cancellationService)
     {
-        // Set Stripe key from config, not env
-        $key = config('services.stripe.secret');
-        if ($key) {
-            Stripe::setApiKey($key);
+        try {
+            $stripeSecret = config('services.stripe.secret');
+            if ($stripeSecret) {
+                Stripe::setApiKey($stripeSecret);
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to set Stripe key in constructor: ' . $e->getMessage());
         }
 
         $this->cancellationService = $cancellationService;
     }
+
     /**
      * Get all subscription plans
      */
@@ -45,34 +49,38 @@ class SubscriptionController extends Controller
      */
     public function getCurrentSubscription(Request $request)
     {
-        $user = $request->user();
-        $subscription = $user->subscription;
+        $subscription = $request->user()->subscription;
 
         if (!$subscription) {
             return response()->json([
                 'success' => false,
-                'message' => 'No active subscription'
+                'message' => 'No active subscription found',
             ], 404);
         }
+
+        $subscription->load('plan');
 
         return response()->json([
             'success' => true,
             'data' => [
-                'subscription' => $subscription,
-                'plan' => $subscription->plan,
+                'id' => $subscription->id,
+                'plan' => [
+                    'id' => $subscription->plan->id,
+                    'name' => $subscription->plan->name,
+                    'price' => $subscription->plan->price_monthly,
+                    'interval' => 'month',
+                    'features' => $subscription->plan->features ?? [],
+                ],
                 'status' => $subscription->status,
-                'trial_days_remaining' => $subscription->trialDaysRemaining(),
-                'data_usage_percentage' => $subscription->getDataUsagePercentage(),
-                'is_active' => $subscription->isActive(),
-                'is_in_trial' => $subscription->isInTrial(),
+                'amount' => $subscription->amount,
+                'current_period_start' => $subscription->current_period_start,
                 'current_period_end' => $subscription->current_period_end,
+                'trial_ends_at' => $subscription->trial_ends_at,
                 'cancel_at_period_end' => $subscription->cancel_at_period_end,
-                'cancels_at' => $subscription->cancels_at,
-                'cancellation_reason' => $subscription->cancellation_reason,
-            ]
+                'cancelled_at' => $subscription->cancelled_at,
+            ],
         ]);
     }
-
     /**
      * Start trial subscription
      */
@@ -119,20 +127,47 @@ class SubscriptionController extends Controller
             'plan_id' => 'required|exists:subscription_plans,id',
         ]);
 
+        $stripeSecret = config('services.stripe.secret');
+        if (!$stripeSecret) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Stripe is not configured'
+            ], 500);
+        }
+
+        Stripe::setApiKey($stripeSecret);
+
         $user = $request->user();
         $plan = SubscriptionPlan::find($request->plan_id);
 
+        if (!$plan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Plan not found'
+            ], 404);
+        }
+
         try {
-            $session = \Stripe\Checkout\Session::create([
-                'customer_email' => $user->email,
-                'payment_method_types' => ['card'],
+            // Create a provisional subscription in our database
+            $subscription = Subscription::updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'plan_id' => $plan->id,
+                    'status' => 'pending',  // Mark as pending until payment succeeds
+                    'payment_method' => 'stripe',
+                    'amount' => $plan->price_monthly,
+                ]
+            );
+
+            // Create a payment link
+            $paymentLink = \Stripe\PaymentLink::create([
                 'line_items' => [
                     [
                         'price_data' => [
                             'currency' => 'aud',
                             'product_data' => [
                                 'name' => $plan->name . ' Plan',
-                                'description' => $plan->description,
+                                'description' => $plan->description ?? '',
                             ],
                             'unit_amount' => intval($plan->price_monthly * 100),
                             'recurring' => [
@@ -143,27 +178,42 @@ class SubscriptionController extends Controller
                         'quantity' => 1,
                     ],
                 ],
-                'mode' => 'subscription',
-                'success_url' => config('app.url') . '/subscription/success?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url' => config('app.url') . '/subscription/cancel',
+                'after_completion' => [
+                    'type' => 'redirect',
+                    'redirect' => [
+                        'url' => config('app.url') . '/subscription/success',
+                    ],
+                ],
                 'metadata' => [
+                    'subscription_id' => $subscription->id,  // Store our DB subscription ID
                     'user_id' => $user->id,
                     'plan_id' => $plan->id,
                 ],
             ]);
 
+            Log::info('Payment link created', [
+                'subscription_id' => $subscription->id,
+                'payment_link' => $paymentLink->id,
+            ]);
+
             return response()->json([
                 'success' => true,
-                'success_url' => config('app.url') . '/subscription/success?session_id={CHECKOUT_SESSION_ID}',
-                'session_id' => $session->id,
+                'checkout_url' => $paymentLink->url,
             ]);
         } catch (\Exception $e) {
+            Log::error('Stripe payment link error', [
+                'message' => $e->getMessage(),
+                'user_id' => $user->id,
+                'plan_id' => $plan->id,
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create checkout session: ' . $e->getMessage()
+                'message' => 'Failed to create checkout: ' . $e->getMessage()
             ], 500);
         }
     }
+
 
     /**
      * Handle Stripe webhook
@@ -205,21 +255,27 @@ class SubscriptionController extends Controller
         $subscription = Subscription::where('user_id', $session->metadata->user_id)->first();
 
         if (!$subscription) {
+            $plan = SubscriptionPlan::find($session->metadata->plan_id);
             $subscription = Subscription::create([
                 'user_id' => $session->metadata->user_id,
                 'plan_id' => $session->metadata->plan_id,
                 'status' => 'active',
                 'payment_method' => 'stripe',
+                'amount' => $plan->price_monthly,
+                'current_period_start' => Carbon::now(),
+                'current_period_end' => Carbon::now()->addMonth(),
+            ]);
+        } else {
+            $plan = $subscription->plan;
+            $subscription->update([
+                'stripe_subscription_id' => $session->subscription,
+                'status' => 'active',
+                'payment_method' => 'stripe',
+                'amount' => $plan->price_monthly,
+                'current_period_start' => Carbon::now(),
+                'current_period_end' => Carbon::now()->addMonth(),
             ]);
         }
-
-        $subscription->update([
-            'stripe_subscription_id' => $session->subscription,
-            'status' => 'active',
-            'payment_method' => 'stripe',
-            'current_period_start' => Carbon::now(),
-            'current_period_end' => Carbon::now()->addMonth(),
-        ]);
 
         // Record payment
         Payment::create([
@@ -273,23 +329,62 @@ class SubscriptionController extends Controller
         }
 
         try {
-            // Try to cancel on Stripe (optional - local cancellation is what matters)
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            $refundAmount = 0;
+
+            // Process prorated refund
             if ($subscription->stripe_subscription_id) {
                 try {
-                    $key = config('services.stripe.secret');
-                    if ($key) {
-                        Stripe::setApiKey($key);
-                        \Stripe\Subscription::retrieve($subscription->stripe_subscription_id)->cancel();
-                    } else {
-                        Log::warning('Stripe API key not configured, skipping Stripe cancellation');
+                    // Get the latest invoice
+                    $invoices = \Stripe\Invoice::all([
+                        'subscription' => $subscription->stripe_subscription_id,
+                        'limit' => 1,
+                    ]);
+
+                    if (!empty($invoices->data)) {
+                        $invoice = $invoices->data[0];
+
+                        // Calculate prorated refund
+                        if ($invoice->paid && $invoice->amount_paid > 0) {
+                            $now = now();
+                            $periodEnd = \Carbon\Carbon::createFromTimestamp($invoice->period_end);
+
+                            // Days remaining in billing cycle
+                            $daysRemaining = $now->diffInDays($periodEnd);
+                            $totalDaysInCycle = \Carbon\Carbon::createFromTimestamp($invoice->period_start)
+                                ->diffInDays($periodEnd);
+
+                            if ($daysRemaining > 0 && $totalDaysInCycle > 0) {
+                                // Calculate prorated amount
+                                $dailyRate = $invoice->amount_paid / $totalDaysInCycle;
+                                $refundAmount = intval($dailyRate * $daysRemaining);
+
+                                // Process refund
+                                if ($refundAmount > 0) {
+                                    \Stripe\Refund::create([
+                                        'payment_intent' => $invoice->payment_intent,
+                                        'amount' => $refundAmount,
+                                    ]);
+
+                                    Log::info('Prorated refund processed', [
+                                        'subscription_id' => $subscription->id,
+                                        'refund_amount' => $refundAmount / 100,
+                                        'days_remaining' => $daysRemaining,
+                                    ]);
+                                }
+                            }
+                        }
                     }
+
+                    // Cancel on Stripe
+                    \Stripe\Subscription::retrieve($subscription->stripe_subscription_id)->cancel();
                 } catch (\Exception $stripeError) {
-                    Log::warning('Stripe cancellation skipped: ' . $stripeError->getMessage());
-                    // Continue - local cancellation is what matters
+                    Log::warning('Stripe cancellation: ' . $stripeError->getMessage());
                 }
             }
 
-            // Local cancellation (this is what matters)
+            // Local cancellation
             $result = $this->cancellationService->cancelImmediately(
                 $subscription,
                 $request->reason
@@ -297,7 +392,9 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => $result['message']
+                'message' => $result['message'],
+                'refunded' => true,
+                'refund_amount' => $refundAmount / 100,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to cancel subscription', [
@@ -373,43 +470,154 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Reactivate scheduled cancellation
+     * Reactivate a cancelled subscription
      * POST /api/v1/subscription/reactivate
      */
     public function reactivateSubscription(Request $request)
     {
-        $user = $request->user();
-        $subscription = $user->subscription;
+        $subscription = $request->user()->subscription;
 
         if (!$subscription) {
             return response()->json([
                 'success' => false,
-                'message' => 'No active subscription'
+                'message' => 'No subscription found',
             ], 404);
         }
 
-        if (!$subscription->cancel_at_period_end) {
+        if ($subscription->status !== 'cancelled') {
             return response()->json([
                 'success' => false,
-                'message' => 'Subscription is not scheduled for cancellation'
+                'message' => 'Subscription is not cancelled',
             ], 422);
         }
 
         try {
-            // Reactivate Stripe subscription if it exists
-            if ($subscription->stripe_subscription_id) {
-                \Stripe\Subscription::update(
-                    $subscription->stripe_subscription_id,
-                    ['cancel_at_period_end' => false]
-                );
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            $chargeAmount = intval($subscription->plan->price_monthly * 100);
+            $paymentMethodId = $subscription->payment_method_id;
+
+            // If payment_method_id not saved, try to get it from Stripe customer
+            if (!$paymentMethodId && $subscription->stripe_customer_id) {
+                try {
+                    $paymentMethods = \Stripe\PaymentMethod::all([
+                        'customer' => $subscription->stripe_customer_id,
+                        'type' => 'card',
+                        'limit' => 1,
+                    ]);
+
+                    if (!empty($paymentMethods->data)) {
+                        $paymentMethodId = $paymentMethods->data[0]->id;
+
+                        // Save it for next time
+                        $subscription->update(['payment_method_id' => $paymentMethodId]);
+
+                        Log::info('Payment method retrieved from Stripe', [
+                            'subscription_id' => $subscription->id,
+                            'payment_method_id' => $paymentMethodId,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Could not retrieve payment method from Stripe: ' . $e->getMessage());
+                }
             }
 
-            // Use cancellation service
-            $result = $this->cancellationService->reactivate($subscription);
+            if (!$paymentMethodId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No saved payment method found. Please add a payment method or contact support.',
+                ], 422);
+            }
+
+            if ($subscription->stripe_customer_id) {
+                try {
+                    // Attach payment method to customer if needed
+                    try {
+                        \Stripe\PaymentMethod::retrieve($paymentMethodId)->attach([
+                            'customer' => $subscription->stripe_customer_id,
+                        ]);
+                    } catch (\Exception $e) {
+                        // Payment method might already be attached
+                        Log::info('Payment method attach skipped: ' . $e->getMessage());
+                    }
+
+                    // Create payment intent
+                    $paymentIntent = \Stripe\PaymentIntent::create([
+                        'amount' => $chargeAmount,
+                        'currency' => 'aud',
+                        'customer' => $subscription->stripe_customer_id,
+                        'payment_method' => $paymentMethodId,
+                        'off_session' => true,
+                        'confirm' => true,
+                        'description' => 'Subscription reactivation - ' . $subscription->plan->name,
+                        'metadata' => [
+                            'subscription_id' => $subscription->id,
+                            'reason' => 'reactivation',
+                        ],
+                    ]);
+
+                    if ($paymentIntent->status !== 'succeeded') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Payment failed. Card declined or expired. Please update your payment method.',
+                        ], 402);
+                    }
+
+                    // Record the payment
+                    Payment::create([
+                        'subscription_id' => $subscription->id,
+                        'user_id' => $subscription->user_id,
+                        'amount' => $chargeAmount / 100,
+                        'currency' => 'AUD',
+                        'status' => 'completed',
+                        'transaction_id' => $paymentIntent->id,
+                        'payment_provider' => 'stripe',
+                        'processed_at' => now(),
+                    ]);
+
+                    Log::info('Reactivation charge succeeded', [
+                        'subscription_id' => $subscription->id,
+                        'amount' => $chargeAmount / 100,
+                        'payment_intent' => $paymentIntent->id,
+                    ]);
+                } catch (\Exception $chargeError) {
+                    Log::error('Reactivation charge failed', [
+                        'subscription_id' => $subscription->id,
+                        'error' => $chargeError->getMessage(),
+                    ]);
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payment declined: ' . $chargeError->getMessage(),
+                    ], 402);
+                }
+            }
+
+            // Reactivate subscription
+            $subscription->update([
+                'status' => 'active',
+                'cancelled_at' => null,
+                'cancel_at_period_end' => false,
+                'current_period_start' => now(),
+                'current_period_end' => now()->addMonth(),
+                'last_payment_at' => now(),
+            ]);
+
+            $subscription->load('plan');
 
             return response()->json([
                 'success' => true,
-                'message' => $result['message']
+                'message' => 'Subscription reactivated successfully',
+                'data' => [
+                    'id' => $subscription->id,
+                    'plan' => [
+                        'id' => $subscription->plan->id,
+                        'name' => $subscription->plan->name,
+                        'price' => $subscription->plan->price_monthly,
+                    ],
+                    'status' => $subscription->status,
+                    'amount_charged' => $chargeAmount / 100,
+                ],
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to reactivate subscription', [
@@ -419,7 +627,7 @@ class SubscriptionController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to reactivate subscription: ' . $e->getMessage()
+                'message' => 'Failed to reactivate subscription: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -522,9 +730,11 @@ class SubscriptionController extends Controller
                 ], 403);
             }
 
+            $plan = $subscription->plan;
             $subscription->update([
                 'status' => 'active',
                 'stripe_subscription_id' => $session->subscription,
+                'amount' => $plan->price_monthly,
                 'current_period_start' => Carbon::now(),
                 'current_period_end' => Carbon::now()->addMonth(),
             ]);
@@ -579,7 +789,317 @@ class SubscriptionController extends Controller
         }
     }
 
-    private function handleSubscriptionCreated($stripeSubscription) {}
-    private function handleInvoicePaymentSucceeded($invoice) {}
-    private function handleInvoicePaymentFailed($invoice) {}
+    /**
+     * Verify payment - just fetch the subscription
+     * (Stripe webhooks handle creating it)
+     */
+    public function verifyPayment(Request $request)
+    {
+        $user = $request->user();
+        $userId = $user->id;
+
+        Log::info('=== VERIFY PAYMENT START ===', ['user_id' => $userId]);
+
+        try {
+            // Get subscription - try relationship first
+            $subscription = $user->subscription;
+            Log::info('After relationship query', ['subscription_id' => $subscription?->id ?? 'NULL']);
+
+            // If not found, query directly
+            if (!$subscription) {
+                $subscription = Subscription::where('user_id', $userId)->latest()->first();
+                Log::info('After direct query', ['subscription_id' => $subscription?->id ?? 'NULL']);
+            }
+
+            // If still not found, fail
+            if (!$subscription) {
+                Log::error('NO SUBSCRIPTION FOUND');
+                return response()->json(['success' => false, 'message' => 'No subscription'], 404);
+            }
+
+            Log::info('Subscription found', [
+                'id' => $subscription->id,
+                'status' => $subscription->status,
+                'user_id' => $subscription->user_id,
+            ]);
+
+            // Update status to active
+            $subscription->status = 'active';
+            $subscription->current_period_start = now();
+            $subscription->current_period_end = now()->addMonth();
+            $subscription->save();
+
+            Log::info('Subscription updated', ['status' => $subscription->status]);
+
+            // Load plan
+            $subscription->load('plan');
+
+            Log::info('=== VERIFY PAYMENT SUCCESS ===');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Subscription verified',
+                'data' => $subscription
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('=== VERIFY PAYMENT ERROR ===', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            throw $e; // Don't catch - let it fail visibly
+        }
+    }
+
+
+    /**
+     * Create Setup Intent for saving payment method
+     */
+    public function createSetupIntent(Request $request)
+    {
+        $user = $request->user();
+
+        try {
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            // Get or create Stripe customer
+            $subscription = $user->subscription;
+            $stripeCustomerId = $subscription?->stripe_customer_id;
+
+            if (!$stripeCustomerId) {
+                // Create a new Stripe customer
+                $customer = \Stripe\Customer::create([
+                    'email' => $user->email,
+                    'name' => $user->name,
+                    'metadata' => [
+                        'user_id' => $user->id,
+                    ],
+                ]);
+                $stripeCustomerId = $customer->id;
+
+                // Save to subscription if exists
+                if ($subscription) {
+                    $subscription->update(['stripe_customer_id' => $stripeCustomerId]);
+                }
+            }
+
+            // Create SetupIntent
+            $setupIntent = \Stripe\SetupIntent::create([
+                'customer' => $stripeCustomerId,
+                'usage' => 'off_session',
+                'description' => 'Save payment method for ' . $user->email,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'client_secret' => $setupIntent->client_secret,
+                'customer_id' => $stripeCustomerId,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to create setup intent', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create setup intent: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Confirm Setup Intent after payment method is added
+     */
+    public function confirmSetupIntent(Request $request)
+    {
+        $request->validate([
+            'setup_intent_id' => 'required|string',
+        ]);
+
+        $user = $request->user();
+
+        try {
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            // Get the setup intent
+            $setupIntent = \Stripe\SetupIntent::retrieve($request->setup_intent_id);
+
+            if ($setupIntent->status !== 'succeeded') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment method setup failed. Status: ' . $setupIntent->status,
+                ], 400);
+            }
+
+            // Get the payment method
+            $paymentMethod = $setupIntent->payment_method;
+
+            // Update subscription with payment method
+            $subscription = $user->subscription;
+            if ($subscription) {
+                $subscription->update([
+                    'payment_method_id' => $paymentMethod,
+                    'stripe_customer_id' => $setupIntent->customer,
+                ]);
+            }
+
+            Log::info('Payment method saved successfully', [
+                'user_id' => $user->id,
+                'payment_method_id' => $paymentMethod,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment method saved successfully',
+                'payment_method_id' => $paymentMethod,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to confirm setup intent', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save payment method: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function handleSubscriptionCreated($stripeSubscription)
+    {
+        Log::info('handleSubscriptionCreated called', [
+            'stripe_subscription_id' => $stripeSubscription->id,
+        ]);
+
+        try {
+            $userId = $stripeSubscription->metadata['user_id'] ?? null;
+            $subscriptionId = $stripeSubscription->metadata['subscription_id'] ?? null;
+
+            if (!$userId || !$subscriptionId) {
+                Log::warning('Missing metadata in subscription', [
+                    'stripe_subscription_id' => $stripeSubscription->id,
+                ]);
+                return;
+            }
+
+            $subscription = Subscription::find($subscriptionId);
+
+            if (!$subscription || $subscription->user_id != $userId) {
+                Log::warning('Subscription not found or user mismatch', [
+                    'subscription_id' => $subscriptionId,
+                    'user_id' => $userId,
+                ]);
+                return;
+            }
+
+            // Get the default payment method from the subscription
+            $paymentMethodId = null;
+            if ($stripeSubscription->default_payment_method) {
+                $paymentMethodId = $stripeSubscription->default_payment_method;
+            }
+
+            $subscription->update([
+                'stripe_subscription_id' => $stripeSubscription->id,
+                'stripe_customer_id' => $stripeSubscription->customer,
+                'payment_method_id' => $paymentMethodId,  // Save for later charges
+                'status' => 'active',
+                'current_period_start' => \Carbon\Carbon::createFromTimestamp($stripeSubscription->current_period_start),
+                'current_period_end' => \Carbon\Carbon::createFromTimestamp($stripeSubscription->current_period_end),
+            ]);
+
+            Log::info('✅ Subscription activated from webhook', [
+                'subscription_id' => $subscription->id,
+                'stripe_subscription_id' => $stripeSubscription->id,
+                'payment_method_id' => $paymentMethodId,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error in handleSubscriptionCreated', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+    }
+
+    private function handleInvoicePaymentSucceeded($invoice)
+    {
+        Log::info('handleInvoicePaymentSucceeded called', [
+            'invoice_id' => $invoice->id,
+            'subscription_id' => $invoice->subscription,
+        ]);
+
+        try {
+            if (!$invoice->subscription) {
+                return;
+            }
+
+            // Find subscription by Stripe subscription ID
+            $subscription = Subscription::where('stripe_subscription_id', $invoice->subscription)->first();
+
+            if (!$subscription) {
+                Log::warning('Subscription not found for invoice', [
+                    'invoice_id' => $invoice->id,
+                    'stripe_subscription_id' => $invoice->subscription,
+                ]);
+                return;
+            }
+
+            // Record payment
+            Payment::create([
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+                'amount' => $invoice->amount_paid / 100,
+                'currency' => strtoupper($invoice->currency),
+                'status' => 'completed',
+                'transaction_id' => $invoice->payment_intent,
+                'payment_provider' => 'stripe',
+                'processed_at' => \Carbon\Carbon::now(),
+            ]);
+
+            Log::info('Payment recorded from webhook', [
+                'invoice_id' => $invoice->id,
+                'subscription_id' => $subscription->id,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error processing payment webhook', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function handleInvoicePaymentFailed($invoice)
+    {
+        Log::warning('Payment failed for invoice', [
+            'invoice_id' => $invoice->id,
+        ]);
+
+        try {
+            if (!$invoice->subscription) {
+                return;
+            }
+
+            $subscription = Subscription::where('stripe_subscription_id', $invoice->subscription)->first();
+
+            if (!$subscription) {
+                return;
+            }
+
+            // Increment failed payment count
+            $subscription->update([
+                'failed_payment_count' => ($subscription->failed_payment_count ?? 0) + 1,
+            ]);
+
+            Log::info('Failed payment count updated', [
+                'subscription_id' => $subscription->id,
+                'failed_count' => $subscription->failed_payment_count,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error handling failed payment', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
 }

@@ -265,6 +265,13 @@ const routes = [
     },
 
     {
+        path: '/add-payment-method',
+        name: 'AddPaymentMethod',
+        component: () => import('@/views/Payment/PaymentMethodForm.vue'),
+        meta: { requiresAuth: true }
+    },
+
+    {
         path: '/usage',
         name: 'UsageStats',
         component: () => import('@/views/UsageStatsPage.vue'),

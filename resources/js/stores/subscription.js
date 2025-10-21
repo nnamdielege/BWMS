@@ -41,16 +41,13 @@ export const useSubscriptionStore = defineStore('subscription', {
 
     actions: {
         async fetchSubscription() {
-            this.loading = true;
-            this.error = null;
-
             try {
                 const response = await subscriptionService.getSubscription();
-                this.subscription = response.data.data;
+                this.subscription = response.data.data;  // Will be null
             } catch (error) {
-                console.error('Fetch subscription error:', error);
+                // Handles 404 gracefully
+                this.subscription = null;  // No subscription
                 this.error = error.response?.data?.message || 'Failed to fetch subscription';
-                throw error;
             } finally {
                 this.loading = false;
             }
@@ -62,7 +59,9 @@ export const useSubscriptionStore = defineStore('subscription', {
 
             try {
                 const response = await subscriptionService.getAvailablePlans();
-                this.availablePlans = response.data.data.available_plans;
+                
+                // Data is always an array now
+                this.availablePlans = response.data.data;
             } catch (error) {
                 console.error('Fetch available plans error:', error);
                 this.error = error.response?.data?.message || 'Failed to fetch available plans';

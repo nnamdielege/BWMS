@@ -24,7 +24,26 @@ const subscriptionService = {
 
     // Get current subscription
     getSubscription() {
-        return axios.get(`${API_BASE_URL}/subscription`);
+        return axios.get(`${API_BASE_URL}/subscription/current`)
+            .catch(error => {
+                if (error.response?.status === 404) {
+                    return {
+                        data: {
+                            success: false,
+                            data: null,
+                            message: 'No active subscription'
+                        }
+                    };
+                }
+                throw error;
+            });
+    },
+
+    // Create Stripe checkout (updated)
+    createStripeCheckout(planId) {
+        return axios.post(`${API_BASE_URL}/subscription/stripe/checkout`, {
+            plan_id: planId,
+        });
     },
 
     // Cancel subscription
@@ -35,6 +54,16 @@ const subscriptionService = {
     // Reactivate subscription
     reactivateSubscription() {
         return axios.post(`${API_BASE_URL}/subscription/reactivate`);
+    },
+
+    // Get invoices
+    getInvoices() {
+        return axios.get(`${API_BASE_URL}/subscription/invoices`);
+    },
+
+    // Get usage
+    getUsage() {
+        return axios.get(`${API_BASE_URL}/subscription/usage`);
     },
 };
 

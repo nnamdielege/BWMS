@@ -239,6 +239,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Cancel subscription
     Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);
 
+    // Reactivate subscription
+    Route::post('/subscription/reactivate', [SubscriptionController::class, 'reactivateSubscription']);
+
     // Get invoices
     Route::get('/subscription/invoices', [SubscriptionController::class, 'getInvoices']);
 
@@ -246,6 +249,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subscription/usage', [SubscriptionController::class, 'getUsage']);
 
     Route::get('/subscription/stripe/success', [SubscriptionController::class, 'handleStripeSuccess']);
+
+    Route::post('/subscription/verify-payment', [SubscriptionController::class, 'verifyPayment']);
+
+    Route::post('/subscription/setupIntent', [SubscriptionController::class, 'createSetupIntent']);
+
+    Route::post('/subscription/confirm-setup-intent', [SubscriptionController::class, 'confirmSetupIntent']);
 
     Route::get('/subscription/plans/available', [PlanChangeController::class, 'availablePlans']);
     Route::post('/subscription/plans/calculate', [PlanChangeController::class, 'calculateChange']);

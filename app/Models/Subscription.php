@@ -17,6 +17,7 @@ class Subscription extends Model
         'stripe_subscription_id',
         'paypal_subscription_id',
         'payment_method',
+        'payment_method_id',
         'cancel_at_period_end',
         'cancelled_at',
         'stripe_customer_id',
