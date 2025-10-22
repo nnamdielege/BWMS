@@ -910,6 +910,8 @@ class SubscriptionController extends Controller
         }
     }
 
+    // Replace the confirmSetupIntent() method and add these new methods to your SubscriptionController.php
+
     /**
      * Confirm Setup Intent after payment method is added
      */
@@ -934,27 +936,49 @@ class SubscriptionController extends Controller
                 ], 400);
             }
 
-            // Get the payment method
-            $paymentMethod = $setupIntent->payment_method;
+            // Get the payment method ID
+            $paymentMethodId = $setupIntent->payment_method;
 
-            // Update subscription with payment method
+            // Get or create subscription
             $subscription = $user->subscription;
-            if ($subscription) {
-                $subscription->update([
-                    'payment_method_id' => $paymentMethod,
-                    'stripe_customer_id' => $setupIntent->customer,
+
+            if (!$subscription) {
+                // Create a basic subscription if none exists (trial)
+                $defaultPlan = SubscriptionPlan::where('is_active', true)->first();
+
+                if (!$defaultPlan) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No subscription plan found',
+                    ], 404);
+                }
+
+                $subscription = Subscription::create([
+                    'user_id' => $user->id,
+                    'plan_id' => $defaultPlan->id,
+                    'status' => 'trial',
+                    'trial_ends_at' => Carbon::now()->addDays($defaultPlan->trial_days),
                 ]);
             }
 
+            // Update subscription with payment method AND customer ID
+            $subscription->update([
+                'payment_method_id' => $paymentMethodId,
+                'stripe_customer_id' => $setupIntent->customer,
+            ]);
+
             Log::info('Payment method saved successfully', [
                 'user_id' => $user->id,
-                'payment_method_id' => $paymentMethod,
+                'subscription_id' => $subscription->id,
+                'payment_method_id' => $paymentMethodId,
+                'customer_id' => $setupIntent->customer,
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Payment method saved successfully',
-                'payment_method_id' => $paymentMethod,
+                'payment_method_id' => $paymentMethodId,
+                'subscription_id' => $subscription->id,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to confirm setup intent', [
@@ -965,6 +989,106 @@ class SubscriptionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to save payment method: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get saved payment methods for current user
+     */
+    public function getPaymentMethods(Request $request)
+    {
+        $user = $request->user();
+        $subscription = $user->subscription;
+
+        if (!$subscription || !$subscription->stripe_customer_id) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+                'message' => 'No payment methods saved',
+            ]);
+        }
+
+        try {
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            $paymentMethods = \Stripe\PaymentMethod::all([
+                'customer' => $subscription->stripe_customer_id,
+                'type' => 'card',
+            ]);
+
+            $formatted = array_map(function ($pm) use ($subscription) {
+                return [
+                    'id' => $pm->id,
+                    'brand' => $pm->card->brand,
+                    'last4' => $pm->card->last4,
+                    'exp_month' => $pm->card->exp_month,
+                    'exp_year' => $pm->card->exp_year,
+                    'is_default' => $pm->id === $subscription->payment_method_id,
+                ];
+            }, $paymentMethods->data);
+
+            return response()->json([
+                'success' => true,
+                'data' => $formatted,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch payment methods', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'data' => [],
+                'message' => 'Could not fetch payment methods',
+            ]);
+        }
+    }
+
+    /**
+     * Delete a payment method
+     */
+    public function deletePaymentMethod(Request $request, string $paymentMethodId)
+    {
+        $user = $request->user();
+        $subscription = $user->subscription;
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No subscription found',
+            ], 404);
+        }
+
+        try {
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            \Stripe\PaymentMethod::retrieve($paymentMethodId)->detach();
+
+            // If this was the default payment method, clear it
+            if ($subscription->payment_method_id === $paymentMethodId) {
+                $subscription->update(['payment_method_id' => null]);
+            }
+
+            Log::info('Payment method deleted', [
+                'user_id' => $user->id,
+                'payment_method_id' => $paymentMethodId,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment method deleted successfully',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete payment method', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete payment method: ' . $e->getMessage(),
             ], 500);
         }
     }

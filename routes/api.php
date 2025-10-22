@@ -220,41 +220,25 @@ Route::middleware('auth:sanctum')->group(function () {
     // -------------------------------
     Route::get('/search', [SearchController::class, 'search']);
 
-
     // ───────────────────────────────────────────────────────────
     // SUBSCRIPTION ROUTES
     // ───────────────────────────────────────────────────────────
 
-
-
-    // Get current user subscription
     Route::get('/subscription/current', [SubscriptionController::class, 'getCurrentSubscription']);
-
-    // Start free trial
     Route::post('/subscription/start-trial', [SubscriptionController::class, 'startTrial']);
-
-    // Create Stripe checkout
     Route::post('/subscription/stripe/checkout', [SubscriptionController::class, 'createStripeCheckout']);
-
-    // Cancel subscription
     Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);
-
-    // Reactivate subscription
     Route::post('/subscription/reactivate', [SubscriptionController::class, 'reactivateSubscription']);
-
-    // Get invoices
     Route::get('/subscription/invoices', [SubscriptionController::class, 'getInvoices']);
-
-    // Get usage
     Route::get('/subscription/usage', [SubscriptionController::class, 'getUsage']);
-
     Route::get('/subscription/stripe/success', [SubscriptionController::class, 'handleStripeSuccess']);
-
     Route::post('/subscription/verify-payment', [SubscriptionController::class, 'verifyPayment']);
-
     Route::post('/subscription/setupIntent', [SubscriptionController::class, 'createSetupIntent']);
-
     Route::post('/subscription/confirm-setup-intent', [SubscriptionController::class, 'confirmSetupIntent']);
+
+    // NEW ROUTES - ADD THESE
+    Route::get('/subscription/payment-methods', [SubscriptionController::class, 'getPaymentMethods']);
+    Route::delete('/subscription/payment-methods/{paymentMethodId}', [SubscriptionController::class, 'deletePaymentMethod']);
 
     Route::get('/subscription/plans/available', [PlanChangeController::class, 'availablePlans']);
     Route::post('/subscription/plans/calculate', [PlanChangeController::class, 'calculateChange']);

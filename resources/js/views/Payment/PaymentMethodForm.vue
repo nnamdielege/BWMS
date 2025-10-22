@@ -2,31 +2,21 @@
   <div class="payment-method-form">
     <h3>Add Payment Method</h3>
     
-    <div v-if="loading" class="spinner">
-      <p>Loading...</p>
+    <!-- Always render the card element so Stripe can mount it -->
+    <div id="card-element" class="card-element"></div>
+    
+    <div v-if="error" class="alert alert-error" style="margin-top: 1rem;">
+      {{ error }}
     </div>
 
-    <div v-else-if="!clientSecret" class="alert alert-error">
-      Failed to initialize payment form
-    </div>
-
-    <div v-else>
-      <!-- Stripe Elements will be mounted here -->
-      <div id="card-element" class="card-element"></div>
-      
-      <div v-if="error" class="alert alert-error" style="margin-top: 1rem;">
-        {{ error }}
-      </div>
-
-      <button 
-        @click="savePaymentMethod"
-        :disabled="loading || !clientSecret"
-        class="btn btn-primary"
-        style="margin-top: 1rem;"
-      >
-        {{ loading ? 'Processing...' : 'Save Payment Method' }}
-      </button>
-    </div>
+    <button 
+      @click="savePaymentMethod"
+      :disabled="loading || !clientSecret"
+      class="btn btn-primary"
+      style="margin-top: 1rem;"
+    >
+      {{ loading ? 'Processing...' : 'Save Payment Method' }}
+    </button>
   </div>
 </template>
 
@@ -42,50 +32,101 @@ export default {
       elements: null,
       cardElement: null,
       clientSecret: null,
-      setupIntentId: null,
+      customerId: null,
       loading: false,
       error: null,
     };
   },
 
   async mounted() {
+    console.log('🔵 PaymentMethodForm mounted');
+    console.log('Stripe already loaded?', typeof window.Stripe);
+    
     // Load Stripe
     if (!window.Stripe) {
+      console.log('Loading Stripe script...');
       const script = document.createElement('script');
       script.src = 'https://js.stripe.com/v3/';
       script.async = true;
-      script.onload = this.initializeStripe;
+      script.onload = () => {
+        console.log('✅ Stripe script loaded');
+        this.initializeStripe();
+      };
+      script.onerror = () => {
+        console.error('❌ Failed to load Stripe script');
+        this.error = 'Failed to load Stripe. Check your internet connection.';
+      };
       document.head.appendChild(script);
     } else {
+      console.log('Stripe already available, initializing...');
       this.initializeStripe();
     }
   },
 
   methods: {
     initializeStripe() {
-      const publicKey = 'pk_test_51HQNztF69waXA7ShEIJlL3kXaJkLhIsgLOecjlgC82kbCSpV36KABe9pIYtxGctSgWoyZYz8ddA6vnjbULsTsQF300KSwpYSI4';
-      this.stripe = window.Stripe(publicKey);
-      this.elements = this.stripe.elements();
-      this.cardElement = this.elements.create('card');
-      this.cardElement.mount('#card-element');
+      try {
+        const publicKey = 'pk_test_51HQNztF69waXA7ShEIJlL3kXaJkLhIsgLOecjlgC82kbCSpV36KABe9pIYtxGctSgWoyZYz8ddA6vnjbULsTsQF300KSwpYSI4';
+        
+        if (!publicKey) {
+          this.error = 'Stripe public key is not configured';
+          return;
+        }
 
-      // Create setup intent
-      this.createSetupIntent();
+        // Wait for Vue to render the DOM before mounting Stripe elements
+        const waitForElement = () => {
+          const element = document.getElementById('card-element');
+          if (!element) {
+            // Element not ready yet, try again in 100ms
+            setTimeout(waitForElement, 100);
+            return;
+          }
+
+          // Element is ready, initialize Stripe
+          this.stripe = window.Stripe(publicKey);
+          this.elements = this.stripe.elements();
+          this.cardElement = this.elements.create('card');
+          this.cardElement.mount('#card-element');
+
+          // Create setup intent
+          this.createSetupIntent();
+        };
+
+        waitForElement();
+      } catch (err) {
+        this.error = 'Failed to initialize Stripe: ' + err.message;
+        console.error('Stripe initialization error:', err);
+      }
     },
 
     async createSetupIntent() {
       try {
         this.loading = true;
-        const response = await axios.post('/api/v1/subscription/setupIntent');
+        this.error = null;
+
+        console.log('Creating setup intent...');
+
+        const response = await axios.post('/api/v1/subscription/setupIntent', {}, {
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+
+        console.log('Setup intent response:', response.data);
 
         if (response.data.success) {
           this.clientSecret = response.data.client_secret;
-          this.setupIntentId = response.data.setup_intent_id;
+          this.customerId = response.data.customer_id;
+          console.log('Client secret set:', this.clientSecret);
         } else {
-          this.error = response.data.message || 'Failed to initialize payment form';
+          this.error = response.data.message || 'Failed to create setup intent';
+          console.error('API returned success: false', response.data);
         }
       } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to initialize payment form';
+        console.error('Setup intent error:', error);
+        this.error = error.response?.data?.message || error.message || 'Failed to initialize payment form';
+        console.error('Full error:', error.response?.data);
       } finally {
         this.loading = false;
       }
@@ -96,6 +137,13 @@ export default {
       this.loading = true;
 
       try {
+        if (!this.clientSecret) {
+          this.error = 'Setup intent not initialized';
+          return;
+        }
+
+        console.log('Confirming card setup...');
+
         // Confirm the card with Stripe
         const { setupIntent, error } = await this.stripe.confirmCardSetup(
           this.clientSecret,
@@ -111,22 +159,28 @@ export default {
 
         if (error) {
           this.error = error.message;
+          console.error('Stripe error:', error);
           return;
         }
+
+        console.log('Setup intent confirmed:', setupIntent);
 
         // Confirm on backend
         const response = await axios.post('/api/v1/subscription/confirm-setup-intent', {
           setup_intent_id: setupIntent.id,
         });
 
+        console.log('Backend confirmation response:', response.data);
+
         if (response.data.success) {
           alert('Payment method saved successfully!');
           this.$emit('success', response.data.payment_method_id);
           this.$router.push('/subscription/manage');
         } else {
-          this.error = response.data.message;
+          this.error = response.data.message || 'Failed to save payment method';
         }
       } catch (error) {
+        console.error('Save payment method error:', error);
         this.error = error.response?.data?.message || error.message || 'An error occurred';
       } finally {
         this.loading = false;
