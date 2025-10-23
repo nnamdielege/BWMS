@@ -265,6 +265,13 @@ const routes = [
     },
 
     {
+        path: '/billing-history',
+        name: 'billing-history',
+        component: () => import('../views/Subscription/BillingHistory.vue'),
+        meta: { requiresAuth: true }
+    },
+
+    {
         path: '/add-payment-method',
         name: 'AddPaymentMethod',
         component: () => import('@/views/Payment/PaymentMethodForm.vue'),

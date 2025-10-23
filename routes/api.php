@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\ImportController;
+use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlanChangeController;
 use App\Http\Controllers\Api\ProfileController;
@@ -243,6 +244,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subscription/plans/available', [PlanChangeController::class, 'availablePlans']);
     Route::post('/subscription/plans/calculate', [PlanChangeController::class, 'calculateChange']);
     Route::post('/subscription/plans/change', [PlanChangeController::class, 'changePlan']);
+
+    // ───────────────────────────────────────────────────────────
+    // Invoice Routes
+    // ───────────────────────────────────────────────────────────
+
+    Route::prefix('invoices')->group(function () {
+        Route::get('/', [InvoiceController::class, 'index']);
+        Route::get('/statistics', [InvoiceController::class, 'statistics']);
+        Route::get('/pending', [InvoiceController::class, 'pending']);
+        Route::get('/overdue', [InvoiceController::class, 'overdue']);
+        Route::get('/{invoice}', [InvoiceController::class, 'show']);
+    });
 
     // ───────────────────────────────────────────────────────────
     // Usage Tracking Routes

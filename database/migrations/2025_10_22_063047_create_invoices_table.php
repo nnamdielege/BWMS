@@ -14,17 +14,22 @@ return new class extends Migration
         Schema::create('invoices', function (Blueprint $table) {
             $table->id();
             $table->foreignId('subscription_id')->constrained()->onDelete('cascade');
-            $table->foreignId('payment_id')->nullable()->constrained('payments')->onDelete('set null');
+            $table->foreignId('payment_id')->nullable()->constrained()->onDelete('set null');
             $table->string('invoice_number')->unique();
             $table->decimal('amount', 10, 2);
             $table->string('currency')->default('AUD');
-            $table->dateTime('issued_at');
-            $table->dateTime('due_at');
-            $table->dateTime('paid_at')->nullable();
-            $table->string('status'); // draft, issued, paid, overdue
+            $table->enum('status', ['draft', 'pending', 'paid', 'failed'])->default('pending');
+            $table->timestamp('issued_at')->nullable();
+            $table->timestamp('due_at')->nullable();
+            $table->timestamp('paid_at')->nullable();
             $table->text('notes')->nullable();
-            $table->string('pdf_path')->nullable(); // Path to generated PDF
+            $table->string('pdf_path')->nullable();
             $table->timestamps();
+
+            $table->index(['subscription_id']);
+            $table->index(['payment_id']);
+            $table->index(['status']);
+            $table->index(['issued_at']);
         });
     }
 

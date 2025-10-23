@@ -81,6 +81,7 @@ class SubscriptionController extends Controller
             ],
         ]);
     }
+
     /**
      * Start trial subscription
      */
@@ -109,6 +110,18 @@ class SubscriptionController extends Controller
             'status' => 'trial',
             'trial_ends_at' => Carbon::now()->addDays($plan->trial_days),
             'payment_method' => null,
+        ]);
+
+        // CREATE INVOICE FOR TRIAL
+        Invoice::create([
+            'subscription_id' => $subscription->id,
+            'invoice_number' => Invoice::generateInvoiceNumber(),
+            'amount' => 0, // Trial is free
+            'currency' => 'AUD',
+            'status' => 'paid',
+            'issued_at' => Carbon::now(),
+            'due_at' => Carbon::now()->addDays($plan->trial_days),
+            'notes' => 'Trial subscription invoice',
         ]);
 
         return response()->json([
@@ -214,7 +227,6 @@ class SubscriptionController extends Controller
         }
     }
 
-
     /**
      * Handle Stripe webhook
      */
@@ -278,7 +290,7 @@ class SubscriptionController extends Controller
         }
 
         // Record payment
-        Payment::create([
+        $payment = Payment::create([
             'subscription_id' => $subscription->id,
             'user_id' => $subscription->user_id,
             'amount' => $session->amount_total / 100,
@@ -289,9 +301,10 @@ class SubscriptionController extends Controller
             'processed_at' => Carbon::now(),
         ]);
 
-        // Generate invoice
+        // CREATE INVOICE
         Invoice::create([
             'subscription_id' => $subscription->id,
+            'payment_id' => $payment->id,
             'invoice_number' => Invoice::generateInvoiceNumber(),
             'amount' => $session->amount_total / 100,
             'currency' => strtoupper($session->currency),
@@ -411,7 +424,6 @@ class SubscriptionController extends Controller
 
     /**
      * Schedule cancellation at end of billing period
-     * POST /api/v1/subscription/cancel-at-period-end
      */
     public function scheduleCancellation(Request $request)
     {
@@ -471,7 +483,6 @@ class SubscriptionController extends Controller
 
     /**
      * Reactivate a cancelled subscription
-     * POST /api/v1/subscription/reactivate
      */
     public function reactivateSubscription(Request $request)
     {
@@ -564,7 +575,7 @@ class SubscriptionController extends Controller
                     }
 
                     // Record the payment
-                    Payment::create([
+                    $payment = Payment::create([
                         'subscription_id' => $subscription->id,
                         'user_id' => $subscription->user_id,
                         'amount' => $chargeAmount / 100,
@@ -601,6 +612,19 @@ class SubscriptionController extends Controller
                 'current_period_start' => now(),
                 'current_period_end' => now()->addMonth(),
                 'last_payment_at' => now(),
+            ]);
+
+            // CREATE INVOICE FOR REACTIVATION
+            Invoice::create([
+                'subscription_id' => $subscription->id,
+                'payment_id' => $payment->id ?? null,
+                'invoice_number' => Invoice::generateInvoiceNumber(),
+                'amount' => $chargeAmount / 100,
+                'currency' => 'AUD',
+                'status' => 'paid',
+                'issued_at' => Carbon::now(),
+                'due_at' => Carbon::now()->addDays(30),
+                'notes' => 'Subscription reactivation',
             ]);
 
             $subscription->load('plan');
@@ -742,7 +766,7 @@ class SubscriptionController extends Controller
             $payment = Payment::where('transaction_id', $session->payment_intent)->first();
 
             if (!$payment) {
-                Payment::create([
+                $payment = Payment::create([
                     'subscription_id' => $subscription->id,
                     'user_id' => $user->id,
                     'amount' => $session->amount_total / 100,
@@ -761,6 +785,7 @@ class SubscriptionController extends Controller
             if (!$invoice) {
                 Invoice::create([
                     'subscription_id' => $subscription->id,
+                    'payment_id' => $payment->id,
                     'invoice_number' => Invoice::generateInvoiceNumber(),
                     'amount' => $session->amount_total / 100,
                     'currency' => strtoupper($session->currency),
@@ -791,7 +816,6 @@ class SubscriptionController extends Controller
 
     /**
      * Verify payment - just fetch the subscription
-     * (Stripe webhooks handle creating it)
      */
     public function verifyPayment(Request $request)
     {
@@ -801,17 +825,14 @@ class SubscriptionController extends Controller
         Log::info('=== VERIFY PAYMENT START ===', ['user_id' => $userId]);
 
         try {
-            // Get subscription - try relationship first
             $subscription = $user->subscription;
             Log::info('After relationship query', ['subscription_id' => $subscription?->id ?? 'NULL']);
 
-            // If not found, query directly
             if (!$subscription) {
                 $subscription = Subscription::where('user_id', $userId)->latest()->first();
                 Log::info('After direct query', ['subscription_id' => $subscription?->id ?? 'NULL']);
             }
 
-            // If still not found, fail
             if (!$subscription) {
                 Log::error('NO SUBSCRIPTION FOUND');
                 return response()->json(['success' => false, 'message' => 'No subscription'], 404);
@@ -823,7 +844,6 @@ class SubscriptionController extends Controller
                 'user_id' => $subscription->user_id,
             ]);
 
-            // Update status to active
             $subscription->status = 'active';
             $subscription->current_period_start = now();
             $subscription->current_period_end = now()->addMonth();
@@ -831,7 +851,6 @@ class SubscriptionController extends Controller
 
             Log::info('Subscription updated', ['status' => $subscription->status]);
 
-            // Load plan
             $subscription->load('plan');
 
             Log::info('=== VERIFY PAYMENT SUCCESS ===');
@@ -849,10 +868,9 @@ class SubscriptionController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            throw $e; // Don't catch - let it fail visibly
+            throw $e;
         }
     }
-
 
     /**
      * Create Setup Intent for saving payment method
@@ -864,12 +882,10 @@ class SubscriptionController extends Controller
         try {
             Stripe::setApiKey(config('services.stripe.secret'));
 
-            // Get or create Stripe customer
             $subscription = $user->subscription;
             $stripeCustomerId = $subscription?->stripe_customer_id;
 
             if (!$stripeCustomerId) {
-                // Create a new Stripe customer
                 $customer = \Stripe\Customer::create([
                     'email' => $user->email,
                     'name' => $user->name,
@@ -879,13 +895,11 @@ class SubscriptionController extends Controller
                 ]);
                 $stripeCustomerId = $customer->id;
 
-                // Save to subscription if exists
                 if ($subscription) {
                     $subscription->update(['stripe_customer_id' => $stripeCustomerId]);
                 }
             }
 
-            // Create SetupIntent
             $setupIntent = \Stripe\SetupIntent::create([
                 'customer' => $stripeCustomerId,
                 'usage' => 'off_session',
@@ -910,8 +924,6 @@ class SubscriptionController extends Controller
         }
     }
 
-    // Replace the confirmSetupIntent() method and add these new methods to your SubscriptionController.php
-
     /**
      * Confirm Setup Intent after payment method is added
      */
@@ -926,7 +938,6 @@ class SubscriptionController extends Controller
         try {
             Stripe::setApiKey(config('services.stripe.secret'));
 
-            // Get the setup intent
             $setupIntent = \Stripe\SetupIntent::retrieve($request->setup_intent_id);
 
             if ($setupIntent->status !== 'succeeded') {
@@ -936,14 +947,10 @@ class SubscriptionController extends Controller
                 ], 400);
             }
 
-            // Get the payment method ID
             $paymentMethodId = $setupIntent->payment_method;
-
-            // Get or create subscription
             $subscription = $user->subscription;
 
             if (!$subscription) {
-                // Create a basic subscription if none exists (trial)
                 $defaultPlan = SubscriptionPlan::where('is_active', true)->first();
 
                 if (!$defaultPlan) {
@@ -961,7 +968,6 @@ class SubscriptionController extends Controller
                 ]);
             }
 
-            // Update subscription with payment method AND customer ID
             $subscription->update([
                 'payment_method_id' => $paymentMethodId,
                 'stripe_customer_id' => $setupIntent->customer,
@@ -1066,7 +1072,6 @@ class SubscriptionController extends Controller
 
             \Stripe\PaymentMethod::retrieve($paymentMethodId)->detach();
 
-            // If this was the default payment method, clear it
             if ($subscription->payment_method_id === $paymentMethodId) {
                 $subscription->update(['payment_method_id' => null]);
             }
@@ -1120,7 +1125,6 @@ class SubscriptionController extends Controller
                 return;
             }
 
-            // Get the default payment method from the subscription
             $paymentMethodId = null;
             if ($stripeSubscription->default_payment_method) {
                 $paymentMethodId = $stripeSubscription->default_payment_method;
@@ -1129,7 +1133,7 @@ class SubscriptionController extends Controller
             $subscription->update([
                 'stripe_subscription_id' => $stripeSubscription->id,
                 'stripe_customer_id' => $stripeSubscription->customer,
-                'payment_method_id' => $paymentMethodId,  // Save for later charges
+                'payment_method_id' => $paymentMethodId,
                 'status' => 'active',
                 'current_period_start' => \Carbon\Carbon::createFromTimestamp($stripeSubscription->current_period_start),
                 'current_period_end' => \Carbon\Carbon::createFromTimestamp($stripeSubscription->current_period_end),
@@ -1160,7 +1164,6 @@ class SubscriptionController extends Controller
                 return;
             }
 
-            // Find subscription by Stripe subscription ID
             $subscription = Subscription::where('stripe_subscription_id', $invoice->subscription)->first();
 
             if (!$subscription) {
@@ -1171,7 +1174,6 @@ class SubscriptionController extends Controller
                 return;
             }
 
-            // Record payment
             Payment::create([
                 'subscription_id' => $subscription->id,
                 'user_id' => $subscription->user_id,
@@ -1211,7 +1213,6 @@ class SubscriptionController extends Controller
                 return;
             }
 
-            // Increment failed payment count
             $subscription->update([
                 'failed_payment_count' => ($subscription->failed_payment_count ?? 0) + 1,
             ]);

@@ -24,6 +24,7 @@ class Invoice extends Model
         'issued_at' => 'datetime',
         'due_at' => 'datetime',
         'paid_at' => 'datetime',
+        'amount' => 'float',
     ];
 
     public function subscription()
@@ -42,5 +43,41 @@ class Invoice extends Model
         $year = date('Y');
         $count = static::whereYear('created_at', $year)->count() + 1;
         return 'INV-' . $year . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+    }
+
+    public function markAsPaid()
+    {
+        $this->update([
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        return $this;
+    }
+
+    public function markAsPending()
+    {
+        $this->update([
+            'status' => 'pending',
+            'paid_at' => null,
+        ]);
+
+        return $this;
+    }
+
+    public function scopePaid($query)
+    {
+        return $query->where('status', 'paid');
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
+    }
+
+    public function scopeOverdue($query)
+    {
+        return $query->where('status', 'pending')
+            ->where('due_at', '<', now());
     }
 }

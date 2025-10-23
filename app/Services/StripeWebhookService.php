@@ -6,8 +6,11 @@ use App\Mail\PaymentSuccessfulMail;
 use App\Mail\PaymentFailedMail;
 use App\Mail\SubscriptionActivatedMail;
 use App\Mail\SubscriptionSuspendedMail;
+use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\WebhookEvent;
 use App\Models\Subscription;
+use App\Models\SubscriptionPlan;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +35,10 @@ class StripeWebhookService
 
             // Route to appropriate handler
             switch ($eventType) {
+                case 'checkout.session.completed':
+                    $this->handleCheckoutComplete($payload);
+                    break;
+
                 case 'invoice.payment_succeeded':
                     $this->handleInvoicePaymentSucceeded($payload);
                     break;
@@ -74,6 +81,72 @@ class StripeWebhookService
         }
     }
 
+
+    /**
+     * Handle checkout completion
+     */
+    protected function handleCheckoutComplete(array $payload)
+    {
+        Log::info('handleCheckoutComplete called', [
+            'session_id' => $payload['id'],
+            'user_id' => $payload['metadata']['user_id'] ?? 'unknown',
+        ]);
+
+        $subscription = Subscription::where('user_id', $payload['metadata']['user_id'])->first();
+
+        if (!$subscription) {
+            $plan = SubscriptionPlan::find($payload['metadata']['plan_id']);
+            $subscription = Subscription::create([
+                'user_id' => $payload['metadata']['user_id'],
+                'plan_id' => $payload['metadata']['plan_id'],
+                'status' => 'active',
+                'payment_method' => 'stripe',
+                'amount' => $plan->price_monthly,
+                'current_period_start' => Carbon::now(),
+                'current_period_end' => Carbon::now()->addMonth(),
+            ]);
+        } else {
+            $plan = $subscription->plan;
+            $subscription->update([
+                'stripe_subscription_id' => $payload['subscription'],
+                'status' => 'active',
+                'payment_method' => 'stripe',
+                'amount' => $plan->price_monthly,
+                'current_period_start' => Carbon::now(),
+                'current_period_end' => Carbon::now()->addMonth(),
+            ]);
+        }
+
+        // Record payment
+        $payment = Payment::create([
+            'subscription_id' => $subscription->id,
+            'user_id' => $subscription->user_id,
+            'amount' => $payload['amount_total'] / 100,
+            'currency' => strtoupper($payload['currency']),
+            'status' => 'completed',
+            'transaction_id' => $payload['payment_intent'],
+            'payment_provider' => 'stripe',
+            'processed_at' => Carbon::now(),
+        ]);
+
+        // CREATE INVOICE
+        Invoice::create([
+            'subscription_id' => $subscription->id,
+            'payment_id' => $payment->id,
+            'invoice_number' => Invoice::generateInvoiceNumber(),
+            'amount' => (float)($payload['amount_total'] / 100),
+            'currency' => strtoupper($payload['currency']),
+            'issued_at' => Carbon::now(),
+            'due_at' => Carbon::now()->addDays(30),
+            'status' => 'paid',
+        ]);
+
+        Log::info('✅ Checkout completed and invoice created', [
+            'subscription_id' => $subscription->id,
+            'payment_id' => $payment->id,
+        ]);
+    }
+
     /**
      * Handle successful invoice payment (recurring payments)
      */
@@ -82,8 +155,13 @@ class StripeWebhookService
         $invoice = $payload['data']['object'];
         $stripeSubscriptionId = $invoice['subscription'] ?? null;
 
+        Log::info('handleInvoicePaymentSucceeded called', [
+            'invoice_id' => $invoice['id'] ?? null,
+            'subscription_id' => $stripeSubscriptionId,
+        ]);
+
         if (!$stripeSubscriptionId) {
-            Log::warning('No subscription in invoice', ['invoice_id' => $invoice['id']]);
+            Log::warning('No subscription in invoice', ['invoice_id' => $invoice['id'] ?? null]);
             return;
         }
 
@@ -93,6 +171,30 @@ class StripeWebhookService
             Log::warning('Subscription not found', ['stripe_subscription_id' => $stripeSubscriptionId]);
             return;
         }
+
+        // Record payment
+        $payment = Payment::create([
+            'subscription_id'     => $stripeSubscriptionId,
+            'user_id'             => $invoice['user_id'] ?? null,
+            'amount'              => (float) (($invoice['amount_paid'] ?? 0) / 100),
+            'currency'            => strtoupper($invoice['currency'] ?? 'usd'),
+            'status'              => 'completed',
+            'transaction_id'      => $invoice['payment_intent'] ?? null,
+            'payment_provider'    => 'stripe',
+            'processed_at'        => Carbon::now(),
+        ]);
+
+        // Create invoice record
+        Invoice::create([
+            'subscription_id' => $stripeSubscriptionId,
+            'payment_id'      => $payment->id,
+            'invoice_number'  => Invoice::generateInvoiceNumber(),
+            'amount'          => (float) (($invoice['amount_paid'] ?? 0) / 100),
+            'currency'        => strtoupper($invoice['currency'] ?? 'AUD'),
+            'issued_at'       => Carbon::createFromTimestamp($invoice['created']),
+            'due_at'          => Carbon::createFromTimestamp($invoice['due_at'] ?? $invoice['created'])->addDays(30),
+            'status'          => 'paid',
+        ]);
 
         DB::transaction(function () use ($subscription, $invoice) {
             $wasInTrial = $subscription->isInTrial();
@@ -150,7 +252,7 @@ class StripeWebhookService
                 'subscription_id' => $subscription->id,
                 'user_id' => $subscription->user_id,
                 'amount' => ($invoice['amount_paid'] ?? 0) / 100,
-                'currency' => $invoice['currency'] ?? 'usd',
+                'currency' => $invoice['currency'] ?? 'AUD',
                 'was_in_trial' => $wasInTrial,
             ]);
         });
