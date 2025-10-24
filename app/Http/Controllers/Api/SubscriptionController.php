@@ -11,7 +11,10 @@ use App\Services\SubscriptionCancellationService;
 use Illuminate\Http\Request;
 use Stripe\Stripe;
 use Carbon\Carbon;
+use Exception;
 use Illuminate\Support\Facades\Log;
+use Stripe\PaymentLink;
+use Stripe\SetupIntent;
 
 class SubscriptionController extends Controller
 {
@@ -173,7 +176,7 @@ class SubscriptionController extends Controller
             );
 
             // Create a payment link
-            $paymentLink = \Stripe\PaymentLink::create([
+            $paymentLink = PaymentLink::create([
                 'line_items' => [
                     [
                         'price_data' => [
@@ -213,7 +216,7 @@ class SubscriptionController extends Controller
                 'success' => true,
                 'checkout_url' => $paymentLink->url,
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Stripe payment link error', [
                 'message' => $e->getMessage(),
                 'user_id' => $user->id,
@@ -230,34 +233,34 @@ class SubscriptionController extends Controller
     /**
      * Handle Stripe webhook
      */
-    public function handleStripeWebhook(Request $request)
-    {
-        $event = json_decode($request->getContent());
+    // public function handleStripeWebhook(Request $request)
+    // {
+    //     $event = json_decode($request->getContent());
 
-        try {
-            switch ($event->type) {
-                case 'checkout.session.completed':
-                    $this->handleCheckoutComplete($event->data->object);
-                    break;
+    //     try {
+    //         switch ($event->type) {
+    //             case 'checkout.session.completed':
+    //                 $this->handleCheckoutComplete($event->data->object);
+    //                 break;
 
-                case 'customer.subscription.created':
-                    $this->handleSubscriptionCreated($event->data->object);
-                    break;
+    //             case 'customer.subscription.created':
+    //                 $this->handleSubscriptionCreated($event->data->object);
+    //                 break;
 
-                case 'invoice.payment_succeeded':
-                    $this->handleInvoicePaymentSucceeded($event->data->object);
-                    break;
+    //             case 'invoice.payment_succeeded':
+    //                 $this->handleInvoicePaymentSucceeded($event->data->object);
+    //                 break;
 
-                case 'invoice.payment_failed':
-                    $this->handleInvoicePaymentFailed($event->data->object);
-                    break;
-            }
-        } catch (\Exception $e) {
-            Log::error('Stripe webhook error: ' . $e->getMessage());
-        }
+    //             case 'invoice.payment_failed':
+    //                 $this->handleInvoicePaymentFailed($event->data->object);
+    //                 break;
+    //         }
+    //     } catch (\Exception $e) {
+    //         Log::error('Stripe webhook error: ' . $e->getMessage());
+    //     }
 
-        return response()->json(['success' => true]);
-    }
+    //     return response()->json(['success' => true]);
+    // }
 
     /**
      * Handle checkout completion
@@ -875,6 +878,7 @@ class SubscriptionController extends Controller
     /**
      * Create Setup Intent for saving payment method
      */
+
     public function createSetupIntent(Request $request)
     {
         $user = $request->user();
@@ -882,33 +886,46 @@ class SubscriptionController extends Controller
         try {
             Stripe::setApiKey(config('services.stripe.secret'));
 
+            // Get or create Stripe customer
             $subscription = $user->subscription;
-            $stripeCustomerId = $subscription?->stripe_customer_id;
+            $stripeCustomerId = null;
 
-            if (!$stripeCustomerId) {
-                $customer = \Stripe\Customer::create([
+            if ($subscription && $subscription->stripe_customer_id) {
+                $stripeCustomerId = $subscription->stripe_customer_id;
+            } else {
+                // Create new Stripe customer
+                $stripeCustomer = \Stripe\Customer::create([
                     'email' => $user->email,
                     'name' => $user->name,
                     'metadata' => [
                         'user_id' => $user->id,
                     ],
                 ]);
-                $stripeCustomerId = $customer->id;
+                $stripeCustomerId = $stripeCustomer->id;
 
-                if ($subscription) {
-                    $subscription->update(['stripe_customer_id' => $stripeCustomerId]);
-                }
+                Log::info('Created Stripe customer', [
+                    'user_id' => $user->id,
+                    'stripe_customer_id' => $stripeCustomerId,
+                ]);
             }
 
-            $setupIntent = \Stripe\SetupIntent::create([
+            // Create Setup Intent
+            $setupIntent = SetupIntent::create([
                 'customer' => $stripeCustomerId,
-                'usage' => 'off_session',
-                'description' => 'Save payment method for ' . $user->email,
+                'payment_method_types' => ['card'],
+                'usage' => 'off_session', // Allows future use without customer present
+            ]);
+
+            Log::info('Setup intent created', [
+                'user_id' => $user->id,
+                'setup_intent_id' => $setupIntent->id,
+                'customer_id' => $stripeCustomerId,
             ]);
 
             return response()->json([
                 'success' => true,
                 'client_secret' => $setupIntent->client_secret,
+                'setup_intent_id' => $setupIntent->id,
                 'customer_id' => $stripeCustomerId,
             ]);
         } catch (\Exception $e) {
@@ -938,7 +955,7 @@ class SubscriptionController extends Controller
         try {
             Stripe::setApiKey(config('services.stripe.secret'));
 
-            $setupIntent = \Stripe\SetupIntent::retrieve($request->setup_intent_id);
+            $setupIntent = SetupIntent::retrieve($request->setup_intent_id);
 
             if ($setupIntent->status !== 'succeeded') {
                 return response()->json([

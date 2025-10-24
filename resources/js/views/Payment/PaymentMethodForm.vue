@@ -41,6 +41,7 @@ export default {
   async mounted() {
     console.log('🔵 PaymentMethodForm mounted');
     console.log('Stripe already loaded?', typeof window.Stripe);
+   
     
     // Load Stripe
     if (!window.Stripe) {
@@ -66,7 +67,7 @@ export default {
   methods: {
     initializeStripe() {
       try {
-        const publicKey = 'pk_test_51HQNztF69waXA7ShEIJlL3kXaJkLhIsgLOecjlgC82kbCSpV36KABe9pIYtxGctSgWoyZYz8ddA6vnjbULsTsQF300KSwpYSI4';
+        const publicKey = 'pk_test_51SLflPFMrejWgyO6Jne9GyCYnxXF7Xy3pR6blyvQrrAJ8GLAfjqMEPuC8ZUAdPwCMOq2JLKrHd1Jivelyeyba05U008kRErDoF';
         
         if (!publicKey) {
           this.error = 'Stripe public key is not configured';

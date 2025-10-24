@@ -153,7 +153,9 @@ class StripeWebhookService
     protected function handleInvoicePaymentSucceeded(array $payload)
     {
         $invoice = $payload['data']['object'];
-        $stripeSubscriptionId = $invoice['subscription'] ?? null;
+
+        // Get subscription ID from nested path
+        $stripeSubscriptionId = $invoice['parent']['subscription_details']['subscription'] ?? null;
 
         Log::info('handleInvoicePaymentSucceeded called', [
             'invoice_id' => $invoice['id'] ?? null,
@@ -165,45 +167,56 @@ class StripeWebhookService
             return;
         }
 
-        $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
+        // Find subscription via the user relationship
+        $subscription = Subscription::where('status', 'pending')
+            ->with('user')
+            ->get()
+            ->first(function ($sub) use ($invoice) {
+                return $sub->user->email === $invoice['customer_email'];
+            });
 
         if (!$subscription) {
-            Log::warning('Subscription not found', ['stripe_subscription_id' => $stripeSubscriptionId]);
+            Log::warning('Pending subscription not found', [
+                'customer_email' => $invoice['customer_email'],
+            ]);
             return;
         }
 
-        // Record payment
+        // Record payment - USE LOCAL SUBSCRIPTION ID, NOT STRIPE ID
         $payment = Payment::create([
-            'subscription_id'     => $stripeSubscriptionId,
-            'user_id'             => $invoice['user_id'] ?? null,
-            'amount'              => (float) (($invoice['amount_paid'] ?? 0) / 100),
-            'currency'            => strtoupper($invoice['currency'] ?? 'usd'),
+            'subscription_id'     => $subscription->id,  // Use local ID, not $stripeSubscriptionId
+            'user_id'             => $subscription->user_id,  // Get from subscription, not invoice
+            'amount'              => (float)(($invoice['amount_paid'] ?? 0) / 100),
+            'currency'            => strtoupper($invoice['currency'] ?? 'AUD'),
             'status'              => 'completed',
             'transaction_id'      => $invoice['payment_intent'] ?? null,
             'payment_provider'    => 'stripe',
             'processed_at'        => Carbon::now(),
         ]);
 
-        // Create invoice record
+        // Create invoice record - USE LOCAL SUBSCRIPTION ID
         Invoice::create([
-            'subscription_id' => $stripeSubscriptionId,
+            'subscription_id' => $subscription->id,  // Use local ID
             'payment_id'      => $payment->id,
             'invoice_number'  => Invoice::generateInvoiceNumber(),
-            'amount'          => (float) (($invoice['amount_paid'] ?? 0) / 100),
+            'amount'          => (float)(($invoice['amount_paid'] ?? 0) / 100),
             'currency'        => strtoupper($invoice['currency'] ?? 'AUD'),
             'issued_at'       => Carbon::createFromTimestamp($invoice['created']),
-            'due_at'          => Carbon::createFromTimestamp($invoice['due_at'] ?? $invoice['created'])->addDays(30),
+            'due_at'          => Carbon::createFromTimestamp($invoice['due_date'] ?? $invoice['created'])->addDays(30),
             'status'          => 'paid',
         ]);
 
-        DB::transaction(function () use ($subscription, $invoice) {
+        DB::transaction(function () use ($subscription, $invoice, $stripeSubscriptionId) {
             $wasInTrial = $subscription->isInTrial();
 
             // Update subscription
             $subscription->update([
+                'stripe_subscription_id' => $stripeSubscriptionId,
+                'stripe_customer_id' => $invoice['customer'],
                 'status' => 'active',
+                'current_period_start' => Carbon::createFromTimestamp($invoice['period_start']),
+                'current_period_end' => Carbon::createFromTimestamp($invoice['period_end']),
                 'last_payment_at' => now(),
-                'current_period_end' => $invoice['period_end'] ? Carbon::createFromTimestamp($invoice['period_end']) : null,
                 'failed_payment_count' => 0, // Reset failed payment counter
                 'cancel_at_period_end' => false, // Reset cancellation flag on successful payment
             ]);
@@ -248,9 +261,10 @@ class StripeWebhookService
                 }
             }
 
-            Log::info('Subscription payment successful', [
+            Log::info('✅ Subscription payment successful', [
                 'subscription_id' => $subscription->id,
                 'user_id' => $subscription->user_id,
+                'stripe_subscription_id' => $stripeSubscriptionId,
                 'amount' => ($invoice['amount_paid'] ?? 0) / 100,
                 'currency' => $invoice['currency'] ?? 'AUD',
                 'was_in_trial' => $wasInTrial,
