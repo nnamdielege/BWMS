@@ -10,11 +10,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Stripe\Webhook;
 use Stripe\Exception\SignatureVerificationException;
-use Stripe\WebhookSignature;
+use UnexpectedValueException;
 
 class StripeWebhookController extends Controller
 {
-    protected $webhookService;
+    protected StripeWebhookService $webhookService;
 
     public function __construct(StripeWebhookService $webhookService)
     {
@@ -22,75 +22,76 @@ class StripeWebhookController extends Controller
     }
 
     /**
-     * Handle incoming Stripe webhooks
+     * Handle incoming Stripe webhooks.
      */
     public function handle(Request $request)
     {
+        $payload = $request->getContent();
+        $signature = $request->header('Stripe-Signature');
+        $secret = config('services.stripe.webhook_secret');
+
+        if (!$signature) {
+            Log::warning('❌ Missing Stripe-Signature header.');
+            return response()->json(['success' => false, 'message' => 'Missing Stripe-Signature header'], 400);
+        }
+
+        if (!$secret) {
+            Log::error('❌ Missing Stripe webhook secret in configuration.');
+            return response()->json(['success' => false, 'message' => 'Webhook secret not configured'], 500);
+        }
+
         try {
-            $payload = @file_get_contents('php://input');
+            // ✅ Verify Stripe webhook signature
+            $event = Webhook::constructEvent($payload, $signature, $secret);
 
-            // ⚠️ TEMPORARY: Skip signature verification due to environment issue
-            // TODO: Fix signature verification later (works fine in production typically)
+            $eventType = $event->type;
+            $eventId = $event->id;
 
-            $payloadArray = json_decode($payload, true);
-
-            if (!$payloadArray || !isset($payloadArray['type']) || !isset($payloadArray['id'])) {
-                Log::warning('Invalid webhook payload');
-                return response()->json(['success' => false, 'message' => 'Invalid payload'], 400);
-            }
-
-            $eventType = $payloadArray['type'];
-            $eventId = $payloadArray['id'];
-
-            Log::info('📥 Webhook Received', [
+            Log::info('📥 Stripe Webhook Received', [
                 'event_type' => $eventType,
                 'event_id' => $eventId,
             ]);
 
-            // Check if we've already processed this webhook (idempotency)
+            // 🔁 Ensure idempotency (avoid duplicate processing)
             $existingEvent = WebhookEvent::where('stripe_event_id', $eventId)->first();
 
             if ($existingEvent && $existingEvent->status === 'processed') {
-                Log::info('Duplicate webhook received', [
-                    'event_id' => $eventId,
-                    'event_type' => $eventType
-                ]);
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Already processed'
-                ], 200);
+                Log::info('Duplicate webhook received; skipping', ['event_id' => $eventId]);
+                return response()->json(['success' => true, 'message' => 'Already processed'], 200);
             }
 
-            // Store webhook event in database
+            // 💾 Store webhook event
             $webhookEvent = WebhookEvent::updateOrCreate(
                 ['stripe_event_id' => $eventId],
                 [
                     'event_type' => $eventType,
-                    'payload' => $payloadArray,
+                    'payload' => $event->toArray(),
                     'status' => 'pending',
                 ]
             );
 
-            // Process the webhook
+            // ⚙️ Process the webhook
             $this->webhookService->process($webhookEvent);
 
             Log::info('✅ Webhook processed successfully', ['event_id' => $eventId]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Webhook processed successfully'
-            ], 200);
-        } catch (\Exception $e) {
-            Log::error('Webhook processing error', [
+            return response()->json(['success' => true, 'message' => 'Webhook processed successfully'], 200);
+        } catch (SignatureVerificationException $e) {
+            Log::error('❌ Invalid Stripe signature', [
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Invalid signature'], 400);
+        } catch (UnexpectedValueException $e) {
+            Log::error('❌ Invalid Stripe payload', [
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Invalid payload'], 400);
+        } catch (Exception $e) {
+            Log::error('⚠️ Webhook processing error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Webhook processing failed'
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'Webhook processing failed'], 500);
         }
     }
 }

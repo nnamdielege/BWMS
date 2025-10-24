@@ -13,7 +13,9 @@ use Stripe\Stripe;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use Stripe\Checkout\Session;
 use Stripe\PaymentLink;
+use Stripe\PaymentMethod;
 use Stripe\SetupIntent;
 
 class SubscriptionController extends Controller
@@ -262,60 +264,7 @@ class SubscriptionController extends Controller
     //     return response()->json(['success' => true]);
     // }
 
-    /**
-     * Handle checkout completion
-     */
-    private function handleCheckoutComplete($session)
-    {
-        $subscription = Subscription::where('user_id', $session->metadata->user_id)->first();
 
-        if (!$subscription) {
-            $plan = SubscriptionPlan::find($session->metadata->plan_id);
-            $subscription = Subscription::create([
-                'user_id' => $session->metadata->user_id,
-                'plan_id' => $session->metadata->plan_id,
-                'status' => 'active',
-                'payment_method' => 'stripe',
-                'amount' => $plan->price_monthly,
-                'current_period_start' => Carbon::now(),
-                'current_period_end' => Carbon::now()->addMonth(),
-            ]);
-        } else {
-            $plan = $subscription->plan;
-            $subscription->update([
-                'stripe_subscription_id' => $session->subscription,
-                'status' => 'active',
-                'payment_method' => 'stripe',
-                'amount' => $plan->price_monthly,
-                'current_period_start' => Carbon::now(),
-                'current_period_end' => Carbon::now()->addMonth(),
-            ]);
-        }
-
-        // Record payment
-        $payment = Payment::create([
-            'subscription_id' => $subscription->id,
-            'user_id' => $subscription->user_id,
-            'amount' => $session->amount_total / 100,
-            'currency' => strtoupper($session->currency),
-            'status' => 'completed',
-            'transaction_id' => $session->payment_intent,
-            'payment_provider' => 'stripe',
-            'processed_at' => Carbon::now(),
-        ]);
-
-        // CREATE INVOICE
-        Invoice::create([
-            'subscription_id' => $subscription->id,
-            'payment_id' => $payment->id,
-            'invoice_number' => Invoice::generateInvoiceNumber(),
-            'amount' => $session->amount_total / 100,
-            'currency' => strtoupper($session->currency),
-            'issued_at' => Carbon::now(),
-            'due_at' => Carbon::now()->addDays(30),
-            'status' => 'paid',
-        ]);
-    }
 
     /**
      * Cancel subscription immediately
@@ -730,7 +679,7 @@ class SubscriptionController extends Controller
         $sessionId = $request->session_id;
 
         try {
-            $session = \Stripe\Checkout\Session::retrieve($sessionId);
+            $session = Session::retrieve($sessionId);
 
             if ($session->payment_status !== 'paid') {
                 return response()->json([
@@ -807,7 +756,7 @@ class SubscriptionController extends Controller
                     'status' => $subscription->status,
                 ]
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Stripe success verification error: ' . $e->getMessage());
 
             return response()->json([
@@ -1035,7 +984,7 @@ class SubscriptionController extends Controller
         try {
             Stripe::setApiKey(config('services.stripe.secret'));
 
-            $paymentMethods = \Stripe\PaymentMethod::all([
+            $paymentMethods = PaymentMethod::all([
                 'customer' => $subscription->stripe_customer_id,
                 'type' => 'card',
             ]);
@@ -1113,6 +1062,61 @@ class SubscriptionController extends Controller
                 'message' => 'Failed to delete payment method: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Handle checkout completion
+     */
+    private function handleCheckoutComplete($session)
+    {
+        $subscription = Subscription::where('user_id', $session->metadata->user_id)->first();
+
+        if (!$subscription) {
+            $plan = SubscriptionPlan::find($session->metadata->plan_id);
+            $subscription = Subscription::create([
+                'user_id' => $session->metadata->user_id,
+                'plan_id' => $session->metadata->plan_id,
+                'status' => 'active',
+                'payment_method' => 'stripe',
+                'amount' => $plan->price_monthly,
+                'current_period_start' => Carbon::now(),
+                'current_period_end' => Carbon::now()->addMonth(),
+            ]);
+        } else {
+            $plan = $subscription->plan;
+            $subscription->update([
+                'stripe_subscription_id' => $session->subscription,
+                'status' => 'active',
+                'payment_method' => 'stripe',
+                'amount' => $plan->price_monthly,
+                'current_period_start' => Carbon::now(),
+                'current_period_end' => Carbon::now()->addMonth(),
+            ]);
+        }
+
+        // Record payment
+        $payment = Payment::create([
+            'subscription_id' => $subscription->id,
+            'user_id' => $subscription->user_id,
+            'amount' => $session->amount_total / 100,
+            'currency' => strtoupper($session->currency),
+            'status' => 'completed',
+            'transaction_id' => $session->payment_intent,
+            'payment_provider' => 'stripe',
+            'processed_at' => Carbon::now(),
+        ]);
+
+        // CREATE INVOICE
+        Invoice::create([
+            'subscription_id' => $subscription->id,
+            'payment_id' => $payment->id,
+            'invoice_number' => Invoice::generateInvoiceNumber(),
+            'amount' => $session->amount_total / 100,
+            'currency' => strtoupper($session->currency),
+            'issued_at' => Carbon::now(),
+            'due_at' => Carbon::now()->addDays(30),
+            'status' => 'paid',
+        ]);
     }
 
     private function handleSubscriptionCreated($stripeSubscription)
