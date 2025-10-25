@@ -11,6 +11,7 @@ class Subscription extends Model
         'user_id',
         'plan_id',
         'status',
+        'paused_at',
         'trial_ends_at',
         'current_period_start',
         'current_period_end',
@@ -33,6 +34,7 @@ class Subscription extends Model
         'cancelled_at' => 'datetime',
         'cancel_at_period_end' => 'boolean',
         'last_payment_at' => 'datetime',
+        'paused_at' => 'datetime'
     ];
 
     public function user()

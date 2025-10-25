@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\AdminDashboardController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\SuperAdmin\SuperAdminDashboardController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\UsageTrackingController;
 use App\Http\Controllers\Api\UserController;
@@ -44,6 +46,37 @@ Route::post('/webhooks/paypal', [SubscriptionController::class, 'handlePaypalWeb
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SUPER ADMIN DASHBOARD ROUTES
+    // ═══════════════════════════════════════════════════════════════════════════
+    Route::prefix('superAdmin')->middleware('superAdmin')->group(function () {
+        // Dashboard Overview
+        Route::get('/overview', [SuperAdminDashboardController::class, 'getOverview']);
+
+        // Subscriptions Management
+        Route::prefix('subscriptions')->group(function () {
+            Route::get('/', [SuperAdminDashboardController::class, 'getSubscriptions']);
+            Route::post('{subscription}/toggle-status', [SuperAdminDashboardController::class, 'toggleSubscriptionStatus']);
+            Route::post('{subscription}/cancel', [SuperAdminDashboardController::class, 'cancelSubscription']);
+            Route::get('/export', [SuperAdminDashboardController::class, 'exportSubscriptions']);
+        });
+
+        // Users Management
+        Route::prefix('users')->group(function () {
+            Route::get('/', [SuperAdminDashboardController::class, 'getUsers']);
+            Route::get('{user}', [SuperAdminDashboardController::class, 'getUserDetail']);
+            Route::post('{user}/toggle-status', [SuperAdminDashboardController::class, 'toggleUserStatus']);
+        });
+
+        // Analytics
+        Route::prefix('analytics')->group(function () {
+            Route::get('/revenue', [SuperAdminDashboardController::class, 'getRevenueAnalytics']);
+        });
+
+        // Audit & Logs
+        Route::get('/audit-logs', [SuperAdminDashboardController::class, 'getAuditLogs']);
+    });
 
     // -------------------------------
     // Auth
@@ -236,8 +269,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/subscription/verify-payment', [SubscriptionController::class, 'verifyPayment']);
     Route::post('/subscription/setupIntent', [SubscriptionController::class, 'createSetupIntent']);
     Route::post('/subscription/confirm-setup-intent', [SubscriptionController::class, 'confirmSetupIntent']);
-
-    // NEW ROUTES - ADD THESE
     Route::get('/subscription/payment-methods', [SubscriptionController::class, 'getPaymentMethods']);
     Route::delete('/subscription/payment-methods/{paymentMethodId}', [SubscriptionController::class, 'deletePaymentMethod']);
 
