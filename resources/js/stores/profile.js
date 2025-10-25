@@ -107,7 +107,7 @@ export const useProfileStore = defineStore('profile', {
     getters: {
         avatarUrl: (state) => {
             if (!state.user?.avatar) return null;
-            const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
             return `${baseUrl}/storage/${state.user.avatar}`;
         },
     },

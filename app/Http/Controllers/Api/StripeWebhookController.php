@@ -30,6 +30,14 @@ class StripeWebhookController extends Controller
         $signature = $request->header('Stripe-Signature');
         $secret = config('services.stripe.webhook_secret');
 
+        // return response()->json([
+        //     'success' => true,
+        //     'secret' => $secret,
+        //     'signature' => $signature,
+        //     'isTrue' => $secret == $signature
+        // ], 200);
+        Log::info('📦 Incoming Stripe Webhook Payload', ['payload' => $payload]);
+
         if (!$signature) {
             Log::warning('❌ Missing Stripe-Signature header.');
             return response()->json(['success' => false, 'message' => 'Missing Stripe-Signature header'], 400);

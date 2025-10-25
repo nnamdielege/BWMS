@@ -31,7 +31,7 @@ const checkingAuth = ref(false);
 
 onMounted(async () => {
     // Use environment variable, fallback to relative URL
-    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
     
     axios.defaults.baseURL = apiUrl;
     axios.defaults.headers.common['Accept'] = 'application/json';

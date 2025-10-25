@@ -175,7 +175,7 @@ const userInitials = computed(() => {
 
 const avatarUrl = computed(() => {
     if (!authStore.user?.avatar) return null;
-    const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
     return `${baseUrl}/storage/${authStore.user.avatar}`;
 });
 
