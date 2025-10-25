@@ -24,14 +24,32 @@ class AuthController extends Controller
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
+            'role' => 'user', // default role
             'password' => Hash::make($request->password),
         ]);
+
+        $user->assignRole('user');
+
+        $request->merge(['plan_id' => 1]); // add the plan ID to the request data
+        $request->setUserResolver(fn() => $user); // make $request->user() return this user
+
+        $subscriptionResponse = app(SubscriptionController::class)->startTrial($request);
+
+        $data = $subscriptionResponse->getData(true);
+
+        if (!$data['success']) {
+            $message = 'Subscription setup failed after registration.';
+        } else {
+            $message = 'Trial subscription started successfully.';
+        }
 
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
             'user' => $user,
             'token' => $token,
+            'subscription' => $data['data'] ?? null,
+            'message' => $message,
         ], 201);
     }
 
@@ -49,6 +67,8 @@ class AuthController extends Controller
         }
 
         $user = Auth::user();
+
+
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([

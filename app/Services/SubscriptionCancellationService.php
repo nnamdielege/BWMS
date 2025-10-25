@@ -21,19 +21,22 @@ class SubscriptionCancellationService
                 'cancellation_reason' => $reason,
             ]);
 
-
-
             try {
                 Mail::to($subscription->user->email)->send(
                     new SubscriptionCancelledMail($subscription, false)
                 );
             } catch (\Exception $mailError) {
-                Log::info('Subscription cancelled immediately', [
+                Log::warning('Failed to send cancellation email', [
                     'subscription_id' => $subscription->id,
-                    'user_id' => $subscription->user_id,
-                    'reason' => $reason,
+                    'error' => $mailError->getMessage(),
                 ]);
             }
+
+            Log::info('Subscription cancelled immediately', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+                'reason' => $reason,
+            ]);
 
             return [
                 'success' => true,
@@ -62,9 +65,16 @@ class SubscriptionCancellationService
             ]);
 
             // Send notification email
-            Mail::to($subscription->user->email)->send(
-                new SubscriptionCancelledMail($subscription, true)
-            );
+            try {
+                Mail::to($subscription->user->email)->send(
+                    new SubscriptionCancelledMail($subscription, true)
+                );
+            } catch (\Exception $mailError) {
+                Log::warning('Failed to send cancellation email', [
+                    'subscription_id' => $subscription->id,
+                    'error' => $mailError->getMessage(),
+                ]);
+            }
 
             Log::info('Subscription scheduled for cancellation', [
                 'subscription_id' => $subscription->id,
@@ -85,6 +95,22 @@ class SubscriptionCancellationService
             ]);
 
             throw $e;
+        }
+    }
+
+    /**
+     * NEW: Wrapper method for controller - dispatches to appropriate cancellation method
+     * @param Subscription $subscription
+     * @param bool $cancelAtPeriodEnd - true = schedule, false = immediate
+     * @param string|null $reason - cancellation reason
+     * @return array
+     */
+    public function cancelSubscription(Subscription $subscription, bool $cancelAtPeriodEnd = false, ?string $reason = null)
+    {
+        if ($cancelAtPeriodEnd) {
+            return $this->scheduleForCancellation($subscription, $reason);
+        } else {
+            return $this->cancelImmediately($subscription, $reason);
         }
     }
 

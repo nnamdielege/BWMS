@@ -112,7 +112,7 @@ class SubscriptionController extends Controller
         $subscription = Subscription::create([
             'user_id' => $user->id,
             'plan_id' => $plan->id,
-            'status' => 'trial',
+            'status' => 'active',
             'trial_ends_at' => Carbon::now()->addDays($plan->trial_days),
             'payment_method' => null,
         ]);
