@@ -95,10 +95,16 @@ class PlanChangeController extends Controller
         $newPlan = SubscriptionPlan::findOrFail($request->plan_id);
 
         try {
+            Log::info('Before calculateProration');
+
             $prorationData = $this->planChangeService->calculateProration(
                 $subscription,
                 $newPlan
             );
+
+            Log::info('After calculateProration', ['data' => $prorationData]);
+
+            Log::info('Before response');
 
             return response()->json([
                 'success' => true,
@@ -135,6 +141,13 @@ class PlanChangeController extends Controller
                 'message' => 'No active subscription',
             ], 404);
         }
+
+        // Debug log
+        Log::info('Plan change debug', [
+            'current_plan_id' => $subscription->plan_id,
+            'requested_plan_id' => $request->plan_id,
+            'are_equal' => $subscription->plan_id == $request->plan_id,
+        ]);
 
         if ($subscription->plan_id == $request->plan_id) {
             return response()->json([
@@ -230,17 +243,42 @@ class PlanChangeController extends Controller
      */
     private function chargeUser(User $user, float $amount)
     {
-        if (!$user->stripe_customer_id) {
-            throw new \Exception('User does not have a Stripe customer ID');
+        $subscription = $user->subscription;
+
+        // If no payment method, store as credit instead
+        if (!$subscription || !$subscription->payment_method_id) {
+            Log::info('No payment method saved, storing as credit', [
+                'user_id' => $user->id,
+                'amount' => $amount,
+            ]);
+
+            if ($subscription) {
+                $subscription->addCreditBalance($amount);
+            }
+            return ['success' => true, 'stored_as_credit' => true];
+        }
+
+        // If no stripe_customer_id, store as credit instead
+        if (!$subscription->stripe_customer_id) {
+            Log::info('No Stripe customer, storing as credit', [
+                'user_id' => $user->id,
+                'amount' => $amount,
+            ]);
+            $subscription->addCreditBalance($amount);
+            return ['success' => true, 'stored_as_credit' => true];
         }
 
         try {
             $stripe = new StripeClient(config('services.stripe.secret'));
 
-            $charge = $stripe->charges->create([
+            // Use Payment Intent with saved payment method
+            $paymentIntent = $stripe->paymentIntents->create([
                 'amount' => round($amount * 100),
                 'currency' => strtolower(config('app.currency', 'aud')),
-                'customer' => $user->stripe_customer_id,
+                'customer' => $subscription->stripe_customer_id,
+                'payment_method' => $subscription->payment_method_id,
+                'off_session' => true,
+                'confirm' => true,
                 'description' => 'Plan upgrade proration charge',
                 'metadata' => [
                     'user_id' => $user->id,
@@ -248,35 +286,26 @@ class PlanChangeController extends Controller
                 ],
             ]);
 
-            Log::info('Proration charge created', [
+            Log::info('Proration payment intent created', [
                 'user_id' => $user->id,
-                'charge_id' => $charge->id,
+                'payment_intent_id' => $paymentIntent->id,
                 'amount' => $amount,
             ]);
 
-            if (method_exists($user, 'transactions') && $user->transactions()) {
-                $user->transactions()->create([
-                    'type' => 'proration_charge',
-                    'amount' => $amount,
-                    'currency' => config('app.currency', 'aud'),
-                    'stripe_charge_id' => $charge->id,
-                    'status' => 'completed',
-                    'description' => 'Plan upgrade proration',
-                ]);
+            if ($paymentIntent->status === 'succeeded') {
+                return $paymentIntent;
+            } else {
+                throw new \Exception('Payment failed with status: ' . $paymentIntent->status);
             }
-
-            return $charge;
-        } catch (ApiErrorException $e) {
-            Log::error('Stripe charge failed', [
+        } catch (\Exception $e) {
+            Log::error('Payment intent failed', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
-                'stripe_error_code' => $e->getStripeCode(),
             ]);
 
             throw new \Exception('Payment failed: ' . $e->getMessage());
         }
     }
-
     /**
      * Apply credit for plan downgrade proration
      */

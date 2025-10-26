@@ -30,14 +30,6 @@ class StripeWebhookController extends Controller
         $signature = $request->header('Stripe-Signature');
         $secret = config('services.stripe.webhook_secret');
 
-        // return response()->json([
-        //     'success' => true,
-        //     'secret' => $secret,
-        //     'signature' => $signature,
-        //     'isTrue' => $secret == $signature
-        // ], 200);
-        Log::info('📦 Incoming Stripe Webhook Payload', ['payload' => $payload]);
-
         if (!$signature) {
             Log::warning('❌ Missing Stripe-Signature header.');
             return response()->json(['success' => false, 'message' => 'Missing Stripe-Signature header'], 400);
@@ -69,11 +61,12 @@ class StripeWebhookController extends Controller
             }
 
             // 💾 Store webhook event
+            // ⚠️ CRITICAL FIX: Store only the object, not the full event
             $webhookEvent = WebhookEvent::updateOrCreate(
                 ['stripe_event_id' => $eventId],
                 [
                     'event_type' => $eventType,
-                    'payload' => $event->toArray(),
+                    'payload' => $event->data->object ?? [],  // ← FIXED: Extract object
                     'status' => 'pending',
                 ]
             );

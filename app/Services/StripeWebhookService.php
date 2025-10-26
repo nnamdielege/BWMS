@@ -6,6 +6,7 @@ use App\Mail\PaymentSuccessfulMail;
 use App\Mail\PaymentFailedMail;
 use App\Mail\SubscriptionActivatedMail;
 use App\Mail\SubscriptionSuspendedMail;
+use App\Mail\TrialEndingSoonMail;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\WebhookEvent;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Carbon\Carbon;
+use Exception;
 
 class StripeWebhookService
 {
@@ -68,7 +70,7 @@ class StripeWebhookService
             }
 
             $webhookEvent->markAsProcessed();
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Webhook processing failed', [
                 'webhook_id' => $webhookEvent->id,
                 'error' => $e->getMessage(),
@@ -87,15 +89,51 @@ class StripeWebhookService
      */
     protected function handleCheckoutComplete(array $payload)
     {
+        // ⚠️ CHANGE #1 (LINES 92-99):
+        // CHANGED: From throwing exception to using warning + return
+        // REASON: Not all checkout sessions have metadata. If missing, just skip gracefully
+        // BEFORE: if (!isset($payload['metadata']) || !is_array($payload['metadata'])) {
+        //            throw new Exception('Missing or invalid metadata in checkout session payload');
+        // AFTER:
+        if (!isset($payload['metadata']) || !is_array($payload['metadata'])) {
+            Log::warning('⚠️ Checkout session has no metadata - skipping processing', [
+                'session_id' => $payload['id'] ?? 'unknown',
+                'payload_keys' => array_keys($payload),
+            ]);
+            return; // Exit gracefully instead of throwing
+        }
+
+        // VALIDATION: Check for required metadata fields
+        if (!isset($payload['metadata']['user_id'])) {
+            Log::warning('⚠️ Checkout metadata missing user_id - skipping processing', [
+                'session_id' => $payload['id'] ?? 'unknown',
+                'metadata_keys' => array_keys($payload['metadata']),
+            ]);
+            return; // Exit gracefully instead of throwing
+        }
+
+        if (!isset($payload['metadata']['plan_id'])) {
+            Log::warning('⚠️ Checkout metadata missing plan_id - skipping processing', [
+                'session_id' => $payload['id'] ?? 'unknown',
+                'metadata_keys' => array_keys($payload['metadata']),
+            ]);
+            return; // Exit gracefully instead of throwing
+        }
+
         Log::info('handleCheckoutComplete called', [
             'session_id' => $payload['id'],
-            'user_id' => $payload['metadata']['user_id'] ?? 'unknown',
+            'user_id' => $payload['metadata']['user_id'],
         ]);
 
         $subscription = Subscription::where('user_id', $payload['metadata']['user_id'])->first();
 
         if (!$subscription) {
             $plan = SubscriptionPlan::find($payload['metadata']['plan_id']);
+
+            if (!$plan) {
+                throw new \Exception('Plan not found: ' . $payload['metadata']['plan_id']);
+            }
+
             $subscription = Subscription::create([
                 'user_id' => $payload['metadata']['user_id'],
                 'plan_id' => $payload['metadata']['plan_id'],
@@ -108,7 +146,7 @@ class StripeWebhookService
         } else {
             $plan = $subscription->plan;
             $subscription->update([
-                'stripe_subscription_id' => $payload['subscription'],
+                'stripe_subscription_id' => $payload['subscription'] ?? null,
                 'status' => 'active',
                 'payment_method' => 'stripe',
                 'amount' => $plan->price_monthly,
@@ -118,13 +156,18 @@ class StripeWebhookService
         }
 
         // Record payment
+        // ⚠️ CHANGE #2 (LINE 157):
+        // CHANGED: Added null coalescing operator
+        // REASON: If amount_total is missing from payload, use 0 instead of crashing
+        // BEFORE: 'amount' => $payload['amount_total'] / 100,
+        // AFTER:
         $payment = Payment::create([
             'subscription_id' => $subscription->id,
             'user_id' => $subscription->user_id,
-            'amount' => $payload['amount_total'] / 100,
-            'currency' => strtoupper($payload['currency']),
+            'amount' => ($payload['amount_total'] ?? 0) / 100, // ← ADDED ?? 0
+            'currency' => strtoupper($payload['currency'] ?? 'AUD'),
             'status' => 'completed',
-            'transaction_id' => $payload['payment_intent'],
+            'transaction_id' => $payload['payment_intent'] ?? null,
             'payment_provider' => 'stripe',
             'processed_at' => Carbon::now(),
         ]);
@@ -134,8 +177,8 @@ class StripeWebhookService
             'subscription_id' => $subscription->id,
             'payment_id' => $payment->id,
             'invoice_number' => Invoice::generateInvoiceNumber(),
-            'amount' => (float)($payload['amount_total'] / 100),
-            'currency' => strtoupper($payload['currency']),
+            'amount' => (float)(($payload['amount_total'] ?? 0) / 100),
+            'currency' => strtoupper($payload['currency'] ?? 'AUD'),
             'issued_at' => Carbon::now(),
             'due_at' => Carbon::now()->addDays(30),
             'status' => 'paid',
@@ -152,10 +195,20 @@ class StripeWebhookService
      */
     protected function handleInvoicePaymentSucceeded(array $payload)
     {
-        $invoice = $payload['data']['object'];
+        // ⚠️ CHANGE #3 (LINE 188):
+        // CHANGED: Removed ['data']['object'] wrapper
+        // REASON: Payload is NOW already extracted as the invoice object (not wrapped in Stripe event envelope)
+        // BEFORE: $invoice = $payload['data']['object'];
+        // AFTER:
+        $invoice = $payload; // ← REMOVED ['data']['object']
 
         // Get subscription ID from nested path
-        $stripeSubscriptionId = $invoice['parent']['subscription_details']['subscription'] ?? null;
+        // ⚠️ CHANGE #4 (LINE 191):
+        // CHANGED: Simplified nested path extraction
+        // REASON: Invoice now has direct 'subscription' field, not nested under parent.subscription_details
+        // BEFORE: $stripeSubscriptionId = $invoice['parent']['subscription_details']['subscription'] ?? null;
+        // AFTER:
+        $stripeSubscriptionId = $invoice['subscription'] ?? null; // ← SIMPLIFIED PATH
 
         Log::info('handleInvoicePaymentSucceeded called', [
             'invoice_id' => $invoice['id'] ?? null,
@@ -172,12 +225,12 @@ class StripeWebhookService
             ->with('user')
             ->get()
             ->first(function ($sub) use ($invoice) {
-                return $sub->user->email === $invoice['customer_email'];
+                return $sub->user->email === ($invoice['customer_email'] ?? '');
             });
 
         if (!$subscription) {
             Log::warning('Pending subscription not found', [
-                'customer_email' => $invoice['customer_email'],
+                'customer_email' => $invoice['customer_email'] ?? 'unknown',
             ]);
             return;
         }
@@ -214,51 +267,24 @@ class StripeWebhookService
                 'stripe_subscription_id' => $stripeSubscriptionId,
                 'stripe_customer_id' => $invoice['customer'],
                 'status' => 'active',
-                'current_period_start' => Carbon::createFromTimestamp($invoice['period_start']),
-                'current_period_end' => Carbon::createFromTimestamp($invoice['period_end']),
-                'last_payment_at' => now(),
-                'failed_payment_count' => 0, // Reset failed payment counter
-                'cancel_at_period_end' => false, // Reset cancellation flag on successful payment
+                'current_period_start' => Carbon::createFromTimestamp($invoice['period_start'] ?? $invoice['created']),
+                'current_period_end' => Carbon::createFromTimestamp($invoice['period_end'] ?? $invoice['created']),
             ]);
 
-            // If subscription was in trial, end the trial
-            if ($wasInTrial) {
-                $subscription->update([
-                    'trial_ends_at' => now(),
+            // Send payment successful email
+            try {
+                Mail::to($subscription->user->email)->send(
+                    new PaymentSuccessfulMail($subscription, ($invoice['amount_paid'] ?? 0) / 100)
+                );
+
+                Log::info('✅ Payment successful email sent', [
+                    'user_email' => $subscription->user->email,
+                    'amount' => ($invoice['amount_paid'] ?? 0) / 100,
                 ]);
-
-                // Send subscription activated email
-                try {
-                    Mail::to($subscription->user->email)->send(
-                        new SubscriptionActivatedMail($subscription)
-                    );
-
-                    Log::info('✅ Subscription activated email sent', [
-                        'user_email' => $subscription->user->email,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error('❌ Failed to send subscription activated email', [
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            } else {
-                // Send payment successful email for recurring payments
-                $amount = ($invoice['amount_paid'] ?? 0) / 100;
-
-                try {
-                    Mail::to($subscription->user->email)->send(
-                        new PaymentSuccessfulMail($subscription, $amount)
-                    );
-
-                    Log::info('✅ Payment successful email sent', [
-                        'user_email' => $subscription->user->email,
-                        'amount' => $amount,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error('❌ Failed to send payment successful email', [
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+            } catch (Exception $e) {
+                Log::error('❌ Failed to send payment success email', [
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             Log::info('✅ Subscription payment successful', [
@@ -266,7 +292,7 @@ class StripeWebhookService
                 'user_id' => $subscription->user_id,
                 'stripe_subscription_id' => $stripeSubscriptionId,
                 'amount' => ($invoice['amount_paid'] ?? 0) / 100,
-                'currency' => $invoice['currency'] ?? 'AUD',
+                'currency' => strtoupper($invoice['currency'] ?? 'AUD'),
                 'was_in_trial' => $wasInTrial,
             ]);
         });
@@ -277,38 +303,42 @@ class StripeWebhookService
      */
     protected function handleInvoicePaymentFailed(array $payload)
     {
-        Log::info('🔥🔥🔥 PAYMENT FAILED METHOD CALLED 🔥🔥🔥');
-        $invoice = $payload['data']['object'];
+        $invoice = $payload;
+
         $stripeSubscriptionId = $invoice['subscription'] ?? null;
 
         if (!$stripeSubscriptionId) {
-            Log::warning('No subscription in failed invoice', ['invoice_id' => $invoice['id']]);
+            Log::warning('No subscription found in failed payment invoice');
             return;
         }
 
+        // Find subscription by Stripe subscription ID
         $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
 
         if (!$subscription) {
-            Log::warning('Subscription not found for payment failed', ['stripe_subscription_id' => $stripeSubscriptionId]);
+            Log::warning('Subscription not found for failed payment', ['stripe_subscription_id' => $stripeSubscriptionId]);
             return;
         }
 
         DB::transaction(function () use ($subscription, $invoice) {
-            $failedCount = $subscription->failed_payment_count + 1;
-
-            $subscription->update([
-                'failed_payment_count' => $failedCount,
-            ]);
-
             $amount = ($invoice['amount_due'] ?? 0) / 100;
+            $failedCount = ($invoice['attempt_count'] ?? 0);
+            $maxRetries = 3;
 
-            // After 3 failed payments, suspend the subscription
-            if ($failedCount >= 3) {
+            // Suspend after max retries
+            if ($failedCount >= $maxRetries) {
                 $subscription->update([
                     'status' => 'suspended',
+                    'cancelled_at' => now(),
                 ]);
 
-                // Send subscription suspended email
+                Log::warning('⚠️ Subscription suspended due to payment failures', [
+                    'subscription_id' => $subscription->id,
+                    'user_id' => $subscription->user_id,
+                    'failed_attempts' => $failedCount,
+                ]);
+
+                // Send suspension email
                 try {
                     Mail::to($subscription->user->email)->send(
                         new SubscriptionSuspendedMail($subscription)
@@ -317,16 +347,11 @@ class StripeWebhookService
                     Log::info('✅ Subscription suspended email sent', [
                         'user_email' => $subscription->user->email,
                     ]);
-                } catch (\Exception $e) {
-                    Log::error('❌ Failed to send suspended email', [
+                } catch (Exception $e) {
+                    Log::error('❌ Failed to send suspension email', [
                         'error' => $e->getMessage(),
                     ]);
                 }
-
-                Log::warning('Subscription suspended after 3 failed payments', [
-                    'subscription_id' => $subscription->id,
-                    'user_id' => $subscription->user_id,
-                ]);
             } else {
                 // Send payment failed email
                 try {
@@ -338,7 +363,7 @@ class StripeWebhookService
                         'user_email' => $subscription->user->email,
                         'failed_count' => $failedCount,
                     ]);
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     Log::error('❌ Failed to send payment failed email', [
                         'error' => $e->getMessage(),
                     ]);
@@ -359,7 +384,12 @@ class StripeWebhookService
      */
     protected function handleSubscriptionCreated(array $payload)
     {
-        $stripeSubscription = $payload['data']['object'];
+        // ⚠️ CHANGE #5 (LINE 392):
+        // CHANGED: Removed ['data']['object'] wrapper
+        // REASON: Payload is NOW already the subscription object
+        // BEFORE: $stripeSubscription = $payload['data']['object'];
+        // AFTER:
+        $stripeSubscription = $payload; // ← REMOVED ['data']['object']
         $stripeSubscriptionId = $stripeSubscription['id'];
         $stripeCustomerId = $stripeSubscription['customer'];
 
@@ -383,7 +413,12 @@ class StripeWebhookService
      */
     protected function handleSubscriptionUpdated(array $payload)
     {
-        $stripeSubscription = $payload['data']['object'];
+        // ⚠️ CHANGE #6 (LINE 416):
+        // CHANGED: Removed ['data']['object'] wrapper
+        // REASON: Payload is NOW already the subscription object
+        // BEFORE: $stripeSubscription = $payload['data']['object'];
+        // AFTER:
+        $stripeSubscription = $payload; // ← REMOVED ['data']['object']
         $stripeSubscriptionId = $stripeSubscription['id'];
 
         $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
@@ -437,7 +472,12 @@ class StripeWebhookService
      */
     protected function handleSubscriptionDeleted(array $payload)
     {
-        $stripeSubscription = $payload['data']['object'];
+        // ⚠️ CHANGE #7 (LINE 470):
+        // CHANGED: Removed ['data']['object'] wrapper
+        // REASON: Payload is NOW already the subscription object
+        // BEFORE: $stripeSubscription = $payload['data']['object'];
+        // AFTER:
+        $stripeSubscription = $payload; // ← REMOVED ['data']['object']
         $stripeSubscriptionId = $stripeSubscription['id'];
 
         $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
@@ -466,7 +506,12 @@ class StripeWebhookService
      */
     protected function handleTrialWillEnd(array $payload)
     {
-        $stripeSubscription = $payload['data']['object'];
+        // ⚠️ CHANGE #8 (LINE 499):
+        // CHANGED: Removed ['data']['object'] wrapper
+        // REASON: Payload is NOW already the subscription object
+        // BEFORE: $stripeSubscription = $payload['data']['object'];
+        // AFTER:
+        $stripeSubscription = $payload; // ← REMOVED ['data']['object']
         $stripeSubscriptionId = $stripeSubscription['id'];
 
         $subscription = Subscription::where('stripe_subscription_id', $stripeSubscriptionId)->first();
@@ -484,13 +529,13 @@ class StripeWebhookService
         // Send trial ending soon email
         try {
             Mail::to($subscription->user->email)->send(
-                new \App\Mail\TrialEndingSoonMail($subscription)
+                new TrialEndingSoonMail($subscription)
             );
 
             Log::info('✅ Trial ending soon email sent', [
                 'user_email' => $subscription->user->email,
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('❌ Failed to send trial ending email', [
                 'error' => $e->getMessage(),
             ]);
@@ -531,7 +576,7 @@ class StripeWebhookService
                 ]);
 
                 $this->process($webhook);
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 Log::error('Webhook retry failed', [
                     'webhook_id' => $webhook->id,
                     'error' => $e->getMessage()

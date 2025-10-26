@@ -3,6 +3,11 @@ import axios from 'axios';
 // Combine base URL and API version cleanly
 const baseURL = `${import.meta.env.VITE_API_BASE_URL}${import.meta.env.VITE_API_VERSION}`;
 
+console.log('🔧 API Config:');
+console.log('VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
+console.log('VITE_API_VERSION:', import.meta.env.VITE_API_VERSION);
+console.log('Final baseURL:', baseURL);
+
 const api = axios.create({
     // baseURL: 'http://127.0.0.1:8000/api/v1',  // NOT /api/v1
     // baseURL: 'https://334e9da0e488.ngrok-free.app/api/v1',  // NOT /api/v1

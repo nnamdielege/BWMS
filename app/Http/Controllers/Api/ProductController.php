@@ -62,7 +62,7 @@ class ProductController extends Controller
             // Add total stock safely
             $products->getCollection()->transform(function ($product) {
                 try {
-                    $totalStock = \App\Models\Inventory::where('product_id', $product->id)
+                    $totalStock = Inventory::where('product_id', $product->id)
                         ->sum('quantity_on_hand');
                     $product->total_stock = $totalStock ?? 0;
                 } catch (\Exception $e) {
@@ -186,6 +186,7 @@ class ProductController extends Controller
         try {
             $product = Product::findOrFail($id);
 
+            // Validate request data
             $validated = $request->validate([
                 'sku' => 'sometimes|required|string|max:255|unique:products,sku,' . $id,
                 'barcode' => 'nullable|string|max:255|unique:products,barcode,' . $id,
@@ -205,16 +206,30 @@ class ProductController extends Controller
 
             DB::beginTransaction();
 
+            // Update the product
             $product->update($validated);
+
+            // Reload with relationships
+            $product->load('category');
 
             DB::commit();
 
             return response()->json([
                 'message' => 'Product updated successfully',
-                'data' => $product->load('category')
-            ]);
+                'data' => $product
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
+
+            Log::error('Product update failed: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Failed to update product',
                 'error' => $e->getMessage()
@@ -253,6 +268,9 @@ class ProductController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
+            Log::error('Product deletion failed: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Failed to delete product',
                 'error' => $e->getMessage()
@@ -261,38 +279,29 @@ class ProductController extends Controller
     }
 
     /**
-     * Get product inventory across all warehouses
-     */
-    public function getInventory($id)
-    {
-        try {
-            $product = Product::findOrFail($id);
-
-            $inventory = Inventory::with(['warehouse'])
-                ->where('product_id', $id)
-                ->get();
-
-            return response()->json($inventory);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to fetch product inventory',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get all product categories
+     * Get product categories
      */
     public function getCategories()
     {
         try {
             $categories = ProductCategory::where('is_active', true)
                 ->orderBy('name')
-                ->get();
+                ->get()
+                ->map(function ($category) {
+                    return [
+                        'id' => $category->id,
+                        'value' => $category->id,
+                        'label' => $category->name,
+                        'name' => $category->name,
+                    ];
+                });
 
-            return response()->json($categories);
+            return response()->json([
+                'data' => $categories
+            ]);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch categories: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Failed to fetch categories',
                 'error' => $e->getMessage()
@@ -301,160 +310,83 @@ class ProductController extends Controller
     }
 
     /**
-     * Search products (for autocomplete/select)
+     * Bulk update products
      */
-    public function search(Request $request)
+    public function bulkUpdate(Request $request)
     {
-        try {
-            $query = Product::with(['category']);
-
-            if ($request->has('q') && $request->q) {
-                $search = $request->q;
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('sku', 'like', "%{$search}%")
-                        ->orWhere('barcode', 'like', "%{$search}%");
-                });
-            }
-
-            // Only active products
-            $query->where('is_active', true);
-
-            $limit = $request->get('limit', 10);
-            $products = $query->limit($limit)->get();
-
-            return response()->json($products);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to search products',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get low stock products
-     */
-    public function lowStock(Request $request)
-    {
-        try {
-            $query = Product::with(['category'])
-                ->whereHas('inventory', function ($q) {
-                    $q->whereRaw('quantity_available <= products.reorder_point')
-                        ->where('quantity_available', '>', 0);
-                });
-
-            if ($request->has('warehouse_id') && $request->warehouse_id) {
-                $query->whereHas('inventory', function ($q) use ($request) {
-                    $q->where('warehouse_id', $request->warehouse_id);
-                });
-            }
-
-            $products = $query->get();
-
-            return response()->json($products);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to fetch low stock products',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get out of stock products
-     */
-    public function outOfStock(Request $request)
-    {
-        try {
-            $query = Product::with(['category'])
-                ->whereHas('inventory', function ($q) {
-                    $q->where('quantity_available', '<=', 0);
-                });
-
-            if ($request->has('warehouse_id') && $request->warehouse_id) {
-                $query->whereHas('inventory', function ($q) use ($request) {
-                    $q->where('warehouse_id', $request->warehouse_id);
-                });
-            }
-
-            $products = $query->get();
-
-            return response()->json($products);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to fetch out of stock products',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Bulk import products
-     */
-    public function import(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file|mimes:csv,xlsx,xls|max:5120', // 5MB max
+        $validated = $request->validate([
+            'product_ids' => 'required|array',
+            'product_ids.*' => 'exists:products,id',
+            'updates' => 'required|array',
+            'updates.is_active' => 'sometimes|boolean',
+            'updates.category_id' => 'sometimes|exists:product_categories,id',
         ]);
 
         DB::beginTransaction();
 
         try {
-            // TODO: Implement CSV/Excel import logic
-            // This would typically use a package like maatwebsite/excel
+            Product::whereIn('id', $validated['product_ids'])
+                ->update($validated['updates']);
 
             DB::commit();
 
             return response()->json([
-                'message' => 'Products imported successfully',
+                'message' => 'Products updated successfully',
+                'updated_count' => count($validated['product_ids']),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
+            Log::error('Bulk update failed: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'Failed to import products',
+                'message' => 'Failed to update products',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Export products
+     * Bulk delete products
      */
-    public function export(Request $request)
+    public function bulkDelete(Request $request)
     {
+        $validated = $request->validate([
+            'product_ids' => 'required|array',
+            'product_ids.*' => 'exists:products,id',
+        ]);
+
+        DB::beginTransaction();
+
         try {
-            $query = Product::with(['category']);
+            // Check if any products have inventory
+            $productsWithInventory = Inventory::whereIn('product_id', $validated['product_ids'])
+                ->where('quantity_on_hand', '>', 0)
+                ->pluck('product_id')
+                ->toArray();
 
-            // Apply same filters as index
-            if ($request->has('search') && $request->search) {
-                $search = $request->search;
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('sku', 'like', "%{$search}%");
-                });
+            if (count($productsWithInventory) > 0) {
+                return response()->json([
+                    'message' => 'Some products have existing inventory and cannot be deleted',
+                    'products_with_inventory' => $productsWithInventory,
+                ], 400);
             }
 
-            if ($request->has('category_id') && $request->category_id) {
-                $query->where('category_id', $request->category_id);
-            }
+            Product::whereIn('id', $validated['product_ids'])->delete();
 
-            if ($request->has('is_active') && $request->is_active !== '') {
-                $query->where('is_active', $request->is_active);
-            }
-
-            $products = $query->get();
-
-            // TODO: Implement actual Excel/CSV export
-            // This would typically use a package like maatwebsite/excel
+            DB::commit();
 
             return response()->json([
-                'message' => 'Export functionality coming soon',
-                'products_count' => $products->count(),
+                'message' => 'Products deleted successfully',
+                'deleted_count' => count($validated['product_ids']),
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
+
+            Log::error('Bulk delete failed: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'Failed to export products',
+                'message' => 'Failed to delete products',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -482,6 +414,8 @@ class ProductController extends Controller
 
             return response()->json($stats);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch statistics: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Failed to fetch product statistics',
                 'error' => $e->getMessage()
@@ -541,6 +475,9 @@ class ProductController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
+
+            Log::error('Product duplication failed: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Failed to duplicate product',
                 'error' => $e->getMessage()
@@ -549,77 +486,43 @@ class ProductController extends Controller
     }
 
     /**
-     * Bulk update products
+     * Export products
      */
-    public function bulkUpdate(Request $request)
+    public function export(Request $request)
     {
-        $validated = $request->validate([
-            'product_ids' => 'required|array',
-            'product_ids.*' => 'exists:products,id',
-            'updates' => 'required|array',
-            'updates.is_active' => 'sometimes|boolean',
-            'updates.category_id' => 'sometimes|exists:product_categories,id',
-        ]);
-
-        DB::beginTransaction();
-
         try {
-            Product::whereIn('id', $validated['product_ids'])
-                ->update($validated['updates']);
+            $query = Product::query();
 
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Products updated successfully',
-                'updated_count' => count($validated['product_ids']),
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to update products',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Bulk delete products
-     */
-    public function bulkDelete(Request $request)
-    {
-        $validated = $request->validate([
-            'product_ids' => 'required|array',
-            'product_ids.*' => 'exists:products,id',
-        ]);
-
-        DB::beginTransaction();
-
-        try {
-            // Check if any products have inventory
-            $productsWithInventory = Inventory::whereIn('product_id', $validated['product_ids'])
-                ->where('quantity_on_hand', '>', 0)
-                ->pluck('product_id')
-                ->toArray();
-
-            if (count($productsWithInventory) > 0) {
-                return response()->json([
-                    'message' => 'Some products have existing inventory and cannot be deleted',
-                    'products_with_inventory' => $productsWithInventory,
-                ], 400);
+            if ($request->has('search') && $request->search) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('sku', 'like', "%{$search}%");
+                });
             }
 
-            Product::whereIn('id', $validated['product_ids'])->delete();
+            if ($request->has('category_id') && $request->category_id) {
+                $query->where('category_id', $request->category_id);
+            }
 
-            DB::commit();
+            if ($request->has('is_active') && $request->is_active !== '') {
+                $query->where('is_active', $request->is_active);
+            }
+
+            $products = $query->get();
+
+            // TODO: Implement actual Excel/CSV export
+            // This would typically use a package like maatwebsite/excel
 
             return response()->json([
-                'message' => 'Products deleted successfully',
-                'deleted_count' => count($validated['product_ids']),
+                'message' => 'Export functionality coming soon',
+                'products_count' => $products->count(),
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            Log::error('Export failed: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'Failed to delete products',
+                'message' => 'Failed to export products',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -638,6 +541,8 @@ class ProductController extends Controller
                 'message' => 'Pricing history feature coming soon',
             ]);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch pricing history: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Failed to fetch pricing history',
                 'error' => $e->getMessage()
@@ -674,6 +579,8 @@ class ProductController extends Controller
 
             return response()->json($history);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch movement history: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Failed to fetch movement history',
                 'error' => $e->getMessage()

@@ -39,6 +39,15 @@
         </div>
       </div>
 
+       <!-- Empty State -->
+      <div v-if="stats.length === 0" class="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
+        <div class="text-5xl mb-4">📊</div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">No Usage Data Yet</h3>
+        <p class="text-gray-600">
+          Usage statistics will appear here once you start using the platform.
+        </p>
+      </div>
+
       <!-- Usage Cards -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div
@@ -198,13 +207,21 @@ export default {
 
         const response = await axios.get('/api/v1/usage/stats');
         
-        stats.value = response.data.stats;
-        planName.value = response.data.plan_name;
+        // 🔍 Debug logging
+        console.log('📊 Full API Response:', response.data);
+        console.log('📊 Stats array:', response.data.stats);
+        console.log('📊 Stats array length:', response.data.stats?.length);
+        console.log('📊 First stat:', response.data.stats?.[0]);
+        
+        stats.value = response.data.stats || [];
+        planName.value = response.data.plan_name || 'Unknown';
         billingCycleStart.value = response.data.billing_cycle_start;
         billingCycleEnd.value = response.data.billing_cycle_end;
+        
+        console.log('✅ Stats set to:', stats.value);
       } catch (err) {
-        error.value = err.response?.data?.message || 'Failed to load usage statistics';
-        console.error(err);
+        error.value = err.message || 'Failed to load usage statistics';
+        console.error('❌ Full error:', err);
       } finally {
         loading.value = false;
       }

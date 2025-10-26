@@ -18,14 +18,14 @@
         </div>
 
         <!-- Product Details -->
-        <div v-else-if="product" class="product-details">
+        <div v-else-if="product && Object.keys(product).length > 0" class="product-details">
             <!-- Header -->
             <div class="page-header">
                 <div>
                     <router-link to="/products" class="back-link">
                         ← Back to Products
                     </router-link>
-                    <h1 class="page-title">{{ product.name }}</h1>
+                    <h1 class="page-title">{{ product.name || 'Product' }}</h1>
                     <p class="product-sku">SKU: {{ product.sku }}</p>
                 </div>
                 <div class="header-actions">
@@ -49,11 +49,11 @@
                     <div class="info-rows">
                         <div class="info-row">
                             <span class="label">Name:</span>
-                            <span class="value">{{ product.name }}</span>
+                            <span class="value">{{ product.name || 'N/A' }}</span>
                         </div>
                         <div class="info-row">
                             <span class="label">SKU:</span>
-                            <span class="value">{{ product.sku }}</span>
+                            <span class="value">{{ product.sku || 'N/A' }}</span>
                         </div>
                         <div class="info-row">
                             <span class="label">Barcode:</span>
@@ -61,11 +61,11 @@
                         </div>
                         <div class="info-row">
                             <span class="label">Category:</span>
-                            <span class="value">{{ product.category?.name || 'N/A' }}</span>
+                            <span class="value">{{ product.category?.name || product.category || 'N/A' }}</span>
                         </div>
                         <div class="info-row">
                             <span class="label">Unit:</span>
-                            <span class="value">{{ product.unit_of_measure }}</span>
+                            <span class="value">{{ product.unit_of_measure || 'N/A' }}</span>
                         </div>
                         <div class="info-row">
                             <span class="label">Status:</span>
@@ -82,16 +82,16 @@
                     <div class="info-rows">
                         <div class="info-row">
                             <span class="label">Cost:</span>
-                            <span class="value">${{ parseFloat(product.cost).toFixed(2) }}</span>
+                            <span class="value">${{ formatPrice(product.cost) }}</span>
                         </div>
                         <div class="info-row">
                             <span class="label">Price:</span>
-                            <span class="value">${{ parseFloat(product.price).toFixed(2) }}</span>
+                            <span class="value">${{ formatPrice(product.price) }}</span>
                         </div>
                         <div class="info-row">
                             <span class="label">Margin:</span>
                             <span class="value">
-                                ${{ (parseFloat(product.price) - parseFloat(product.cost)).toFixed(2) }}
+                                ${{ formatPrice(parseFloat(product.price) - parseFloat(product.cost)) }}
                                 ({{ calculateMargin() }}%)
                             </span>
                         </div>
@@ -146,7 +146,7 @@
             </div>
 
             <!-- Inventory by Warehouse -->
-            <div v-if="product.inventory_details?.length" class="info-card full-width">
+            <div v-if="product.inventory_details && product.inventory_details.length > 0" class="info-card full-width">
                 <h3 class="card-title">Inventory by Warehouse</h3>
                 <div class="table-container">
                     <table class="inventory-table">
@@ -161,22 +161,33 @@
                         </thead>
                         <tbody>
                             <tr v-for="inv in product.inventory_details" :key="inv.id">
-                                <td>{{ inv.warehouse?.name }}</td>
-                                <td>{{ inv.quantity_on_hand }}</td>
-                                <td>{{ inv.quantity_available }}</td>
-                                <td>{{ inv.quantity_allocated }}</td>
-                                <td>{{ inv.quantity_on_order }}</td>
+                                <td>{{ inv.warehouse?.name || 'N/A' }}</td>
+                                <td>{{ inv.quantity_on_hand || 0 }}</td>
+                                <td>{{ inv.quantity_available || 0 }}</td>
+                                <td>{{ inv.quantity_allocated || 0 }}</td>
+                                <td>{{ inv.quantity_on_order || 0 }}</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
+
+        <!-- Empty State -->
+        <div v-else class="error-container">
+            <div class="error-card">
+                <h2>No Product Data</h2>
+                <p>Unable to load product information</p>
+                <router-link to="/products" class="btn-back">
+                    ← Back to Products
+                </router-link>
+            </div>
+        </div>
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProductStore } from '../../stores/product';
 
@@ -198,30 +209,47 @@ const fetchProduct = async () => {
 
     try {
         const id = route.params.id;
-        console.log('Fetching product ID:', id); // Debug
         
+        if (!id) {
+            error.value = 'No product ID provided';
+            loading.value = false;
+            return;
+        }
+
         const response = await productStore.fetchProduct(id);
-        product.value = response;
+        // console.log('Fetched product:', response);
         
-        console.log('Product loaded:', product.value); // Debug
+        if (!response) {
+            error.value = 'Product not found';
+            loading.value = false;
+            return;
+        }
+
+        product.value = response;
     } catch (err) {
-        console.error('Error fetching product:', err); // Debug
-        error.value = err.response?.data?.message || 'Product not found';
+        error.value = err.response?.data?.message || 'Failed to load product';
     } finally {
         loading.value = false;
     }
 };
 
+const formatPrice = (value) => {
+    const num = parseFloat(value);
+    return isNaN(num) ? '0.00' : num.toFixed(2);
+};
+
 const calculateMargin = () => {
-    if (!product.value) return 0;
-    const cost = parseFloat(product.value.cost);
-    const price = parseFloat(product.value.price);
-    if (cost === 0) return 0;
+    if (!product.value) return '0.00';
+    
+    const cost = parseFloat(product.value.cost) || 0;
+    const price = parseFloat(product.value.price) || 0;
+    
+    if (cost === 0) return '0.00';
     return (((price - cost) / cost) * 100).toFixed(2);
 };
 
 const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this product?')) {
+    if (!confirm('Are you sure you want to delete this product? This action cannot be undone.')) {
         return;
     }
 
@@ -229,14 +257,14 @@ const handleDelete = async () => {
         await productStore.deleteProduct(product.value.id);
         router.push('/products');
     } catch (err) {
-        alert('Failed to delete product: ' + (err.response?.data?.message || err.message));
+        error.value = 'Failed to delete product: ' + (err.response?.data?.message || err.message);
     }
 };
 </script>
 
 <style scoped>
 .product-show-page {
-    @apply max-w-6xl mx-auto;
+    @apply max-w-6xl mx-auto py-6 px-4;
 }
 
 .loading-container {
@@ -267,12 +295,16 @@ const handleDelete = async () => {
     @apply inline-block bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors no-underline;
 }
 
+.product-details {
+    @apply space-y-6;
+}
+
 .page-header {
     @apply flex items-start justify-between mb-6;
 }
 
 .back-link {
-    @apply text-indigo-600 hover:text-indigo-700 mb-2 inline-block no-underline;
+    @apply text-indigo-600 hover:text-indigo-700 mb-2 inline-block no-underline font-medium;
 }
 
 .page-title {
@@ -280,7 +312,7 @@ const handleDelete = async () => {
 }
 
 .product-sku {
-    @apply text-gray-600;
+    @apply text-gray-600 text-sm;
 }
 
 .header-actions {
@@ -288,11 +320,11 @@ const handleDelete = async () => {
 }
 
 .btn-edit {
-    @apply bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors no-underline;
+    @apply bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors no-underline font-medium;
 }
 
 .btn-delete {
-    @apply bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors;
+    @apply bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-medium;
 }
 
 .info-grid {
@@ -316,15 +348,15 @@ const handleDelete = async () => {
 }
 
 .info-row {
-    @apply flex justify-between items-center;
+    @apply flex justify-between items-center py-2;
 }
 
 .label {
-    @apply text-gray-600 font-medium;
+    @apply text-gray-600 font-medium text-sm;
 }
 
 .value {
-    @apply text-gray-900;
+    @apply text-gray-900 font-medium;
 }
 
 .badge {
@@ -349,7 +381,7 @@ const handleDelete = async () => {
 }
 
 .inventory-table {
-    @apply w-full;
+    @apply w-full text-sm;
 }
 
 .inventory-table thead {
@@ -357,10 +389,14 @@ const handleDelete = async () => {
 }
 
 .inventory-table th {
-    @apply px-4 py-3 text-left text-sm font-semibold text-gray-900;
+    @apply px-4 py-3 text-left font-semibold text-gray-900;
 }
 
 .inventory-table td {
-    @apply px-4 py-3 text-sm text-gray-700 border-t border-gray-200;
+    @apply px-4 py-3 text-gray-700 border-t border-gray-200;
+}
+
+.inventory-table tbody tr:hover {
+    @apply bg-gray-50;
 }
 </style>

@@ -29,13 +29,13 @@
             />
 
             <Alert
-            v-if="productStore.error"
-            type="error"
-            :message="productStore.error"
-            @close="productStore.clearError()"
+                v-if="productStore.error"
+                type="error"
+                :message="productStore.error"
+                @close="productStore.clearError()"
             />
 
-        <!-- Product Form -->
+            <!-- Product Form -->
             <form @submit.prevent="handleSubmit" class="form-container">
                 <div class="form-grid">
                     <!-- Basic Information -->
@@ -91,7 +91,7 @@
                         <h3 class="section-title">Pricing</h3>
                         <div class="section-content">
                             <FormInput
-                                v-model="form.cost"
+                                v-model.number="form.cost"
                                 type="number"
                                 step="0.01"
                                 label="Cost Price"
@@ -105,7 +105,7 @@
                             </FormInput>
 
                             <FormInput
-                                v-model="form.price"
+                                v-model.number="form.price"
                                 type="number"
                                 step="0.01"
                                 label="Selling Price"
@@ -140,7 +140,7 @@
                             />
 
                             <FormInput
-                                v-model="form.reorder_point"
+                                v-model.number="form.reorder_point"
                                 type="number"
                                 label="Reorder Point"
                                 placeholder="0"
@@ -149,7 +149,7 @@
                             />
 
                             <FormInput
-                                v-model="form.reorder_quantity"
+                                v-model.number="form.reorder_quantity"
                                 type="number"
                                 label="Reorder Quantity"
                                 placeholder="0"
@@ -164,7 +164,7 @@
                         <h3 class="section-title">Additional Details</h3>
                         <div class="section-content">
                             <FormInput
-                                v-model="form.weight"
+                                v-model.number="form.weight"
                                 type="number"
                                 step="0.01"
                                 label="Weight"
@@ -224,16 +224,17 @@
         <!-- Error State -->
         <div v-else class="error-state">
             <svg class="w-16 h-16 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4v2m0 4v2M7.08 6.06L8.5 4.64m2.12 10.96l1.41 1.41m0 0l1.41 1.41M4.64 8.5L6.06 7.08m10.96 2.12l1.41 1.41" />
             </svg>
-            <p class="text-gray-600 mt-4">Product not found</p>
-            <router-link to="/products" class="btn btn-primary mt-4">
+            <h2 class="text-xl font-semibold text-gray-900 mt-4">Product Not Found</h2>
+            <p class="text-gray-600 mt-2">The product you're trying to edit could not be found.</p>
+            <router-link to="/products" class="btn btn-primary mt-6">
                 Back to Products
             </router-link>
         </div>
     </div>
-
 </template>
+
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -247,20 +248,22 @@ const route = useRoute();
 const router = useRouter();
 const productStore = useProductStore();
 
-const loading = ref(true);
+// State
 const product = ref(null);
+const loading = ref(true);
+
 const form = ref({
     sku: '',
     barcode: '',
     name: '',
     description: '',
-    category_id: '',
-    cost: '',
-    price: '',
+    category_id: null,
+    cost: null,
+    price: null,
     unit_of_measure: 'EA',
-    reorder_point: '',
-    reorder_quantity: '',
-    weight: '',
+    reorder_point: null,
+    reorder_quantity: null,
+    weight: null,
     dimensions: '',
     notes: '',
     is_active: true,
@@ -303,18 +306,23 @@ const validateForm = () => {
         isValid = false;
     }
 
-    if (!form.value.cost || parseFloat(form.value.cost) < 0) {
+    if (form.value.cost === null || form.value.cost === '' || parseFloat(form.value.cost) < 0) {
         errors.value.cost = 'Valid cost price is required';
         isValid = false;
     }
 
-    if (!form.value.price || parseFloat(form.value.price) < 0) {
+    if (form.value.price === null || form.value.price === '' || parseFloat(form.value.price) < 0) {
         errors.value.price = 'Valid selling price is required';
         isValid = false;
     }
 
     if (parseFloat(form.value.price) < parseFloat(form.value.cost)) {
         errors.value.price = 'Selling price should be greater than cost';
+        isValid = false;
+    }
+
+    if (!form.value.unit_of_measure) {
+        errors.value.unit_of_measure = 'Unit of measure is required';
         isValid = false;
     }
 
@@ -327,15 +335,33 @@ const handleSubmit = async () => {
     }
 
     try {
-        await productStore.updateProduct(product.value.id, form.value);
+        // Ensure numeric fields are properly typed
+        const submitData = {
+            ...form.value,
+            category_id: parseInt(form.value.category_id),
+            cost: parseFloat(form.value.cost),
+            price: parseFloat(form.value.price),
+            reorder_point: form.value.reorder_point ? parseInt(form.value.reorder_point) : null,
+            reorder_quantity: form.value.reorder_quantity ? parseInt(form.value.reorder_quantity) : null,
+            weight: form.value.weight ? parseFloat(form.value.weight) : null,
+        };
+
+        await productStore.updateProduct(product.value.id, submitData);
+        
         successMessage.value = 'Product updated successfully!';
         
         // Refresh product data
-        product.value = await productStore.fetchProduct(product.value.id);
+        const updatedProduct = await productStore.fetchProduct(product.value.id);
+        product.value = updatedProduct;
         populateForm();
         
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+            successMessage.value = '';
+        }, 3000);
     } catch (error) {
         if (error.response?.data?.errors) {
             errors.value = error.response.data.errors;
@@ -344,40 +370,58 @@ const handleSubmit = async () => {
 };
 
 const populateForm = () => {
+    if (!product.value) return;
+    
     form.value = {
         sku: product.value.sku || '',
         barcode: product.value.barcode || '',
         name: product.value.name || '',
         description: product.value.description || '',
-        category_id: product.value.category_id || '',
-        cost: product.value.cost || '',
-        price: product.value.price || '',
+        category_id: product.value.category_id ? parseInt(product.value.category_id) : null,
+        cost: product.value.cost ? parseFloat(product.value.cost) : null,
+        price: product.value.price ? parseFloat(product.value.price) : null,
         unit_of_measure: product.value.unit_of_measure || 'EA',
-        reorder_point: product.value.reorder_point || '',
-        reorder_quantity: product.value.reorder_quantity || '',
-        weight: product.value.weight || '',
+        reorder_point: product.value.reorder_point ? parseInt(product.value.reorder_point) : null,
+        reorder_quantity: product.value.reorder_quantity ? parseInt(product.value.reorder_quantity) : null,
+        weight: product.value.weight ? parseFloat(product.value.weight) : null,
         dimensions: product.value.dimensions || '',
         notes: product.value.notes || '',
-        is_active: product.value.is_active ?? true,
+        is_active: product.value.is_active === true || product.value.is_active === 1,
     };
 };
 
 onMounted(async () => {
     try {
         const productId = route.params.id;
-        product.value = await productStore.fetchProduct(productId);
-        await productStore.fetchCategories();
-        categories.value = productStore.categories;
-        populateForm();
+        
+        if (!productId) {
+            product.value = null;
+            loading.value = false;
+            return;
+        }
+
+        // Fetch product and categories in parallel
+        const [prod, cats] = await Promise.all([
+            productStore.fetchProduct(productId),
+            productStore.fetchCategories(),
+        ]);
+
+        if (prod) {
+            product.value = prod;
+            categories.value = productStore.categories;
+            populateForm();
+        } else {
+            product.value = null;
+        }
     } catch (error) {
-        console.error('Error loading product:', error);
+        product.value = null;
     } finally {
         loading.value = false;
     }
 });
 </script>
+
 <style scoped>
-/* Same styles as Create.vue */
 .edit-product-page {
     @apply space-y-6;
 }
@@ -416,6 +460,14 @@ onMounted(async () => {
 
 .section-content {
     @apply space-y-4;
+}
+
+.form-group {
+    @apply flex flex-col;
+}
+
+.form-label {
+    @apply text-sm font-medium text-gray-700 mb-1;
 }
 
 .form-textarea {
@@ -471,7 +523,6 @@ onMounted(async () => {
 }
 
 .error-state {
-    @apply flex flex-col items-center justify-center py-20;
+    @apply flex flex-col items-center justify-center py-20 bg-white rounded-lg shadow;
 }
 </style>
-
