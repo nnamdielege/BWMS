@@ -11,10 +11,13 @@ class UserSeeder extends Seeder
 {
     public function run()
     {
-        // Ensure roles exist in the roles table
+        // Ensure roles exist for 'api' guard (or change to 'web' if you use web guard)
         $roles = ['admin', 'warehouse-manager', 'user'];
         foreach ($roles as $roleName) {
-            Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            Role::firstOrCreate([
+                'name' => $roleName,
+                'guard_name' => 'api', // <-- set to 'api' to match your user guard
+            ]);
         }
 
         // Users data
@@ -39,10 +42,9 @@ class UserSeeder extends Seeder
             ],
         ];
 
-        // Create users and assign roles
         foreach ($users as $userData) {
             $user = User::create(array_merge($userData, ['email_verified_at' => now()]));
-            $user->assignRole($userData['role']);
+            $user->assignRole($userData['role']); // This will now work
         }
     }
 }
