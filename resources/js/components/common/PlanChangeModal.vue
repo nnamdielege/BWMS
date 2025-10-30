@@ -295,7 +295,7 @@ export default {
     // Load available plans if not already loaded
     if (this.subscriptionStore.availablePlans.length === 0) {
         try {
-            await this.subscriptionStore.fetchAvailablePlans();
+            await this.subscriptionStore.fetchAvailablePlans();            
             console.log('Available plans:', this.subscriptionStore.availablePlans);
         } catch (error) {
             console.error('Failed to fetch available plans:', error);

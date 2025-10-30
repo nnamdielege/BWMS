@@ -273,7 +273,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subscription/payment-methods', [SubscriptionController::class, 'getPaymentMethods']);
     Route::delete('/subscription/payment-methods/{paymentMethodId}', [SubscriptionController::class, 'deletePaymentMethod']);
 
-
+    Route::get('/subscription/plans/available', [PlanChangeController::class, 'availablePlans']);
     Route::post('/subscription/plans/calculate', [PlanChangeController::class, 'calculateChange']);
     Route::post('/subscription/plans/change', [PlanChangeController::class, 'changePlan']);
 
