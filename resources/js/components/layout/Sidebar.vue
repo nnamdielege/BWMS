@@ -134,7 +134,7 @@
         </router-link>
         
         <router-link 
-          v-if="isAdmin || isAdmin || hasPermission('view-suppliers')" 
+          v-if="isAdmin || hasPermission('view-suppliers')" 
           to="/suppliers" 
           class="nav-link" 
           @click="$emit('close')">
@@ -204,9 +204,29 @@
       </div>
     </nav>
 
-    <!-- Sidebar Footer -->
+    <!-- Sidebar Footer - NEW SUBSCRIPTION LOGIC -->
     <div class="sidebar-footer">
-      <div class="footer-card">
+      <!-- Loading subscription info -->
+      <div v-if="loadingSubscription" class="footer-card-loading">
+        <div class="loading-spinner-small"></div>
+      </div>
+
+      <!-- ✅ On highest plan - Green card -->
+      <div v-else-if="isOnHighestPlan" class="footer-card premium">
+        <div class="footer-icon">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div class="footer-content">
+          <p class="footer-title">Premium Plan</p>
+          <p class="footer-text">You're on our highest tier</p>
+        </div>
+      </div>
+
+      <!-- ⬆️ Can upgrade - Purple card -->
+      <div v-else-if="nextPlan" class="footer-card upgrade">
         <div class="footer-icon">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -214,8 +234,28 @@
           </svg>
         </div>
         <div class="footer-content">
-          <p class="footer-title">Upgrade to Pro</p>
-          <p class="footer-text">Get advanced features</p>
+          <p class="footer-title">Upgrade to {{ nextPlan.name }}</p>
+          <p class="footer-text">{{ nextPlan.description }}</p>
+          <router-link to="/subscription/plans" class="upgrade-link">
+            View Plans →
+          </router-link>
+        </div>
+      </div>
+
+      <!-- 🆓 No plan yet - Orange card -->
+      <div v-else class="footer-card trial">
+        <div class="footer-icon">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div class="footer-content">
+          <p class="footer-title">Start Your Journey</p>
+          <p class="footer-text">Choose a plan to unlock features</p>
+          <router-link to="/subscription/plans" class="upgrade-link">
+            Browse Plans →
+          </router-link>
         </div>
       </div>
     </div>
@@ -223,8 +263,9 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { usePermissions } from '@/composables/usePermissions';
+import api from '@/services/api';
 
 defineProps({
   isOpen: { type: Boolean, default: false },
@@ -239,9 +280,97 @@ const {
   isAdmin 
 } = usePermissions();
 
+// ============================================
+// SUBSCRIPTION STATE
+// ============================================
+const loadingSubscription = ref(true);
+const currentPlan = ref(null);
+const availablePlans = ref([]);
+
+// Plan tiers (ordered from lowest to highest)
+// Using plan IDs as keys instead of slugs
+const planTiers = {
+  1: 0, // Starter or first plan
+  2: 1, // Professional or second plan
+  3: 2, // Business or third plan
+  4: 3, // Enterprise or fourth plan
+};
+
+// Get the next plan to upgrade to
+const nextPlan = computed(() => {
+  if (!currentPlan.value || !currentPlan.value.plan) return null;
+  
+  const currentPlanId = currentPlan.value.plan.id;
+  const currentTier = planTiers[currentPlanId] || 0;
+  const nextPlanData = availablePlans.value.find(p => {
+    const planTier = planTiers[p.id];
+    return planTier === currentTier + 1;
+  });
+  
+  return nextPlanData || null;
+});
+
+// Check if on highest plan
+const isOnHighestPlan = computed(() => {
+  if (!currentPlan.value || !currentPlan.value.plan) return false;
+  
+  const currentPlanId = currentPlan.value.plan.id;
+  const currentTier = planTiers[currentPlanId] || 0;
+  const maxTier = Math.max(...Object.values(planTiers));
+  
+  // Console log user's actual plan
+  console.log('👤 USER CURRENT PLAN:', {
+    planName: currentPlan.value.plan.name,
+    planId: currentPlan.value.plan.id,
+    planTier: currentTier,
+    maxTier: maxTier,
+    isHighestPlan: currentTier === maxTier,
+    fullPlanData: currentPlan.value
+  });
+  
+  return currentTier === maxTier;
+});
+
+// Fetch subscription info from API
+const fetchSubscriptionInfo = async () => {
+  try {
+    loadingSubscription.value = true;
+    
+    // Get current subscription
+    console.log('🔄 Fetching current subscription...');
+    const currentRes = await api.get('subscription/current');
+    console.log('📥 Current subscription response:', currentRes);
+    if (currentRes.data?.data) {
+      currentPlan.value = currentRes.data.data;
+      console.log('✅ Current Plan Set:', currentPlan.value);
+    } else {
+      console.warn('⚠️ No data in current subscription response:', currentRes.data);
+    }
+    
+    // Get available plans
+    console.log('🔄 Fetching available plans...');
+    const plansRes = await api.get('subscription/plans');
+    console.log('📥 Available plans response:', plansRes);
+    if (plansRes.data?.data) {
+      availablePlans.value = plansRes.data.data;
+      console.log('✅ Available Plans Set:', availablePlans.value);
+    } else {
+      console.warn('⚠️ No data in available plans response:', plansRes.data);
+    }
+  } catch (error) {
+    console.error('❌ Failed to fetch subscription info:');
+    console.error('Error message:', error.message);
+    console.error('Error response:', error.response?.data);
+    console.error('Error status:', error.response?.status);
+    console.error('Full error:', error);
+  } finally {
+    loadingSubscription.value = false;
+  }
+};
+
 onMounted(async () => {
   await fetchPermissions();
-  console.log(isAdmin == true);
+  await fetchSubscriptionInfo();
 });
 </script>
 
@@ -298,6 +427,15 @@ onMounted(async () => {
   animation: spin 1s linear infinite;
 }
 
+.loading-spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #374151;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -328,24 +466,78 @@ onMounted(async () => {
   @apply p-4 border-t border-gray-800;
 }
 
-.footer-card {
-  @apply bg-gradient-to-br from-indigo-600 to-purple-600 rounded-lg p-4 flex items-start gap-3;
+/* Footer Card - Loading State */
+.footer-card-loading {
+  @apply bg-gray-800 rounded-lg p-4 flex items-center justify-center;
 }
 
-.footer-icon {
+/* Footer Card - Base */
+.footer-card {
+  @apply rounded-lg p-4 flex items-start gap-3 transition-all;
+}
+
+/* ✅ Footer Card - Premium (Highest Plan) - GREEN */
+.footer-card.premium {
+  @apply bg-gradient-to-br from-green-600 to-emerald-600;
+}
+
+.footer-card.premium .footer-icon {
   @apply w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center flex-shrink-0;
 }
 
+.footer-card.premium .footer-title {
+  @apply text-sm font-semibold mb-1;
+}
+
+.footer-card.premium .footer-text {
+  @apply text-xs text-gray-100;
+}
+
+/* ⬆️ Footer Card - Upgrade - PURPLE */
+.footer-card.upgrade {
+  @apply bg-gradient-to-br from-indigo-600 to-purple-600 hover:shadow-lg;
+}
+
+.footer-card.upgrade .footer-icon {
+  @apply w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center flex-shrink-0;
+}
+
+.footer-card.upgrade .footer-title {
+  @apply text-sm font-semibold mb-1;
+}
+
+.footer-card.upgrade .footer-text {
+  @apply text-xs text-gray-100 mb-2;
+}
+
+.upgrade-link {
+  @apply inline-block text-xs font-semibold text-white hover:text-gray-100 transition-colors no-underline;
+}
+
+/* 🆓 Footer Card - Trial - ORANGE */
+.footer-card.trial {
+  @apply bg-gradient-to-br from-amber-500 to-orange-500 hover:shadow-lg;
+}
+
+.footer-card.trial .footer-icon {
+  @apply w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center flex-shrink-0;
+}
+
+.footer-card.trial .footer-title {
+  @apply text-sm font-semibold mb-1;
+}
+
+.footer-card.trial .footer-text {
+  @apply text-xs text-gray-100 mb-2;
+}
+
+/* Footer Content */
 .footer-content {
   @apply flex-1;
 }
 
-.footer-title {
-  @apply text-sm font-semibold mb-1;
-}
-
-.footer-text {
-  @apply text-xs text-gray-200;
+.footer-icon {
+  @apply flex-shrink-0;
 }
 
 /* Custom Scrollbar */
