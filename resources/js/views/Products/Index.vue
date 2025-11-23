@@ -48,6 +48,13 @@
                 </FormInput>
 
                 <FormSelect
+                    v-model="itemsPerPage"
+                    label="Items Per Page"
+                    :options="itemsPerPageOptions"
+                    @update:modelValue="applyItemsPerPage"
+                />
+
+                <FormSelect
                     v-model="filters.category_id"
                     label="Category"
                     :options="categories"
@@ -251,6 +258,20 @@ import Modal from '../../components/common/Modal.vue';
 import ExportModal from '../../components/common/ExportModal.vue';
 import ImportModal from '../../components/common/ImportModal.vue';
 import exportImportService from '../../services/exportImportService';
+
+const itemsPerPage = ref(15);
+
+const itemsPerPageOptions = [
+    { id: '15', name: '15 items' },
+    { id: '50', name: '50 items' },
+    { id: '100', name: '100 items' },
+    { id: '0', name: 'Show All' }, // 0 will signal backend to return all
+];
+
+const applyItemsPerPage = async () => {
+    const perPageValue = itemsPerPage.value === '0' ? 999999 : itemsPerPage.value;
+    await productStore.fetchProducts({ per_page: perPageValue });
+};
 
 const productStore = useProductStore();
 
