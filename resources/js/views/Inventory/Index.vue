@@ -183,21 +183,37 @@ const loadInventory = async () => {
     error.value = null;
 
     try {
-        const params = {
-            page: 1,
-            per_page: 10000, // Load up to 10,000 records at once
-            search: filters.search,
-            warehouse_id: filters.warehouse_id || undefined,
-            stock_status: filters.stock_status || undefined,
-        };
+        let allInventory = [];
+        let currentPage = 1;
+        let hasMore = true;
 
-        console.log('Loading inventory with params:', params);
+        while (hasMore) {
+            const params = {
+                page: currentPage,
+                per_page: 100,
+                search: filters.search,
+                warehouse_id: filters.warehouse_id || undefined,
+                stock_status: filters.stock_status || undefined,
+            };
 
-        await inventoryStore.fetchInventory(params);
-        
-        inventory.value = inventoryStore.inventory;
+            console.log('Loading page:', currentPage);
 
-        console.log('Inventory loaded:', inventory.value.length, 'items');
+            await inventoryStore.fetchInventory(params);
+            
+            const pageData = inventoryStore.inventory;
+            allInventory = [...allInventory, ...pageData];
+
+            // Check if there are more pages
+            const pagination = inventoryStore.pagination;
+            if (currentPage >= pagination.last_page) {
+                hasMore = false;
+            } else {
+                currentPage++;
+            }
+        }
+
+        inventory.value = allInventory;
+        console.log('All inventory loaded:', inventory.value.length, 'items');
     } catch (err) {
         console.error('Error loading inventory:', err);
         error.value = 'Failed to load inventory';
