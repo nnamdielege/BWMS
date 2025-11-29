@@ -87,6 +87,9 @@
 
         <!-- Inventory Table -->
         <div v-else class="table-card">
+            <div class="table-header">
+                <span class="record-count">Showing {{ inventory.length }} items</span>
+            </div>
             <div class="table-container">
                 <table class="data-table">
                     <thead>
@@ -136,27 +139,6 @@
                     </tbody>
                 </table>
             </div>
-
-            <!-- Pagination -->
-            <div v-if="pagination.total > pagination.per_page" class="pagination">
-                <button
-                    @click="changePage(pagination.current_page - 1)"
-                    :disabled="pagination.current_page === 1"
-                    class="pagination-btn"
-                >
-                    Previous
-                </button>
-                <span class="pagination-info">
-                    Page {{ pagination.current_page }} of {{ pagination.last_page }}
-                </span>
-                <button
-                    @click="changePage(pagination.current_page + 1)"
-                    :disabled="pagination.current_page === pagination.last_page"
-                    class="pagination-btn"
-                >
-                    Next
-                </button>
-            </div>
         </div>
     </div>
 </template>
@@ -182,13 +164,6 @@ const filters = reactive({
     stock_status: '',
 });
 
-const pagination = reactive({
-    current_page: 1,
-    per_page: 15,
-    total: 0,
-    last_page: 1,
-});
-
 onMounted(async () => {
     await loadWarehouses();
     await loadInventory();
@@ -209,8 +184,8 @@ const loadInventory = async () => {
 
     try {
         const params = {
-            page: pagination.current_page,
-            per_page: pagination.per_page,
+            page: 1,
+            per_page: 10000, // Load up to 10,000 records at once
             search: filters.search,
             warehouse_id: filters.warehouse_id || undefined,
             stock_status: filters.stock_status || undefined,
@@ -221,12 +196,6 @@ const loadInventory = async () => {
         await inventoryStore.fetchInventory(params);
         
         inventory.value = inventoryStore.inventory;
-        
-        // Update pagination
-        pagination.current_page = inventoryStore.pagination.current_page;
-        pagination.per_page = inventoryStore.pagination.per_page;
-        pagination.total = inventoryStore.pagination.total;
-        pagination.last_page = inventoryStore.pagination.last_page;
 
         console.log('Inventory loaded:', inventory.value.length, 'items');
     } catch (err) {
@@ -246,7 +215,6 @@ const handleSearch = () => {
 };
 
 const applyFilters = () => {
-    pagination.current_page = 1;
     loadInventory();
 };
 
@@ -255,11 +223,6 @@ const clearFilters = () => {
     filters.warehouse_id = '';
     filters.stock_status = '';
     applyFilters();
-};
-
-const changePage = (page) => {
-    pagination.current_page = page;
-    loadInventory();
 };
 
 const getStockStatus = (item) => {
@@ -283,7 +246,6 @@ const getStockStatusClass = (item) => {
 };
 
 const adjustInventory = (item) => {
-    // Navigate to adjust page with complete item data
     router.push({
         path: '/inventory/adjust',
         query: {
@@ -368,6 +330,14 @@ const adjustInventory = (item) => {
     @apply bg-white rounded-lg shadow overflow-hidden;
 }
 
+.table-header {
+    @apply px-6 py-4 border-b border-gray-200 bg-gray-50;
+}
+
+.record-count {
+    @apply text-sm font-medium text-gray-700;
+}
+
 .table-container {
     @apply overflow-x-auto;
 }
@@ -390,17 +360,5 @@ const adjustInventory = (item) => {
 
 .btn-action {
     @apply text-indigo-600 hover:text-indigo-900 transition-colors;
-}
-
-.pagination {
-    @apply flex items-center justify-between px-6 py-4 border-t border-gray-200;
-}
-
-.pagination-btn {
-    @apply px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
-}
-
-.pagination-info {
-    @apply text-sm text-gray-700;
 }
 </style>
