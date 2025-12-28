@@ -6,52 +6,78 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SyncOrdermentumStock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Queue;
 
 class OrdermentumWebhookController extends Controller
 {
     /**
      * Handle Ordermentum webhook events
-     * Endpoint: POST /api/webhooks/ordermentum
+     * Endpoint: POST /api/v1/webhooks/ordermentum
+     * 
+     * Ordermentum Event Types:
+     * - order_created
+     * - order_updated
+     * - purchaser_created
+     * - purchaser_updated
+     * - invoice_created
+     * - invoice_updated
+     * - credit_note_created
+     * - credit_note_updated
+     * - credit_note_completed
+     * - credit_note_cancelled
      */
     public function handle(Request $request)
     {
         try {
             // Get webhook payload
             $payload = $request->all();
-            $eventType = $payload['event'] ?? $payload['type'] ?? null;
+            $eventType = $payload['eventType'] ?? $payload['event'] ?? null;
 
             Log::info('Ordermentum webhook received', [
                 'event_type' => $eventType,
+                'entity_id' => $payload['entityId'] ?? null,
+                'entity_type' => $payload['entityType'] ?? null,
                 'timestamp' => now()->toIso8601String(),
-                'payload' => $payload,
             ]);
 
             // Verify webhook signature (if Ordermentum sends one)
             if (!$this->verifyWebhookSignature($request)) {
                 Log::warning('Ordermentum webhook signature verification failed', [
                     'ip' => $request->ip(),
+                    'event' => $eventType,
                 ]);
                 return response()->json(['error' => 'Invalid signature'], 401);
             }
 
-            // Route to appropriate handler based on event type
+            // Route to appropriate handler based on Ordermentum event type
             match ($eventType) {
-                'order.created' => $this->handleOrderCreated($payload),
-                'order.updated' => $this->handleOrderUpdated($payload),
-                'order.confirmed' => $this->handleOrderConfirmed($payload),
-                'stock.updated' => $this->handleStockUpdated($payload),
-                'stock.changed' => $this->handleStockChanged($payload),
-                'inventory.changed' => $this->handleInventoryChanged($payload),
+                // Order events
+                'order_created' => $this->handleOrderCreated($payload),
+                'order_updated' => $this->handleOrderUpdated($payload),
+
+                // Purchaser events
+                'purchaser_created' => $this->handlePurchaserCreated($payload),
+                'purchaser_updated' => $this->handlePurchaserUpdated($payload),
+
+                // Invoice events
+                'invoice_created' => $this->handleInvoiceCreated($payload),
+                'invoice_updated' => $this->handleInvoiceUpdated($payload),
+
+                // Credit note events
+                'credit_note_created' => $this->handleCreditNoteCreated($payload),
+                'credit_note_updated' => $this->handleCreditNoteUpdated($payload),
+                'credit_note_completed' => $this->handleCreditNoteCompleted($payload),
+                'credit_note_cancelled' => $this->handleCreditNoteCancelled($payload),
+
                 default => $this->handleUnknownEvent($eventType, $payload),
             };
 
+            // Return 202 Accepted - webhook received and queued
             return response()->json([
                 'message' => 'Webhook received and queued for processing',
                 'event' => $eventType,
-                'status' => 'queued',
-            ], 202); // 202 Accepted
-
+                'status' => 'accepted',
+                'timestamp' => now()->toIso8601String(),
+            ], 202);
         } catch (\Exception $e) {
             Log::error('Ordermentum webhook error: ' . $e->getMessage(), [
                 'exception' => $e,
@@ -71,11 +97,13 @@ class OrdermentumWebhookController extends Controller
     private function handleOrderCreated(array $payload)
     {
         Log::info('Order created in Ordermentum', [
-            'order_id' => $payload['order_id'] ?? null,
-            'order_number' => $payload['order_number'] ?? null,
+            'order_id' => $payload['id'] ?? $payload['orderId'] ?? null,
+            'order_number' => $payload['orderNumber'] ?? null,
+            'purchaser_id' => $payload['purchaserId'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
         ]);
 
-        // Trigger stock sync
+        // Trigger stock sync when order is created
         $this->dispatchStockSync();
     }
 
@@ -85,68 +113,111 @@ class OrdermentumWebhookController extends Controller
     private function handleOrderUpdated(array $payload)
     {
         Log::info('Order updated in Ordermentum', [
-            'order_id' => $payload['order_id'] ?? null,
+            'order_id' => $payload['id'] ?? $payload['orderId'] ?? null,
             'status' => $payload['status'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
         ]);
 
         $this->dispatchStockSync();
     }
 
     /**
-     * Handle order confirmed event (CRITICAL - sync immediately)
+     * Handle purchaser created event
      */
-    private function handleOrderConfirmed(array $payload)
+    private function handlePurchaserCreated(array $payload)
     {
-        Log::info('Order confirmed in Ordermentum - CRITICAL SYNC', [
-            'order_id' => $payload['order_id'] ?? null,
-            'order_number' => $payload['order_number'] ?? null,
-            'items_count' => count($payload['items'] ?? []),
+        Log::info('Purchaser created in Ordermentum', [
+            'purchaser_id' => $payload['id'] ?? $payload['purchaserId'] ?? null,
+            'purchaser_name' => $payload['name'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
         ]);
 
-        // Priority dispatch - order confirmed means stock was allocated
-        $this->dispatchStockSync(null, true);
+        // May need to sync or update customer data
     }
 
     /**
-     * Handle stock updated event (HIGH PRIORITY)
+     * Handle purchaser updated event
      */
-    private function handleStockUpdated(array $payload)
+    private function handlePurchaserUpdated(array $payload)
     {
-        Log::info('Stock updated in Ordermentum', [
-            'product_id' => $payload['product_id'] ?? null,
-            'variant_id' => $payload['variant_id'] ?? null,
-            'quantity' => $payload['quantity'] ?? null,
+        Log::info('Purchaser updated in Ordermentum', [
+            'purchaser_id' => $payload['id'] ?? $payload['purchaserId'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
         ]);
-
-        // High priority
-        $this->dispatchStockSync(null, true);
     }
 
     /**
-     * Handle stock changed event
+     * Handle invoice created event
      */
-    private function handleStockChanged(array $payload)
+    private function handleInvoiceCreated(array $payload)
     {
-        Log::info('Stock changed in Ordermentum', [
-            'product_id' => $payload['product_id'] ?? null,
-            'old_quantity' => $payload['old_quantity'] ?? null,
-            'new_quantity' => $payload['new_quantity'] ?? null,
+        Log::info('Invoice created in Ordermentum', [
+            'invoice_id' => $payload['id'] ?? $payload['invoiceId'] ?? null,
+            'order_id' => $payload['orderId'] ?? null,
+            'amount' => $payload['amount'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
         ]);
 
-        $this->dispatchStockSync();
+        // May need to sync invoice data
     }
 
     /**
-     * Handle inventory changed event
+     * Handle invoice updated event
      */
-    private function handleInventoryChanged(array $payload)
+    private function handleInvoiceUpdated(array $payload)
     {
-        Log::info('Inventory changed in Ordermentum', [
-            'product_id' => $payload['product_id'] ?? null,
-            'change' => $payload['change'] ?? null,
+        Log::info('Invoice updated in Ordermentum', [
+            'invoice_id' => $payload['id'] ?? $payload['invoiceId'] ?? null,
+            'status' => $payload['status'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
+        ]);
+    }
+
+    /**
+     * Handle credit note created event
+     */
+    private function handleCreditNoteCreated(array $payload)
+    {
+        Log::info('Credit note created in Ordermentum', [
+            'credit_note_id' => $payload['id'] ?? $payload['creditNoteId'] ?? null,
+            'invoice_id' => $payload['invoiceId'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
         ]);
 
-        $this->dispatchStockSync();
+        // May need to sync credit note data
+    }
+
+    /**
+     * Handle credit note updated event
+     */
+    private function handleCreditNoteUpdated(array $payload)
+    {
+        Log::info('Credit note updated in Ordermentum', [
+            'credit_note_id' => $payload['id'] ?? $payload['creditNoteId'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
+        ]);
+    }
+
+    /**
+     * Handle credit note completed event
+     */
+    private function handleCreditNoteCompleted(array $payload)
+    {
+        Log::info('Credit note completed in Ordermentum', [
+            'credit_note_id' => $payload['id'] ?? $payload['creditNoteId'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
+        ]);
+    }
+
+    /**
+     * Handle credit note cancelled event
+     */
+    private function handleCreditNoteCancelled(array $payload)
+    {
+        Log::info('Credit note cancelled in Ordermentum', [
+            'credit_note_id' => $payload['id'] ?? $payload['creditNoteId'] ?? null,
+            'entity_id' => $payload['entityId'] ?? null,
+        ]);
     }
 
     /**
@@ -156,7 +227,8 @@ class OrdermentumWebhookController extends Controller
     {
         Log::warning('Unknown Ordermentum webhook event', [
             'event_type' => $eventType,
-            'payload' => $payload,
+            'entity_id' => $payload['entityId'] ?? null,
+            'payload_keys' => array_keys($payload),
         ]);
     }
 
@@ -211,12 +283,25 @@ class OrdermentumWebhookController extends Controller
 
     /**
      * Health check endpoint for webhook
+     * GET /api/v1/webhooks/ordermentum/health
      */
     public function health()
     {
         return response()->json([
             'status' => 'ok',
             'webhook_url' => route('webhooks.ordermentum'),
+            'supported_events' => [
+                'order_created',
+                'order_updated',
+                'purchaser_created',
+                'purchaser_updated',
+                'invoice_created',
+                'invoice_updated',
+                'credit_note_created',
+                'credit_note_updated',
+                'credit_note_completed',
+                'credit_note_cancelled',
+            ],
             'queue_driver' => config('queue.default'),
             'timestamp' => now()->toIso8601String(),
         ]);
