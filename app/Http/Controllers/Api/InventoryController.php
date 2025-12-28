@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Warehouse;
 use App\Models\InventoryTransaction;
 use App\Services\UsageTrackingService;
+use App\Services\InventoryPushService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -15,10 +16,12 @@ use Illuminate\Support\Facades\Log;
 class InventoryController extends Controller
 {
     protected $usageService;
+    protected $pushService;
 
-    public function __construct(UsageTrackingService $usageService)
+    public function __construct(UsageTrackingService $usageService, InventoryPushService $pushService)
     {
         $this->usageService = $usageService;
+        $this->pushService = $pushService;
     }
 
     public function index(Request $request)
@@ -84,6 +87,7 @@ class InventoryController extends Controller
 
     /**
      * Adjust inventory (add/remove stock)
+     * AUTO-PUSH: Pushes to Ordermentum if product has Ordermentum IDs
      */
     public function adjust(Request $request)
     {
@@ -109,6 +113,7 @@ class InventoryController extends Controller
             'type' => 'required|in:adjustment,damage,count',
             'reason' => 'required|string|max:255',
             'notes' => 'nullable|string',
+            'push_to_ordermentum' => 'nullable|boolean', // Optional flag to enable/disable push
         ]);
 
         DB::beginTransaction();
@@ -164,11 +169,53 @@ class InventoryController extends Controller
                 ]
             );
 
+            // ============================================
+            // AUTO-PUSH TO ORDERMENTUM (NEW)
+            // ============================================
+            $pushSuccessful = false;
+            $pushError = null;
+
+            // Check if we should push to Ordermentum
+            $shouldPush = $validated['push_to_ordermentum'] ?? true; // Default: true
+
+            if ($shouldPush) {
+                try {
+                    $pushSuccessful = $this->pushService->pushToOrdermentum($inventory);
+
+                    if ($pushSuccessful) {
+                        Log::info('Auto-push to Ordermentum successful', [
+                            'inventory_id' => $inventory->id,
+                            'product_id' => $validated['product_id'],
+                            'quantity' => $quantityAfter,
+                        ]);
+                    } else {
+                        $pushError = 'Failed to push to Ordermentum (check product has Ordermentum IDs)';
+                        Log::warning('Auto-push to Ordermentum failed', [
+                            'inventory_id' => $inventory->id,
+                            'product_id' => $validated['product_id'],
+                            'reason' => $pushError,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    $pushError = $e->getMessage();
+                    Log::error('Auto-push to Ordermentum error: ' . $pushError, [
+                        'inventory_id' => $inventory->id,
+                        'product_id' => $validated['product_id'],
+                    ]);
+                }
+            }
+            // ============================================
+
             DB::commit();
 
             return response()->json([
                 'message' => 'Inventory adjusted successfully',
                 'data' => $inventory->load(['product', 'warehouse']),
+                'ordermentum_push' => [
+                    'attempted' => $shouldPush,
+                    'successful' => $pushSuccessful,
+                    'error' => $pushError,
+                ],
                 'usage' => [
                     'remaining' => $canAdjust['remaining'] - 1,
                     'limit' => $canAdjust['limit'],
@@ -188,6 +235,7 @@ class InventoryController extends Controller
 
     /**
      * Transfer stock between warehouses
+     * AUTO-PUSH: Pushes to Ordermentum from destination warehouse
      */
     public function transfer(Request $request)
     {
@@ -212,6 +260,7 @@ class InventoryController extends Controller
             'to_warehouse_id' => 'required|exists:warehouses,id|different:from_warehouse_id',
             'quantity' => 'required|integer|min:1',
             'notes' => 'nullable|string',
+            'push_to_ordermentum' => 'nullable|boolean',
         ]);
 
         DB::beginTransaction();
@@ -278,7 +327,7 @@ class InventoryController extends Controller
                 'user_id' => auth()->id(),
             ]);
 
-            // TRACK USAGE (both as separate actions or one combined)
+            // TRACK USAGE
             $this->usageService->track(
                 $request->user()->id,
                 'inventory_adjusted',
@@ -292,6 +341,44 @@ class InventoryController extends Controller
                 ]
             );
 
+            // ============================================
+            // AUTO-PUSH TO ORDERMENTUM (NEW)
+            // Push from the MAIN warehouse (or specify which warehouse)
+            // ============================================
+            $pushSuccessful = false;
+            $pushError = null;
+
+            $shouldPush = $validated['push_to_ordermentum'] ?? true; // Default: true
+
+            if ($shouldPush) {
+                try {
+                    // Push from destination warehouse (the one receiving stock)
+                    $pushSuccessful = $this->pushService->pushToOrdermentum($toInventory);
+
+                    if ($pushSuccessful) {
+                        Log::info('Auto-push to Ordermentum successful after transfer', [
+                            'inventory_id' => $toInventory->id,
+                            'product_id' => $validated['product_id'],
+                            'from_warehouse' => $validated['from_warehouse_id'],
+                            'to_warehouse' => $validated['to_warehouse_id'],
+                            'quantity' => $toInventory->quantity_on_hand,
+                        ]);
+                    } else {
+                        $pushError = 'Failed to push to Ordermentum';
+                        Log::warning('Auto-push to Ordermentum failed after transfer', [
+                            'inventory_id' => $toInventory->id,
+                            'product_id' => $validated['product_id'],
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    $pushError = $e->getMessage();
+                    Log::error('Auto-push to Ordermentum error: ' . $pushError, [
+                        'inventory_id' => $toInventory->id,
+                    ]);
+                }
+            }
+            // ============================================
+
             DB::commit();
 
             return response()->json([
@@ -299,6 +386,12 @@ class InventoryController extends Controller
                 'data' => [
                     'from' => $fromInventory->load(['product', 'warehouse']),
                     'to' => $toInventory->load(['product', 'warehouse'])
+                ],
+                'ordermentum_push' => [
+                    'attempted' => $shouldPush,
+                    'successful' => $pushSuccessful,
+                    'error' => $pushError,
+                    'pushed_from_warehouse' => $toInventory->warehouse->name,
                 ],
                 'usage' => [
                     'remaining' => $canTransfer['remaining'] - 1,

@@ -12,7 +12,10 @@ class Product extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'ordermentum_variant_id',
+        'ordermentum_product_id',
         'sku',
+        'ordermentum_sku',
         'slug',
         'barcode',
         'name',

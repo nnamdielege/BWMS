@@ -10,15 +10,18 @@ use App\Models\Inventory;
 use App\Models\InventoryTransaction;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class OrderService
 {
     protected $inventoryService;
+    protected $pushService;
 
-    public function __construct(InventoryService $inventoryService)
+    public function __construct(InventoryService $inventoryService, InventoryPushService $pushService = null)
     {
         $this->inventoryService = $inventoryService;
+        $this->pushService = $pushService;
     }
 
     /**
@@ -118,7 +121,7 @@ class OrderService
     }
 
     /**
-     * Fulfill a sales order
+     * Fulfill a sales order with auto-push to Ordermentum
      */
     public function fulfillSalesOrder(SalesOrder $order, array $data = [])
     {
@@ -132,6 +135,7 @@ class OrderService
             }
 
             $fullyFulfilled = true;
+            $inventoriesUpdated = []; // Track updated inventories for push
 
             foreach ($order->items as $item) {
                 $quantityToFulfill = $data['items'][$item->id]['quantity'] ??
@@ -163,6 +167,9 @@ class OrderService
                         'reference' => "Sales Order #{$order->order_number}",
                         'user_id' => auth()->id(),
                     ]);
+
+                    // Track for push
+                    $inventoriesUpdated[$inventory->id] = $inventory;
                 }
 
                 // Check if item is fully fulfilled
@@ -183,7 +190,61 @@ class OrderService
                 ]);
             }
 
-            return $order->fresh()->load(['items.product', 'customer']);
+            // ============================================
+            // AUTO-PUSH TO ORDERMENTUM (NEW)
+            // ============================================
+            $pushResults = [];
+
+            $shouldPush = $data['push_to_ordermentum'] ?? true;
+
+            if ($shouldPush && $this->pushService && !empty($inventoriesUpdated)) {
+                foreach ($inventoriesUpdated as $inventory) {
+                    try {
+                        $pushSuccessful = $this->pushService->pushToOrdermentum($inventory);
+
+                        $pushResults[$inventory->id] = [
+                            'attempted' => true,
+                            'successful' => $pushSuccessful,
+                            'error' => $pushSuccessful ? null : 'Failed to push',
+                            'product_id' => $inventory->product_id,
+                        ];
+
+                        if ($pushSuccessful) {
+                            Log::info('Auto-push to Ordermentum successful after sales order fulfillment', [
+                                'order_id' => $order->id,
+                                'order_number' => $order->order_number,
+                                'inventory_id' => $inventory->id,
+                                'product_id' => $inventory->product_id,
+                                'quantity' => $inventory->quantity_on_hand,
+                            ]);
+                        } else {
+                            Log::warning('Auto-push to Ordermentum failed after sales order fulfillment', [
+                                'order_id' => $order->id,
+                                'inventory_id' => $inventory->id,
+                                'product_id' => $inventory->product_id,
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        $pushResults[$inventory->id] = [
+                            'attempted' => true,
+                            'successful' => false,
+                            'error' => $e->getMessage(),
+                            'product_id' => $inventory->product_id,
+                        ];
+
+                        Log::error('Auto-push to Ordermentum error after sales order fulfillment: ' . $e->getMessage(), [
+                            'order_id' => $order->id,
+                            'inventory_id' => $inventory->id,
+                        ]);
+                    }
+                }
+            }
+            // ============================================
+
+            $orderFresh = $order->fresh()->load(['items.product', 'customer']);
+            $orderFresh->ordermentum_push_results = $pushResults;
+
+            return $orderFresh;
         });
     }
 
@@ -221,7 +282,7 @@ class OrderService
     }
 
     /**
-     * Create a purchase order
+     * Create a purchase order with auto-push to Ordermentum
      */
     public function createPurchaseOrder(array $data)
     {
@@ -279,7 +340,7 @@ class OrderService
     }
 
     /**
-     * Receive a purchase order
+     * Receive a purchase order with auto-push to Ordermentum
      */
     public function receivePurchaseOrder(PurchaseOrder $order, array $data)
     {
@@ -289,6 +350,7 @@ class OrderService
             }
 
             $fullyReceived = true;
+            $inventoriesUpdated = []; // Track updated inventories for push
 
             foreach ($data['items'] as $itemId => $receivingData) {
                 $item = PurchaseOrderItem::findOrFail($itemId);
@@ -336,6 +398,9 @@ class OrderService
                     'user_id' => auth()->id(),
                 ]);
 
+                // Track for push
+                $inventoriesUpdated[$inventory->id] = $inventory;
+
                 // Check if item is fully received
                 if ($item->quantity_received < $item->quantity) {
                     $fullyReceived = false;
@@ -354,7 +419,62 @@ class OrderService
                 ]);
             }
 
-            return $order->fresh()->load(['items.product', 'supplier']);
+            // ============================================
+            // AUTO-PUSH TO ORDERMENTUM (NEW)
+            // ============================================
+            $pushResults = [];
+
+            $shouldPush = $data['push_to_ordermentum'] ?? true;
+
+            if ($shouldPush && $this->pushService && !empty($inventoriesUpdated)) {
+                foreach ($inventoriesUpdated as $inventory) {
+                    try {
+                        $pushSuccessful = $this->pushService->pushToOrdermentum($inventory);
+
+                        $pushResults[$inventory->id] = [
+                            'attempted' => true,
+                            'successful' => $pushSuccessful,
+                            'error' => $pushSuccessful ? null : 'Failed to push',
+                            'product_id' => $inventory->product_id,
+                            'quantity' => $inventory->quantity_on_hand,
+                        ];
+
+                        if ($pushSuccessful) {
+                            Log::info('Auto-push to Ordermentum successful after purchase order receipt', [
+                                'order_id' => $order->id,
+                                'order_number' => $order->order_number,
+                                'inventory_id' => $inventory->id,
+                                'product_id' => $inventory->product_id,
+                                'quantity' => $inventory->quantity_on_hand,
+                            ]);
+                        } else {
+                            Log::warning('Auto-push to Ordermentum failed after purchase order receipt', [
+                                'order_id' => $order->id,
+                                'inventory_id' => $inventory->id,
+                                'product_id' => $inventory->product_id,
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        $pushResults[$inventory->id] = [
+                            'attempted' => true,
+                            'successful' => false,
+                            'error' => $e->getMessage(),
+                            'product_id' => $inventory->product_id,
+                        ];
+
+                        Log::error('Auto-push to Ordermentum error after purchase order receipt: ' . $e->getMessage(), [
+                            'order_id' => $order->id,
+                            'inventory_id' => $inventory->id,
+                        ]);
+                    }
+                }
+            }
+            // ============================================
+
+            $orderFresh = $order->fresh()->load(['items.product', 'supplier']);
+            $orderFresh->ordermentum_push_results = $pushResults;
+
+            return $orderFresh;
         });
     }
 
@@ -431,5 +551,14 @@ class OrderService
                 'total_value' => PurchaseOrder::whereBetween('order_date', [$startDate, $endDate])->sum('total'),
             ],
         ];
+    }
+
+    /**
+     * Set the push service (for dependency injection)
+     */
+    public function setPushService(InventoryPushService $pushService)
+    {
+        $this->pushService = $pushService;
+        return $this;
     }
 }

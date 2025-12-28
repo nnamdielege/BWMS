@@ -41,4 +41,13 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'ordermentum' => [
+        'username' => env('ORDERMENTUM_USERNAME'),
+        'password' => env('ORDERMENTUM_PASSWORD'),
+        'base_url' => env('ORDERMENTUM_BASE_URL', 'https://app.ordermentum.com/v1'),
+        'stock_url' => env('ORDERMENTUM_STOCK_URL'),
+        'supplier_id' => env('ORDERMENTUM_SUPPLIER_ID'),
+        'location_id' => env('ORDERMENTUM_LOCATION_ID'),
+    ],
+
 ];

@@ -29,3 +29,6 @@ Schedule::call(
 
 // Reset expired usage daily at 2 AM
 Schedule::command('usage:reset-expired')->dailyAt('02:00');
+
+//Sync every 30 minutes (more frequent)
+Schedule::command('sync:stock')->everyThirtyMinutes();
