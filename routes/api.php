@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\UsageTrackingController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WarehouseLocationController;
+use App\Http\Controllers\Webhooks\OrdermentumWebhookController;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 
 // Public routes
@@ -38,11 +39,26 @@ Route::post('/login', [AuthController::class, 'login']);
 // Get subscription plans (public info)
 Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
 
-Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
-    ->name('webhooks.stripe');
+// ═══════════════════════════════════════════════════════════════════════════
+// WEBHOOK ROUTES (PUBLIC - NO AUTH REQUIRED) - MOVE OUTSIDE OF auth:sanctum
+// ═══════════════════════════════════════════════════════════════════════════
+Route::prefix('webhooks')->group(function () {
 
-Route::post('/webhooks/paypal', [SubscriptionController::class, 'handlePaypalWebhook'])
-    ->withoutMiddleware(VerifyCsrfToken::class);
+    // Stripe
+    Route::post('stripe', [StripeWebhookController::class, 'handle'])
+        ->name('webhooks.stripe');
+
+    // PayPal
+    Route::post('paypal', [SubscriptionController::class, 'handlePaypalWebhook'])
+        ->withoutMiddleware(VerifyCsrfToken::class);
+
+    // Ordermentum (PUBLIC - NO AUTH)
+    Route::post('ordermentum', [OrdermentumWebhookController::class, 'handle'])
+        ->name('webhooks.ordermentum');
+
+    Route::get('ordermentum/health', [OrdermentumWebhookController::class, 'health'])
+        ->name('webhooks.ordermentum.health');
+});
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
