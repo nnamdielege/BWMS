@@ -38,6 +38,7 @@ Schedule::call(function () {
     // 2️⃣ Push to Ordermentum
     Artisan::call('push:stock');
 })
+    ->name('ordermentum-stock-sync-and-push')
     ->timezone('Australia/Brisbane')
     ->cron('0 6,9,12,15,18 * * 1-5')
     ->withoutOverlapping();
