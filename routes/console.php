@@ -30,5 +30,25 @@ Schedule::call(
 // Reset expired usage daily at 2 AM
 Schedule::command('usage:reset-expired')->dailyAt('02:00');
 
-//Sync every 30 minutes (more frequent)
-Schedule::command('sync:stock')->everyThirtyMinutes();
+// Pull from Ordermentum every 30 minutes during business hours
+Schedule::command('sync:stock')
+    ->timezone('Australia/Brisbane')
+    ->everyThirtyMinutes()
+    ->between('6:00', '18:00')
+    ->weekdays();
+
+// Push to Ordermentum every 30 minutes during business hours
+Schedule::command('push:stock')
+    ->timezone('Australia/Brisbane')
+    ->everyThirtyMinutes()
+    ->between('6:00', '18:00')
+    ->weekdays();
+
+// Daily full sync at night
+Schedule::command('sync:stock')
+    ->timezone('Australia/Brisbane')
+    ->dailyAt('22:00');
+
+Schedule::command('push:stock')
+    ->timezone('Australia/Brisbane')
+    ->dailyAt('22:30');

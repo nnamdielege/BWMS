@@ -16,6 +16,7 @@ class PushStockToOrdermentum extends Command
 
     private $accessToken = null;
     private $baseUrl = 'https://app.ordermentum.com/v1';
+    private $stockUrl = 'https://stock.ordermentum.com/v1';
     private $dryRun = false;
     private $pushed = 0;
     private $failed = 0;
@@ -49,7 +50,7 @@ class PushStockToOrdermentum extends Command
         }
 
         // Step 1: Authenticate
-        $this->info('\nStep 1: Authenticating with Ordermentum...');
+        $this->info("\nStep 1: Authenticating with Ordermentum...");
         if (!$this->authenticate()) {
             $this->error('Failed to authenticate');
             return;
@@ -60,8 +61,7 @@ class PushStockToOrdermentum extends Command
         $this->info("\nStep 2: Fetching inventory stock levels...");
         $query = Inventory::where('warehouse_id', $warehouse->id)
             ->whereHas('product', function ($q) {
-                $q->whereNotNull('ordermentum_variant_id')
-                    ->whereNotNull('ordermentum_product_id');
+                $q->whereNotNull('ordermentum_variant_id');
             });
 
         if ($productId) {
@@ -73,7 +73,7 @@ class PushStockToOrdermentum extends Command
         $this->info("Found {$inventory->count()} stock levels to push");
 
         if ($inventory->isEmpty()) {
-            $this->warn('No inventory records with Ordermentum IDs found');
+            $this->warn('No inventory records with Ordermentum variant IDs found');
             return;
         }
 
@@ -89,14 +89,8 @@ class PushStockToOrdermentum extends Command
             try {
                 $quantity = $inv->quantity_on_hand ?? 0;
 
-                $result = $this->pushStockToOrdermentum(
-                    $inv->product->ordermentum_product_id,
-                    $inv->product->ordermentum_variant_id,
-                    $quantity,
-                    $inv->product
-                );
-
-                if ($result) {
+                if ($this->dryRun) {
+                    // Dry run - pretend success
                     $pushUpdates[] = [
                         'inventory_id' => $inv->id,
                         'product_id' => $inv->product_id,
@@ -104,13 +98,33 @@ class PushStockToOrdermentum extends Command
                         'sku' => $inv->product->sku,
                         'name' => $inv->product->name,
                         'quantity' => $quantity,
-                        'status' => 'success',
+                        'status' => 'dry-run',
                         'timestamp' => now(),
                     ];
                     $this->pushed++;
                 } else {
-                    $pushErrors[] = "Product {$inv->product->sku}: Failed to push stock";
-                    $this->failed++;
+                    $result = $this->pushStockToOrdermentum(
+                        $inv->product->ordermentum_variant_id,
+                        $quantity,
+                        $inv->product
+                    );
+
+                    if ($result) {
+                        $pushUpdates[] = [
+                            'inventory_id' => $inv->id,
+                            'product_id' => $inv->product_id,
+                            'warehouse_id' => $inv->warehouse_id,
+                            'sku' => $inv->product->sku,
+                            'name' => $inv->product->name,
+                            'quantity' => $quantity,
+                            'status' => 'success',
+                            'timestamp' => now(),
+                        ];
+                        $this->pushed++;
+                    } else {
+                        $pushErrors[] = "Product {$inv->product->sku}: Failed to push stock";
+                        $this->failed++;
+                    }
                 }
             } catch (\Exception $e) {
                 $pushErrors[] = "Product {$inv->product->sku}: " . $e->getMessage();
@@ -129,7 +143,7 @@ class PushStockToOrdermentum extends Command
         // Step 5: Log changes
         if (!empty($pushUpdates)) {
             if ($this->dryRun) {
-                $this->warn('\n[DRY RUN] Stock updates would be pushed but no changes sent');
+                $this->warn("\n[DRY RUN] Stock updates would be pushed but no changes sent");
             } else {
                 $this->info("\nStep 4: Recording push history...");
                 $this->recordPushHistory($pushUpdates, $warehouse);
@@ -145,7 +159,7 @@ class PushStockToOrdermentum extends Command
         $this->line("Total: " . ($this->pushed + $this->failed));
 
         if (!empty($pushErrors)) {
-            $this->warn('\nErrors encountered:');
+            $this->warn("\nErrors encountered:");
             foreach (array_slice($pushErrors, 0, 5) as $error) {
                 $this->line("  ⚠ {$error}");
             }
@@ -199,26 +213,29 @@ class PushStockToOrdermentum extends Command
 
     /**
      * Push stock level to Ordermentum for a specific variant
+     * 
+     * ENDPOINT: PUT https://stock.ordermentum.com/v1/items/{variant_id}
+     * PAYLOAD: {"available": 27, "tracked": true}
      */
-    private function pushStockToOrdermentum($productId, $variantId, $quantity, $product)
+    private function pushStockToOrdermentum($variantId, $quantity, $product)
     {
-        if (!$productId || !$variantId) {
-            throw new \Exception("Missing Ordermentum IDs for {$product->sku}");
+        if (!$variantId) {
+            throw new \Exception("Missing Ordermentum variant ID for {$product->sku}");
         }
 
-        // Stock endpoint: https://stock.ordermentum.com/v1
-        $url = 'https://stock.ordermentum.com/v1/products/' . $productId . '/variants/' . $variantId;
+        // Correct endpoint: /items/{variant_id}
+        $url = $this->stockUrl . '/items/' . $variantId;
 
+        // Simple payload with just available and tracked
         $payload = [
-            'quantity' => (int)$quantity,
             'available' => (int)$quantity,
-            'outOfStock' => $quantity <= 0,
+            'tracked' => true,
         ];
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT'); // PUT request
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Authorization: Bearer ' . $this->accessToken,
             'Content-Type: application/json',
@@ -241,7 +258,6 @@ class PushStockToOrdermentum extends Command
             Log::info('Stock pushed to Ordermentum', [
                 'sku' => $product->sku,
                 'quantity' => $quantity,
-                'product_id' => $productId,
                 'variant_id' => $variantId,
                 'http_code' => $httpCode,
                 'endpoint' => $url,
@@ -253,11 +269,11 @@ class PushStockToOrdermentum extends Command
         Log::warning('Failed to push stock to Ordermentum', [
             'sku' => $product->sku,
             'quantity' => $quantity,
-            'product_id' => $productId,
             'variant_id' => $variantId,
             'http_code' => $httpCode,
             'response' => $response,
             'endpoint' => $url,
+            'payload' => $payload,
         ]);
 
         return false;

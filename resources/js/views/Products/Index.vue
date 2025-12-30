@@ -309,6 +309,7 @@ const columns = [
     { key: 'category', label: 'Category', sortable: false },
     { key: 'price', label: 'Price', sortable: true },
     { key: 'stock', label: 'Stock', sortable: false },
+    // { key: 'reorder_point', label: 'Reorder Point', sortable: false },
     { key: 'is_active', label: 'Status', sortable: true },
     { key: 'actions', label: 'Actions', sortable: false, class: 'text-right' },
 ];
