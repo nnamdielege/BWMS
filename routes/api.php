@@ -30,11 +30,14 @@ use App\Http\Controllers\Api\UsageTrackingController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WarehouseLocationController;
 use App\Http\Controllers\Webhooks\OrdermentumWebhookController;
+use App\Models\PurchaseOrder;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+
 
 // Get subscription plans (public info)
 Route::get('/subscription/plans', [SubscriptionController::class, 'getPlans']);
@@ -190,6 +193,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('purchase-orders', PurchaseOrderController::class);
     Route::post('purchase-orders/{id}/receive', [PurchaseOrderController::class, 'receive'])->middleware('permission:approve-orders');
     Route::post('purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->middleware('permission:approve-orders');
+    // Download PDF
+    Route::get(
+        '/purchase-orders/{id}/download',
+        [PurchaseOrderController::class, 'download']
+    )->name('purchase-orders.download');
+
+    // Send Email
+    Route::post(
+        '/purchase-orders/{id}/send-email',
+        [PurchaseOrderController::class, 'sendEmail']
+    )->name('purchase-orders.send-email');
+
+    // Send to Supplier
+    Route::post(
+        '/purchase-orders/{id}/send-to-supplier',
+        [PurchaseOrderController::class, 'sendToSupplier']
+    )->name('purchase-orders.send-to-supplier');
 
     // -------------------------------
     // Customers & Suppliers

@@ -62,6 +62,33 @@
                     >
                         Cancel Order
                     </button>
+                    <div class="dropdown-menu">
+                        <button @click="toggleDropdown" class="btn btn-secondary">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                            </svg>
+                        </button>
+                        <div v-if="showMenu" class="dropdown-content">
+                            <button @click="downloadPDF" class="dropdown-item">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                Download PDF
+                            </button>
+                            <button @click="showEmailModal = true" class="dropdown-item">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                                Send Email
+                            </button>
+                            <button @click="sendToSupplier" class="dropdown-item">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                                Send to Supplier
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -171,7 +198,7 @@
                                 <td class="text-right">${{ formatNumber(item.unit_price) }}</td>
                                 <td class="text-right">${{ formatNumber(item.discount) }}</td>
                                 <td class="text-right">${{ formatNumber(item.tax) }}</td>
-                                <td class="text-right font-semibold">${{ formatNumber(item.subtotal) }}</td>
+                                <td class="text-right font-semibold">${{formatNumber(item.subtotal) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -262,11 +289,64 @@
                 </button>
             </template>
         </Modal>
+
+        <!-- Email Modal -->
+        <Modal
+            :show="showEmailModal"
+            title="Send Purchase Order"
+            size="medium"
+            @close="showEmailModal = false"
+        >
+            <div class="email-form">
+                <div class="form-group">
+                    <label class="form-label">Recipient Email *</label>
+                    <input
+                        v-model="emailData.recipient_email"
+                        type="email"
+                        placeholder="Enter email address"
+                        class="form-input"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Subject</label>
+                    <input
+                        v-model="emailData.subject"
+                        type="text"
+                        :placeholder="`Purchase Order ${order.order_number}`"
+                        class="form-input"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Message</label>
+                    <textarea
+                        v-model="emailData.message"
+                        rows="4"
+                        placeholder="Enter message..."
+                        class="form-textarea"
+                    ></textarea>
+                </div>
+            </div>
+
+            <template #footer>
+                <button @click="showEmailModal = false" class="btn btn-secondary">
+                    Cancel
+                </button>
+                <button 
+                    @click="sendEmail" 
+                    class="btn btn-primary"
+                    :disabled="sendingEmail || !emailData.recipient_email"
+                >
+                    {{ sendingEmail ? 'Sending...' : 'Send Email' }}
+                </button>
+            </template>
+        </Modal>
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useOrderStore } from '../../../stores/order';
 import Modal from '../../../components/common/Modal.vue';
@@ -279,8 +359,16 @@ const order = ref(null);
 const loading = ref(true);
 const error = ref(null);
 const showReceiveModal = ref(false);
+const showEmailModal = ref(false);
 const receivingOrder = ref(false);
+const sendingEmail = ref(false);
 const receiveItems = ref([]);
+const showMenu = ref(false);
+const emailData = ref({
+    recipient_email: '',
+    subject: '',
+    message: '',
+});
 
 onMounted(async () => {
     await fetchOrder();
@@ -313,19 +401,11 @@ const initializeReceiveItems = () => {
         sku: item.product?.sku,
         quantity: item.quantity,
         received_quantity: item.received_quantity,
-        // receiving_quantity: 0, 
         receiving_quantity: Math.max(0, item.quantity - item.received_quantity),
     }));
 };
 
-watch(showReceiveModal, (newValue) => {
-    if (newValue) {
-        initializeReceiveItems();
-    }
-});
-
 const handleReceive = async () => {
-    // Validate
     const totalReceiving = receiveItems.value.reduce((sum, item) => sum + (item.receiving_quantity || 0), 0);
     
     if (totalReceiving === 0) {
@@ -362,6 +442,65 @@ const closeReceiveModal = () => {
     receiveItems.value = [];
 };
 
+const downloadPDF = async () => {
+    try {
+        const response = await orderStore.downloadPurchaseOrderPDF(order.value.id);
+        // Handle download
+        const url = window.URL.createObjectURL(new Blob([response]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `PO-${order.value.order_number}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.parentElement.removeChild(link);
+        showMenu.value = false;
+    } catch (err) {
+        console.error('Error downloading PDF:', err);
+        alert('Failed to download PDF');
+    }
+};
+
+const sendEmail = async () => {
+    if (!emailData.value.recipient_email) {
+        alert('Please enter recipient email');
+        return;
+    }
+
+    sendingEmail.value = true;
+
+    try {
+        await orderStore.sendPurchaseOrderEmail(order.value.id, emailData.value);
+        alert('Email sent successfully!');
+        showEmailModal.value = false;
+        emailData.value = {
+            recipient_email: '',
+            subject: '',
+            message: '',
+        };
+    } catch (err) {
+        console.error('Error sending email:', err);
+        alert(err.response?.data?.message || 'Failed to send email');
+    } finally {
+        sendingEmail.value = false;
+    }
+};
+
+const sendToSupplier = async () => {
+    if (!order.value.supplier?.email) {
+        alert('Supplier has no email address on file');
+        return;
+    }
+
+    try {
+        await orderStore.sendPurchaseOrderToSupplier(order.value.id);
+        alert('Email sent to supplier successfully!');
+        showMenu.value = false;
+    } catch (err) {
+        console.error('Error sending to supplier:', err);
+        alert(err.response?.data?.message || 'Failed to send email to supplier');
+    }
+};
+
 const cancelOrder = async () => {
     if (!confirm('Are you sure you want to cancel this order?')) {
         return;
@@ -379,6 +518,10 @@ const cancelOrder = async () => {
     } finally {
         loading.value = false;
     }
+};
+
+const toggleDropdown = () => {
+    showMenu.value = !showMenu.value;
 };
 
 const formatDate = (date) => {
@@ -475,7 +618,19 @@ const getReceivedClass = (item) => {
 }
 
 .header-actions {
-    @apply flex gap-3;
+    @apply flex items-center gap-3;
+}
+
+.dropdown-menu {
+    @apply relative;
+}
+
+.dropdown-content {
+    @apply absolute right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-20;
+}
+
+.dropdown-item {
+    @apply flex items-center gap-2 px-4 py-3 text-left text-gray-700 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 w-full;
 }
 
 .btn {
@@ -598,11 +753,23 @@ const getReceivedClass = (item) => {
     @apply space-y-2;
 }
 
+.email-form {
+    @apply space-y-4;
+}
+
+.form-group {
+    @apply space-y-2;
+}
+
 .form-label {
     @apply block text-sm font-medium text-gray-700;
 }
 
 .form-input {
     @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent;
+}
+
+.form-textarea {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none;
 }
 </style>

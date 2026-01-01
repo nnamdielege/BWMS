@@ -4,432 +4,374 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
-use App\Models\PurchaseOrderItem;
-use App\Models\Inventory;
-use App\Models\Setting;
-use Exception;
+use App\Mail\PurchaseOrderMail;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class PurchaseOrderController extends Controller
 {
+    /**
+     * Display a listing of purchase orders.
+     */
     public function index(Request $request)
     {
-        try {
-            $query = PurchaseOrder::with(['supplier', 'warehouse', 'items.product']);
+        $query = PurchaseOrder::with('supplier', 'warehouse', 'items.product');
 
-            // Search
-            if ($request->has('search') && $request->search) {
-                $search = $request->search;
-                $query->where(function ($q) use ($search) {
-                    $q->where('order_number', 'like', "%{$search}%")
-                        ->orWhereHas('supplier', function ($q) use ($search) {
-                            $q->where('company_name', 'like', "%{$search}%");
-                        });
-                });
-            }
-
-            // Status filter
-            if ($request->has('status') && $request->status) {
-                $query->where('status', $request->status);
-            }
-
-            // Date filters
-            if ($request->has('date_from') && $request->date_from) {
-                $query->whereDate('order_date', '>=', $request->date_from);
-            }
-
-            if ($request->has('date_to') && $request->date_to) {
-                $query->whereDate('order_date', '<=', $request->date_to);
-            }
-
-            // Sorting
-            $sortBy = $request->get('sort_by', 'order_date');
-            $sortOrder = $request->get('sort_order', 'desc');
-            $query->orderBy($sortBy, $sortOrder);
-
-            // Pagination
-            $perPage = $request->get('per_page', 15);
-            $orders = $query->paginate($perPage);
-
-            return response()->json($orders);
-        } catch (\Exception $e) {
-            Log::error('Fetch purchase orders error: ' . $e->getMessage());
-
-            return response()->json([
-                'message' => 'Failed to fetch purchase orders',
-                'error' => $e->getMessage()
-            ], 500);
+        if ($request->search) {
+            $query->where('order_number', 'like', "%{$request->search}%");
         }
+
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->date_from) {
+            $query->whereDate('order_date', '>=', $request->date_from);
+        }
+
+        if ($request->date_to) {
+            $query->whereDate('order_date', '<=', $request->date_to);
+        }
+
+        $orders = $query->paginate($request->per_page ?? 15);
+
+        return response()->json($orders);
     }
 
+    /**
+     * Store a newly created purchase order.
+     */
     public function store(Request $request)
     {
-        Log::info('Purchase order creation request:', $request->all());
-
         $validated = $request->validate([
             'supplier_id' => 'required|exists:suppliers,id',
             'warehouse_id' => 'required|exists:warehouses,id',
             'order_date' => 'required|date',
             'expected_date' => 'nullable|date',
-            'status' => 'required|in:draft,pending,received,cancelled',
-            'subtotal' => 'required|numeric|min:0',
-            'tax_rate' => 'nullable|numeric|min:0',
-            'tax' => 'nullable|numeric|min:0',
-            'shipping' => 'nullable|numeric|min:0',
-            'discount' => 'nullable|numeric|min:0',
-            'total' => 'required|numeric|min:0',
+            'status' => 'sometimes|in:draft,pending,received,cancelled',
+            'subtotal' => 'sometimes|numeric',
+            'tax_rate' => 'sometimes|numeric',
+            'tax' => 'sometimes|numeric',
+            'shipping' => 'sometimes|numeric',
+            'discount' => 'sometimes|numeric',
+            'total' => 'sometimes|numeric',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => 'required|numeric|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.discount' => 'nullable|numeric|min:0',
-            'items.*.tax' => 'nullable|numeric|min:0',
-            'items.*.subtotal' => 'required|numeric|min:0',
+            'items.*.discount' => 'sometimes|numeric|min:0',
+            'items.*.tax' => 'sometimes|numeric|min:0',
         ]);
 
-        DB::beginTransaction();
+        $order = PurchaseOrder::create([
+            'supplier_id' => $validated['supplier_id'],
+            'warehouse_id' => $validated['warehouse_id'],
+            'order_number' => $this->generateOrderNumber(),
+            'order_date' => $validated['order_date'],
+            'expected_date' => $validated['expected_date'] ?? null,
+            'status' => $validated['status'] ?? 'pending',
+            'subtotal' => $validated['subtotal'] ?? 0,
+            'tax_rate' => $validated['tax_rate'] ?? 0,
+            'tax' => $validated['tax'] ?? 0,
+            'shipping' => $validated['shipping'] ?? 0,
+            'discount' => $validated['discount'] ?? 0,
+            'total' => $validated['total'] ?? 0,
+            'notes' => $validated['notes'] ?? null,
+        ]);
 
-        try {
-            // Try to find the threshold setting by key
-            $setting = Setting::where('key', 'order_prefix_purchase')->first();
-
-            // Use setting value if available, otherwise default to 20
-            $orderPrefix = $setting?->value ?? 'PO-';
-
-            // Generate order number
-            $orderNumber = $orderPrefix . date('Ymd') . '-' . str_pad(PurchaseOrder::whereDate('created_at', today())->count() + 1, 4, '0', STR_PAD_LEFT);
-
-            // Handle empty date fields
-            $expectedDate = !empty($validated['expected_date']) ? $validated['expected_date'] : null;
-            $notes = !empty($validated['notes']) ? $validated['notes'] : null;
-
-            // Create purchase order
-            $order = PurchaseOrder::create([
-                'order_number' => $orderNumber,
-                'supplier_id' => $validated['supplier_id'],
-                'warehouse_id' => $validated['warehouse_id'],
-                'order_date' => $validated['order_date'],
-                'expected_date' => $expectedDate,
-                'status' => $validated['status'],
-                'subtotal' => $validated['subtotal'],
-                'tax_rate' => $validated['tax_rate'] ?? 0,
-                'tax' => $validated['tax'] ?? 0,
-                'shipping' => $validated['shipping'] ?? 0,
-                'discount' => $validated['discount'] ?? 0,
-                'total' => $validated['total'],
-                'notes' => $notes,
+        // Create order items
+        foreach ($validated['items'] as $item) {
+            $order->items()->create([
+                'product_id' => $item['product_id'],
+                'quantity' => $item['quantity'],
+                'received_quantity' => 0,
+                'unit_price' => $item['unit_price'],
+                'discount' => $item['discount'] ?? 0,
+                'tax' => $item['tax'] ?? 0,
+                'subtotal' => ($item['quantity'] * $item['unit_price']) - ($item['discount'] ?? 0),
             ]);
-
-            // Create order items
-            foreach ($validated['items'] as $itemData) {
-                PurchaseOrderItem::create([
-                    'purchase_order_id' => $order->id,
-                    'product_id' => $itemData['product_id'],
-                    'quantity' => $itemData['quantity'],
-                    'received_quantity' => 0,
-                    'unit_price' => $itemData['unit_price'],
-                    'discount' => $itemData['discount'] ?? 0,
-                    'tax' => $itemData['tax'] ?? 0,
-                    'subtotal' => $itemData['subtotal'],
-                ]);
-
-                $inventory = Inventory::firstOrCreate([
-                    'product_id' => $itemData['product_id'],
-                    'warehouse_id' => $order->warehouse_id,
-                ]);
-
-                // Increment the quantity_on_order field
-                $inventory->quantity_on_order += $itemData['quantity'];
-                $inventory->save();
-            }
-
-            DB::commit();
-
-            // Load relationships
-            $order->load(['supplier', 'warehouse', 'items.product']);
-
-            Log::info('Purchase order created successfully:', ['order_id' => $order->id]);
-
-            return response()->json([
-                'message' => 'Purchase order created successfully',
-                'data' => $order
-            ], 201);
-        } catch (Exception $e) {
-            DB::rollBack();
-
-            Log::error('Purchase order creation failed: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
-
-            return response()->json([
-                'message' => 'Failed to create purchase order',
-                'error' => $e->getMessage()
-            ], 500);
         }
+
+        return response()->json([
+            'message' => 'Purchase order created successfully',
+            'data' => $order->load('supplier', 'warehouse', 'items.product'),
+        ], 201);
     }
 
+    /**
+     * Display the specified purchase order.
+     */
     public function show($id)
     {
-        try {
-            $order = PurchaseOrder::with(['supplier', 'warehouse', 'items.product'])
-                ->findOrFail($id);
+        $order = PurchaseOrder::with('supplier', 'warehouse', 'items.product')
+            ->findOrFail($id);
 
-            return response()->json([
-                'data' => $order
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Purchase order show error: ' . $e->getMessage());
-
-            return response()->json([
-                'message' => 'Purchase order not found',
-                'error' => $e->getMessage()
-            ], 404);
-        }
+        return response()->json($order);
     }
 
+    /**
+     * Update the specified purchase order.
+     */
     public function update(Request $request, $id)
     {
         $order = PurchaseOrder::findOrFail($id);
 
-        if ($order->status === 'received') {
-            return response()->json([
-                'message' => 'Cannot update received purchase order'
-            ], 422);
-        }
-
         $validated = $request->validate([
-            'supplier_id' => 'required|exists:suppliers,id',
-            'warehouse_id' => 'required|exists:warehouses,id',
-            'order_date' => 'required|date',
+            'supplier_id' => 'sometimes|exists:suppliers,id',
+            'warehouse_id' => 'sometimes|exists:warehouses,id',
+            'order_date' => 'sometimes|date',
             'expected_date' => 'nullable|date',
-            'status' => 'required|in:draft,pending,received,cancelled',
-            'subtotal' => 'required|numeric|min:0',
-            'tax_rate' => 'nullable|numeric|min:0',
-            'tax' => 'nullable|numeric|min:0',
-            'shipping' => 'nullable|numeric|min:0',
-            'discount' => 'nullable|numeric|min:0',
-            'total' => 'required|numeric|min:0',
+            'status' => 'sometimes|in:draft,pending,received,cancelled',
+            'tax_rate' => 'sometimes|numeric',
+            'shipping' => 'sometimes|numeric',
+            'discount' => 'sometimes|numeric',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.discount' => 'nullable|numeric|min:0',
-            'items.*.tax' => 'nullable|numeric|min:0',
-            'items.*.subtotal' => 'required|numeric|min:0',
+            'items' => 'sometimes|array',
+            'items.*.product_id' => 'required_with:items|exists:products,id',
+            'items.*.quantity' => 'required_with:items|numeric|min:1',
+            'items.*.unit_price' => 'required_with:items|numeric|min:0',
+            'items.*.discount' => 'sometimes|numeric|min:0',
         ]);
 
-        DB::beginTransaction();
+        $order->update([
+            'supplier_id' => $validated['supplier_id'] ?? $order->supplier_id,
+            'warehouse_id' => $validated['warehouse_id'] ?? $order->warehouse_id,
+            'order_date' => $validated['order_date'] ?? $order->order_date,
+            'expected_date' => $validated['expected_date'] ?? $order->expected_date,
+            'status' => $validated['status'] ?? $order->status,
+            'tax_rate' => $validated['tax_rate'] ?? $order->tax_rate,
+            'shipping' => $validated['shipping'] ?? $order->shipping,
+            'discount' => $validated['discount'] ?? $order->discount,
+            'notes' => $validated['notes'] ?? $order->notes,
+        ]);
 
-        try {
-            // Handle empty date fields
-            $expectedDate = !empty($validated['expected_date']) ? $validated['expected_date'] : null;
-            $notes = !empty($validated['notes']) ? $validated['notes'] : null;
-
-            // Update order
-            $order->update([
-                'supplier_id' => $validated['supplier_id'],
-                'warehouse_id' => $validated['warehouse_id'],
-                'order_date' => $validated['order_date'],
-                'expected_date' => $expectedDate,
-                'status' => $validated['status'],
-                'subtotal' => $validated['subtotal'],
-                'tax_rate' => $validated['tax_rate'] ?? 0,
-                'tax' => $validated['tax'] ?? 0,
-                'shipping' => $validated['shipping'] ?? 0,
-                'discount' => $validated['discount'] ?? 0,
-                'total' => $validated['total'],
-                'notes' => $notes,
-            ]);
-
-            // Delete old items
+        // Update items if provided
+        if (isset($validated['items'])) {
             $order->items()->delete();
-
-            // Create new items
-            foreach ($validated['items'] as $itemData) {
-                PurchaseOrderItem::create([
-                    'purchase_order_id' => $order->id,
-                    'product_id' => $itemData['product_id'],
-                    'quantity' => $itemData['quantity'],
+            foreach ($validated['items'] as $item) {
+                $subtotal = ($item['quantity'] * $item['unit_price']) - ($item['discount'] ?? 0);
+                $order->items()->create([
+                    'product_id' => $item['product_id'],
+                    'quantity' => $item['quantity'],
                     'received_quantity' => 0,
-                    'unit_price' => $itemData['unit_price'],
-                    'discount' => $itemData['discount'] ?? 0,
-                    'tax' => $itemData['tax'] ?? 0,
-                    'subtotal' => $itemData['subtotal'],
+                    'unit_price' => $item['unit_price'],
+                    'discount' => $item['discount'] ?? 0,
+                    'tax' => $item['tax'] ?? 0,
+                    'subtotal' => $subtotal,
                 ]);
             }
-
-            DB::commit();
-
-            $order->load(['supplier', 'warehouse', 'items.product']);
-
-            return response()->json([
-                'message' => 'Purchase order updated successfully',
-                'data' => $order
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            Log::error('Purchase order update failed: ' . $e->getMessage());
-
-            return response()->json([
-                'message' => 'Failed to update purchase order',
-                'error' => $e->getMessage()
-            ], 500);
         }
+
+        return response()->json([
+            'message' => 'Purchase order updated successfully',
+            'data' => $order->load('supplier', 'warehouse', 'items.product'),
+        ]);
     }
 
+    /**
+     * Receive items from purchase order.
+     */
     public function receive(Request $request, $id)
     {
-        $order = PurchaseOrder::with(['items', 'warehouse'])->findOrFail($id);
-
-        if ($order->status === 'received') {
-            return response()->json([
-                'message' => 'Order is already received'
-            ], 422);
-        }
-
-        if ($order->status === 'cancelled') {
-            return response()->json([
-                'message' => 'Cannot receive a cancelled order'
-            ], 422);
-        }
+        $order = PurchaseOrder::findOrFail($id);
 
         $validated = $request->validate([
             'items' => 'required|array',
             'items.*.id' => 'required|exists:purchase_order_items,id',
-            'items.*.received_quantity' => 'required|integer|min:0',
+            'items.*.received_quantity' => 'required|numeric|min:0',
         ]);
 
-        DB::beginTransaction();
-
-        try {
-            foreach ($validated['items'] as $itemData) {
-                $item = PurchaseOrderItem::findOrFail($itemData['id']);
-
-                if ($item->purchase_order_id !== $order->id) {
-                    throw new Exception('Item does not belong to this order');
-                }
-
-                $receivedQty = $itemData['received_quantity'];
-
-                // Update item received quantity
-                $item->received_quantity += $receivedQty;
-                $item->save();
-
-                // Update inventory
-                // $inventory = Inventory::firstOrCreate(
-                //     [
-                //         'product_id' => $item->product_id,
-                //         'warehouse_id' => $order->warehouse_id,
-                //     ],
-                //     [
-                //         'quantity_on_hand' => 0,
-                //         'quantity_allocated' => 0,
-                //     ]
-                // );
-
-                // $inventory->quantity_on_hand += $receivedQty;
-                // $inventory->save();
-
-                // quantity_on_hand → physical stock count
-
-                // quantity_allocated → reserved stock count
-
-                // quantity_on_order → stock already ordered from suppliers
-
-                // quantity_available → calculated as quantity_on_hand - quantity_allocated
-
-                $inventory = Inventory::updateOrCreate([
-                    'product_id' => $item->product_id,
-                    'warehouse_id' => $order->warehouse_id
-                ]);
-
-                $onHand = $inventory->quantity_on_hand += $receivedQty;
-                $inventory->quantity_available = $onHand - $inventory->quantity_allocated;
-                $inventory->quantity_on_order -= $receivedQty;
-                $inventory->save();
-            }
-
-            // Reload items so we have updated quantities
-            $order->load('items');
-
-            // Check if all items are fully received
-            $allReceived = true;
-            foreach ($order->items as $item) {
-                if ($item->received_quantity < $item->quantity) {
-                    $allReceived = false;
-                    break;
-                }
-            }
-
-            if ($allReceived) {
-                $order->status = 'received';
-                $order->received_date = now();
-                $order->save();
-            }
-
-            DB::commit();
-
-            $order->load(['supplier', 'warehouse', 'items.product']);
-
-            return response()->json([
-                'message' => 'Purchase order received successfully',
-                'data' => $order
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            Log::error('Purchase order receive failed: ' . $e->getMessage());
-
-            return response()->json([
-                'message' => 'Failed to receive purchase order',
-                'error' => $e->getMessage()
-            ], 500);
+        foreach ($validated['items'] as $item) {
+            $orderItem = $order->items()->findOrFail($item['id']);
+            $orderItem->received_quantity += $item['received_quantity'];
+            $orderItem->save();
         }
+
+        // Check if all items are received
+        $allReceived = $order->items()->where('received_quantity', '<', function ($query) {
+            $query->selectRaw('quantity')->from('purchase_order_items as poi')
+                ->whereColumn('poi.id', 'purchase_order_items.id');
+        })->count() === 0;
+
+        if ($allReceived) {
+            $order->status = 'received';
+            $order->received_date = now();
+            $order->save();
+        }
+
+        return response()->json([
+            'message' => 'Items received successfully',
+            'data' => $order->load('items'),
+        ]);
     }
 
+    /**
+     * Cancel purchase order.
+     */
     public function cancel($id)
     {
         $order = PurchaseOrder::findOrFail($id);
 
-        if ($order->status === 'received') {
-            return response()->json([
-                'message' => 'Cannot cancel a received order'
-            ], 422);
+        if ($order->status === 'received' || $order->status === 'cancelled') {
+            return response()->json(
+                ['message' => 'Cannot cancel a received or already cancelled order'],
+                422
+            );
         }
 
-        if ($order->status === 'cancelled') {
-            return response()->json([
-                'message' => 'Order is already cancelled'
-            ], 422);
-        }
+        $order->status = 'cancelled';
+        $order->save();
 
-        DB::beginTransaction();
+        return response()->json(['message' => 'Purchase order cancelled successfully']);
+    }
+
+    /**
+     * Download purchase order as PDF.
+     */
+    public function download($id)
+    {
+        try {
+            $order = PurchaseOrder::with('items.product', 'supplier', 'warehouse')
+                ->findOrFail($id);
+
+            // Generate HTML
+            $html = view('purchase-orders.pdf', ['order' => $order])->render();
+
+            // Create mPDF instance
+            $mpdf = new \Mpdf\Mpdf();
+            $mpdf->WriteHTML($html);
+
+            // Create temp directory
+            $tempDir = storage_path('app/temp');
+            if (!is_dir($tempDir)) {
+                mkdir($tempDir, 0755, true);
+            }
+
+            // Save PDF
+            $filename = "PO-{$order->order_number}.pdf";
+            $filepath = $tempDir . '/' . $filename;
+            $mpdf->Output($filepath, \Mpdf\Output\Destination::FILE);
+
+            // Download from file
+            return response()->download($filepath, $filename, [
+                'Content-Type' => 'application/pdf',
+            ])->deleteFileAfterSend(true);
+        } catch (\Exception $e) {
+            Log::error('PDF Download Error', [
+                'order_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(
+                ['message' => 'Failed to download PDF: ' . $e->getMessage()],
+                500
+            );
+        }
+    }
+
+    /**
+     * Send purchase order via email to custom recipient.
+     * 
+     * Expected request body:
+     * {
+     *   "recipient_email": "supplier@example.com",
+     *   "subject": "Your Purchase Order",
+     *   "message": "Please process this order"
+     * }
+     */
+    public function sendEmail(Request $request, $id)
+    {
+        $request->validate([
+            'recipient_email' => 'required|email',
+            'subject' => 'nullable|string|max:255',
+            'message' => 'nullable|string',
+        ]);
+
+        $order = PurchaseOrder::with('items.product', 'supplier', 'warehouse')
+            ->findOrFail($id);
 
         try {
-            $order->status = 'cancelled';
-            $order->save();
-
-            DB::commit();
-
-            $order->load(['supplier', 'warehouse', 'items.product']);
+            // Send email (PDF will be generated in Mailable)
+            Mail::send(new PurchaseOrderMail(
+                recipient: $request->recipient_email,
+                emailSubject: $request->subject ?? "Purchase Order {$order->order_number}",
+                emailMessage: $request->message ?? 'Please see the attached purchase order.',
+                orderNumber: $order->order_number,
+                orderId: $order->id,
+            ));
 
             return response()->json([
-                'message' => 'Purchase order cancelled successfully',
-                'data' => $order
+                'message' => 'Purchase order sent successfully',
+                'recipient' => $request->recipient_email,
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            Log::error('Failed to send purchase order email', [
+                'order_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
 
-            Log::error('Purchase order cancellation failed: ' . $e->getMessage());
+            return response()->json(
+                ['message' => 'Failed to send email: ' . $e->getMessage()],
+                500
+            );
+        }
+    }
+
+    /**
+     * Send purchase order directly to supplier's email.
+     */
+    public function sendToSupplier($id)
+    {
+        $order = PurchaseOrder::with('items.product', 'supplier', 'warehouse')
+            ->findOrFail($id);
+
+        if (!$order->supplier || !$order->supplier->email) {
+            return response()->json(
+                ['message' => 'Supplier has no email address on file'],
+                422
+            );
+        }
+
+        try {
+            // Send email (PDF will be generated in Mailable)
+            Mail::send(new PurchaseOrderMail(
+                recipient: $order->supplier->email,
+                emailSubject: "Purchase Order {$order->order_number}",
+                emailMessage: "Please process this purchase order as detailed in the attached document.",
+                orderNumber: $order->order_number,
+                orderId: $order->id,
+            ));
 
             return response()->json([
-                'message' => 'Failed to cancel purchase order',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'Purchase order sent to supplier successfully',
+                'supplier_email' => $order->supplier->email,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send purchase order to supplier', [
+                'order_id' => $id,
+                'supplier_id' => $order->supplier_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json(
+                ['message' => 'Failed to send email to supplier: ' . $e->getMessage()],
+                500
+            );
         }
+    }
+
+    /**
+     * Generate unique purchase order number.
+     */
+    private function generateOrderNumber()
+    {
+        $count = PurchaseOrder::count() + 1;
+        $date = now()->format('Ymd');
+        return "PO-{$date}-" . str_pad($count, 4, '0', STR_PAD_LEFT);
     }
 }

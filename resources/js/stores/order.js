@@ -266,6 +266,74 @@ export const useOrderStore = defineStore('order', {
             }
         },
 
+        // ============================================================
+        // NEW METHODS: PDF Download and Email for Purchase Orders
+        // ============================================================
+
+        /**
+         * Download purchase order as PDF
+         * @param {number} id - Purchase order ID
+         * @returns {Blob} PDF file blob
+         */
+        async downloadPurchaseOrderPDF(id) {
+            this.loading = true;
+            this.error = null;
+
+            try {
+                const response = await purchaseOrderService.downloadPDF(id);
+                return response.data;  // ← Changed: return response.data, not response
+            } catch (error) {
+                this.error = error.response?.data?.message || 'Failed to download PDF';
+                throw error;
+            } finally {
+                this.loading = false;
+            }
+        },
+        /**
+         * Send purchase order via email to custom recipient
+         * @param {number} id - Purchase order ID
+         * @param {Object} emailData - Email data { recipient_email, subject, message }
+         * @returns {Object} Response data
+         */
+        async sendPurchaseOrderEmail(id, emailData) {
+            this.loading = true;
+            this.error = null;
+
+            try {
+                const response = await purchaseOrderService.sendEmail(id, emailData);
+                return response.data;
+            } catch (error) {
+                this.error = error.response?.data?.message || 'Failed to send email';
+                throw error;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        /**
+         * Send purchase order directly to supplier's email
+         * @param {number} id - Purchase order ID
+         * @returns {Object} Response data
+         */
+        async sendPurchaseOrderToSupplier(id) {
+            this.loading = true;
+            this.error = null;
+
+            try {
+                const response = await purchaseOrderService.sendToSupplier(id);
+                return response.data;
+            } catch (error) {
+                this.error = error.response?.data?.message || 'Failed to send email to supplier';
+                throw error;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        // ============================================================
+        // UTILITY METHODS
+        // ============================================================
+
         setFilters(filters) {
             this.filters = { ...this.filters, ...filters };
         },
