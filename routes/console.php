@@ -31,23 +31,23 @@ Schedule::call(
 Schedule::command('usage:reset-expired')->dailyAt('02:00');
 
 
-Schedule::call(function () {
-    // 1️⃣ Pull from Ordermentum
-    Artisan::call('sync:stock');
+// Schedule::call(function () {
+//     // 1️⃣ Pull from Ordermentum
+//     Artisan::call('sync:stock');
 
-    // 2️⃣ Push to Ordermentum
-    Artisan::call('push:stock');
-})
-    ->name('ordermentum-stock-sync-and-push')
-    ->timezone('Australia/Brisbane')
-    ->cron('0 6,9,12,15,18 * * 1-5')
-    ->withoutOverlapping();
+//     // 2️⃣ Push to Ordermentum
+//     Artisan::call('push:stock');
+// })
+//     ->name('ordermentum-stock-sync-and-push')
+//     ->timezone('Australia/Brisbane')
+//     ->cron('0 6,9,12,15,18 * * 1-5')
+//     ->withoutOverlapping();
 
 // Daily full sync at night
 Schedule::command('sync:stock')
     ->timezone('Australia/Brisbane')
     ->dailyAt('23:00');
 
-Schedule::command('push:stock')
-    ->timezone('Australia/Brisbane')
-    ->dailyAt('23:30');
+// Schedule::command('push:stock')
+//     ->timezone('Australia/Brisbane')
+//     ->dailyAt('23:30');
