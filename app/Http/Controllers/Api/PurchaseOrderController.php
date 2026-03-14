@@ -237,32 +237,16 @@ class PurchaseOrderController extends Controller
             $order = PurchaseOrder::with('items.product', 'supplier', 'warehouse')
                 ->findOrFail($id);
 
-            // Generate HTML
-            $html = view('purchase-orders.pdf', ['order' => $order])->render();
+            $pdf = Pdf::loadView('purchase-orders.pdf', ['order' => $order]);
 
-            // Create mPDF instance
-            $mpdf = new \Mpdf\Mpdf();
-            $mpdf->WriteHTML($html);
-
-            // Create temp directory
-            $tempDir = storage_path('app/temp');
-            if (!is_dir($tempDir)) {
-                mkdir($tempDir, 0755, true);
-            }
-
-            // Save PDF
-            $filename = "PO-{$order->order_number}.pdf";
-            $filepath = $tempDir . '/' . $filename;
-            $mpdf->Output($filepath, \Mpdf\Output\Destination::FILE);
-
-            // Download from file
-            return response()->download($filepath, $filename, [
-                'Content-Type' => 'application/pdf',
-            ])->deleteFileAfterSend(true);
+            return response($pdf->output(), 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => "attachment; filename=\"PO-{$order->order_number}.pdf\"",
+            ]);
         } catch (\Exception $e) {
             Log::error('PDF Download Error', [
                 'order_id' => $id,
-                'error' => $e->getMessage(),
+                'error'    => $e->getMessage(),
             ]);
 
             return response()->json(
@@ -294,14 +278,23 @@ class PurchaseOrderController extends Controller
             ->findOrFail($id);
 
         try {
-            // Send email (PDF will be generated in Mailable)
-            Mail::send(new PurchaseOrderMail(
-                recipient: $request->recipient_email,
-                emailSubject: $request->subject ?? "Purchase Order {$order->order_number}",
-                emailMessage: $request->message ?? 'Please see the attached purchase order.',
-                orderNumber: $order->order_number,
-                orderId: $order->id,
-            ));
+            Log::info('Attempting to send email', [
+                'order_id' => $id,
+                'recipient' => $request->recipient_email,
+                'mailer' => config('mail.default'),
+                'host' => config('mail.mailers.smtp.host'),
+            ]);
+
+            Mail::to($request->recipient_email)
+                ->send(new PurchaseOrderMail(
+                    recipient: $request->recipient_email,
+                    emailSubject: $request->subject ?? "Purchase Order {$order->order_number}",
+                    emailMessage: $request->message ?? 'Please see the attached purchase order.',
+                    orderNumber: $order->order_number,
+                    orderId: $order->id,
+                ));
+
+            Log::info('Email sent successfully', ['recipient' => $request->recipient_email]);
 
             return response()->json([
                 'message' => 'Purchase order sent successfully',
