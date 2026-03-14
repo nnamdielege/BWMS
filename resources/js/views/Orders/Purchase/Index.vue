@@ -81,7 +81,7 @@
 
                 <div class="filter-group">
                     <label class="filter-label">Status</label>
-                    <select v-model="filters.status" @change="fetchOrders" class="filter-select">
+                    <select v-model="filters.status" @change="fetchOrders(true)" class="filter-select">
                         <option value="">All Status</option>
                         <option value="draft">Draft</option>
                         <option value="pending">Pending</option>
@@ -94,7 +94,7 @@
                     <label class="filter-label">Date From</label>
                     <input
                         v-model="filters.date_from"
-                        @change="fetchOrders"
+                        @change="fetchOrders(true)"
                         type="date"
                         class="filter-input"
                     />
@@ -104,7 +104,7 @@
                     <label class="filter-label">Date To</label>
                     <input
                         v-model="filters.date_to"
-                        @change="fetchOrders"
+                        @change="fetchOrders(true)"
                         type="date"
                         class="filter-input"
                     />
@@ -268,7 +268,16 @@ onMounted(() => {
     fetchOrders();
 });
 
-const fetchOrders = async () => {
+// const fetchOrders = async () => {
+//     try {
+//         await orderStore.fetchPurchaseOrders(filters.value);
+//     } catch (error) {
+//         console.error('Error fetching orders:', error);
+//     }
+// };
+
+const fetchOrders = async (resetPage = false) => {
+    if (resetPage) filters.value.page = 1;
     try {
         await orderStore.fetchPurchaseOrders(filters.value);
     } catch (error) {
@@ -279,22 +288,22 @@ const fetchOrders = async () => {
 const handleSearch = () => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        fetchOrders();
+        fetchOrders(true); // reset page
     }, 300);
 };
 
 const resetFilters = () => {
-    filters.value = {
-        search: '',
-        status: '',
-        date_from: '',
-        date_to: '',
-    };
+    filters.value = { search: '', status: '', date_from: '', date_to: '', page: 1 };
     fetchOrders();
 };
 
+// const changePage = (page) => {
+//     fetchOrders({ ...filters.value, page });
+// };
+
 const changePage = (page) => {
-    fetchOrders({ ...filters.value, page });
+    filters.value.page = page;
+    fetchOrders();
 };
 
 const formatNumber = (num) => {
