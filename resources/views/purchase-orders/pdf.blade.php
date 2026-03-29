@@ -196,7 +196,7 @@
             <h2>Supplier</h2>
             <table class="info-table">
                 <tr><td>Company Name</td><td>{{ $order->supplier->company_name ?? 'N/A' }}</td></tr>
-                <tr><td>Contact</td><td>{{ $order->supplier->contact_person ?? 'N/A' }}</td></tr>
+                <tr><td>Contact</td><td>{{ $order->supplier->contact_name ?? 'N/A' }}</td></tr>
                 <tr><td>Address</td><td>{{ $order->supplier->address ?? 'N/A' }}</td></tr>
                 <tr><td>Email</td><td>{{ $order->supplier->email ?? 'N/A' }}</td></tr>
             </table>
