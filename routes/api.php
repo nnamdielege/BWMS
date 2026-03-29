@@ -33,6 +33,16 @@ use App\Http\Controllers\Webhooks\OrdermentumWebhookController;
 use App\Models\PurchaseOrder;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Support\Facades\Mail;
+
+// Route::get('/test-mail', function () {
+//     Mail::mailer('smtp')->raw('Mailtrap test body', function ($message) {
+//         $message->to('info@allfoodsafrica.com')
+//             ->subject('Mailtrap test');
+//     });
+
+//     return 'sent';
+// });
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);

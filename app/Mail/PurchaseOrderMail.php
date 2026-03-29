@@ -3,8 +3,6 @@
 namespace App\Mail;
 
 use App\Models\PurchaseOrder;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
@@ -12,13 +10,10 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class PurchaseOrderMail extends Mailable implements ShouldQueue
+class PurchaseOrderMail extends Mailable
 {
-    use Queueable, SerializesModels;
+    use SerializesModels;
 
-    /**
-     * Create a new message instance.
-     */
     public function __construct(
         protected string $recipient,
         protected string $emailSubject,
@@ -27,9 +22,6 @@ class PurchaseOrderMail extends Mailable implements ShouldQueue
         protected int $orderId,
     ) {}
 
-    /**
-     * Get the message envelope.
-     */
     public function envelope(): Envelope
     {
         return new Envelope(
@@ -38,27 +30,20 @@ class PurchaseOrderMail extends Mailable implements ShouldQueue
         );
     }
 
-    /**
-     * Get the message content definition.
-     */
     public function content(): Content
     {
         return new Content(
             view: 'emails.purchase-order',
             with: [
-                'emailMessage' => $this->emailMessage,  // ← Changed from 'message'
+                'emailMessage' => $this->emailMessage,
                 'orderNumber' => $this->orderNumber,
             ],
         );
     }
 
-    /**
-     * Get the attachments for the message.
-     */
     public function attachments(): array
     {
         try {
-            // Generate PDF fresh when email is sent
             $order = PurchaseOrder::with('items.product', 'supplier', 'warehouse')
                 ->findOrFail($this->orderId);
 
@@ -81,7 +66,6 @@ class PurchaseOrderMail extends Mailable implements ShouldQueue
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            // Return empty attachments if PDF generation fails
             return [];
         }
     }

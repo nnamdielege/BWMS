@@ -285,7 +285,8 @@ class PurchaseOrderController extends Controller
                 'host' => config('mail.mailers.smtp.host'),
             ]);
 
-            Mail::to($request->recipient_email)
+            Mail::mailer('smtp')
+                ->to($request->recipient_email)
                 ->send(new PurchaseOrderMail(
                     recipient: $request->recipient_email,
                     emailSubject: $request->subject ?? "Purchase Order {$order->order_number}",
@@ -293,6 +294,12 @@ class PurchaseOrderController extends Controller
                     orderNumber: $order->order_number,
                     orderId: $order->id,
                 ));
+
+            // Mail::mailer('smtp')->raw('Mailtrap test body', function ($message) {
+            //     $message->to('info@allfoodsafrica.com')
+            //         ->subject('Mailtrap test');
+            // });
+
 
             Log::info('Email sent successfully', ['recipient' => $request->recipient_email]);
 

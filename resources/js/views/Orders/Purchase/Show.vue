@@ -469,17 +469,31 @@ const sendEmail = async () => {
     sendingEmail.value = true;
 
     try {
-        await orderStore.sendPurchaseOrderEmail(order.value.id, emailData.value);
-        alert('Email sent successfully!');
+        const response = await orderStore.sendPurchaseOrderEmail(
+            order.value.id,
+            emailData.value
+        );
+
+        console.log('Send email response:', response);
+
+        // Use message directly
+        alert(response.message);
+
+        console.log(response.message);
+
         showEmailModal.value = false;
+
         emailData.value = {
             recipient_email: '',
             subject: '',
             message: '',
         };
+
     } catch (err) {
         console.error('Error sending email:', err);
-        alert(err.response?.data?.message || 'Failed to send email');
+        console.error('Error response:', err.response?.data);
+
+        alert(err.response?.data?.message);
     } finally {
         sendingEmail.value = false;
     }
