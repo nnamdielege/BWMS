@@ -320,6 +320,8 @@ Status: **Decided** = you chose it (2026-10-26). **Accepted (default)** = my rec
 | D-11 | Valuation | **Weighted average cost**, updated on each receipt. **Cost back-fill (MVP):** a "Product costs" screen listing products with cost = 0 (CSV export), inline cost editing, and bulk CSV import (`sku, cost, pack`) with a preview before applying. Every change is audited. (113/123 products in production have cost 0.) | Accepted (default); back-fill path **Decided** 2026-10-26 |
 | D-12 | PO numbering & branding | `PO-YYYY-NNNNN` from a DB sequence (no `count()+1`). Company details come from settings, seeded as "Local Selection" with placeholders you fill in. | Accepted (default) |
 | D-13 | Expired stock | At best-before, the batch is excluded from available (it stays on-hand). An expiry job flags it for write-off. Selling past best-before isn't supported in MVP. | Accepted (default) |
+| D-14 | Where received stock lands | **Per-site setting.** Default: the sellable STOCK bin, so received stock is available immediately. RECEIVING plus a put-away step can be chosen per site. Damaged goods still go to quarantine. | **Decided** 2026-10-27 |
+| D-15 | Dispatch below zero | **Never block dispatch.** When dispatch takes a bin negative, BWMS logs it, opens a count task for that bin (one open task per bin), and shows negative bins and open count tasks on the dashboard. Posting a stocktake that covers the bin closes the task. A manager can dismiss it with a note. | **Decided** 2026-10-27 |
 
 ### B10.1 Risks
 
