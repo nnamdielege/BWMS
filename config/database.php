@@ -82,6 +82,35 @@ return [
             ]) : [],
         ],
 
+        // Restored copy of the legacy prod dump, for bwms:migrate-legacy only. Use a
+        // SELECT-only user; the command also sets the session read-only. Never production.
+        'legacy' => [
+            'driver' => 'mariadb',
+            'host' => env('LEGACY_DB_HOST', '127.0.0.1'),
+            'port' => env('LEGACY_DB_PORT', '3306'),
+            'database' => env('LEGACY_DB_DATABASE', 'bwms_legacy_prod'),
+            'username' => env('LEGACY_DB_USERNAME', 'bwms_legacy_ro'),
+            'password' => env('LEGACY_DB_PASSWORD', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => true,
+        ],
+
+        // Optional: portal DB copy, read for the migration reconciliation report only.
+        'portal' => [
+            'driver' => 'mariadb',
+            'host' => env('PORTAL_DB_HOST', '127.0.0.1'),
+            'port' => env('PORTAL_DB_PORT', '3306'),
+            'database' => env('PORTAL_DB_DATABASE', 'localselection'),
+            'username' => env('PORTAL_DB_USERNAME', ''),
+            'password' => env('PORTAL_DB_PASSWORD', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => true,
+        ],
+
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),

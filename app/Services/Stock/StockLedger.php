@@ -10,6 +10,7 @@ use App\Services\Stock\Exceptions\IdempotencyConflict;
 use App\Services\Stock\Exceptions\InsufficientStock;
 use App\Services\Stock\Exceptions\InvalidMovement;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -126,7 +127,8 @@ class StockLedger
             'idempotency_key' => $d->idempotencyKey,
             'payload_hash' => $d->payloadHash(),
             'unit_cost' => $d->unitCost,
-            'occurred_at' => $d->occurredAt ?? now(),
+            // Stored in the app time zone (UTC): a caller's local time would otherwise be saved as wall-clock.
+            'occurred_at' => $d->occurredAt ? Carbon::instance($d->occurredAt)->setTimezone(config('app.timezone')) : now(),
             'created_by' => $userId,
             'note' => $d->note,
         ]));
