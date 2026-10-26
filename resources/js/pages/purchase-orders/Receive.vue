@@ -31,6 +31,7 @@ type Row = {
 const props = defineProps<{
     po: { id: number; number: string; supplier: string; site: string; lines: PoLine[] };
     bins: { id: number; label: string; receiving: boolean }[];
+    defaultBinId: number | null;
     reasons: string[];
     clientToken: string;
     canOverReceive: boolean;
@@ -41,7 +42,7 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: props.po.number, href: route('purchase-orders.show', props.po.id) },
     { title: 'Receive', href: '#' },
 ];
-const defaultBin = props.bins.find((b) => b.receiving)?.id ?? props.bins[0]?.id ?? null;
+const defaultBin = props.defaultBinId ?? props.bins[0]?.id ?? null;
 const blank = (l: PoLine): Row => ({
     purchase_order_line_id: l.id, packs: null, loose: null, damaged: null, rejected: null,
     location_id: defaultBin, lot_code: '', best_before: '', discrepancy_reason: null, note: '',

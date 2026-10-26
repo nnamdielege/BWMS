@@ -24,7 +24,7 @@ class Location extends Model
 
     public const TYPES = [self::TYPE_SITE, self::TYPE_ZONE, self::TYPE_BIN];
 
-    protected $fillable = ['parent_id', 'type', 'code', 'name', 'is_sellable', 'is_quarantine', 'is_receiving', 'is_active', 'sort_order'];
+    protected $fillable = ['parent_id', 'receive_location_id', 'type', 'code', 'name', 'is_sellable', 'is_quarantine', 'is_receiving', 'is_active', 'sort_order'];
 
     protected function casts(): array
     {
@@ -44,6 +44,12 @@ class Location extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id')->orderBy('sort_order')->orderBy('code');
+    }
+
+    /** Sites only: the bin accepted receipts land in (spec decision: default = sellable STOCK). */
+    public function receiveLocation(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'receive_location_id');
     }
 
     public function scopeBins(Builder $query): Builder

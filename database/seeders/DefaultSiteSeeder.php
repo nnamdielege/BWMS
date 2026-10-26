@@ -37,5 +37,10 @@ class DefaultSiteSeeder extends Seeder
                 ['type' => Location::TYPE_BIN, ...$bin],
             );
         }
+
+        // Received stock lands in sellable STOCK by default; RECEIVING + put-away is opt-in per site.
+        if (! $site->receive_location_id) {
+            $site->update(['receive_location_id' => Location::where('parent_id', $site->id)->where('code', 'STOCK')->value('id')]);
+        }
     }
 }

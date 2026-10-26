@@ -5,12 +5,14 @@ namespace App\Services\Orders;
 use App\Enums\MovementType;
 use App\Enums\OrderStatus;
 use App\Events\OrderDispatched;
+use App\Models\CountTask;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\PickList;
 use App\Models\PickListLine;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\Stock\CountTaskService;
 use App\Services\Stock\Exceptions\InvalidMovement;
 use App\Services\Stock\FefoAllocator;
 use App\Services\Stock\MovementDraft;
@@ -33,6 +35,7 @@ class PickListService
         private FefoAllocator $fefo,
         private StockLedger $ledger,
         private ReservationService $reservations,
+        private CountTaskService $countTasks,
     ) {}
 
     /**
@@ -148,7 +151,7 @@ class PickListService
             }
 
             $pickList->forceFill(['status' => PickList::STATUS_DISPATCHED, 'dispatched_by' => $actor->id, 'dispatched_at' => now()])->save();
-            $this->logNegativeBins($lines);
+            $this->flagNegativeBins($pickList, $lines);
             OrderDispatched::dispatch($pickList->id, $orders->pluck('id')->all());
 
             return $pickList;
@@ -189,14 +192,16 @@ class PickListService
         return $out;
     }
 
-    private function logNegativeBins($lines): void
+    /** Dispatch is never blocked; a bin it took below zero is logged and gets a count task. */
+    private function flagNegativeBins(PickList $pickList, $lines): void
     {
         foreach ($lines as $line) {
             $onHand = (int) DB::table('stock_balances')->where('product_id', $line->product_id)
                 ->where('location_id', $line->location_id)->where('batch_key', $line->batch_key)->value('on_hand');
             if ($onHand < 0) {
                 Log::warning('Dispatch took a bin negative; count it', ['sku' => $line->product->sku, 'bin' => $line->location->path(), 'on_hand' => $onHand]);
-                Audit::record('dispatch_negative_bin', $line->product, meta: ['bin' => $line->location->path(), 'on_hand' => $onHand]);
+                Audit::record('dispatch_negative_bin', $line->product, meta: ['bin' => $line->location->path(), 'on_hand' => $onHand, 'pick_list' => $pickList->number]);
+                $this->countTasks->raise($line->location, $line->product, CountTask::REASON_NEGATIVE_AFTER_DISPATCH, 'pick_list', $pickList->id, $onHand);
             }
         }
     }

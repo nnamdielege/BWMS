@@ -25,7 +25,7 @@ use Illuminate\Support\Str;
  */
 class StocktakeService
 {
-    public function __construct(private StockLedger $ledger, private StockQuery $stock) {}
+    public function __construct(private StockLedger $ledger, private StockQuery $stock, private CountTaskService $countTasks) {}
 
     public function create(User $actor, Location $scope, ?string $note = null): Stocktake
     {
@@ -137,7 +137,8 @@ class StocktakeService
             }
 
             $stocktake->forceFill(['status' => Stocktake::STATUS_POSTED, 'posted_by' => $actor->id, 'posted_at' => now()])->save();
-            Audit::record('stocktake_posted', $stocktake, meta: ['lines' => $lines->count(), 'adjusted_lines' => count($drafts)]);
+            $closedTasks = $this->countTasks->closeForStocktake($stocktake, $actor);
+            Audit::record('stocktake_posted', $stocktake, meta: ['lines' => $lines->count(), 'adjusted_lines' => count($drafts), 'count_tasks_closed' => $closedTasks]);
 
             return $stocktake;
         });

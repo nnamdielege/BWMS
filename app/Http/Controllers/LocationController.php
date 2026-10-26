@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Location;
+use App\Services\Stock\StockQuery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -57,6 +58,7 @@ class LocationController extends Controller
             'is_receiving' => ['boolean'],
             'is_active' => ['boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'receive_location_id' => ['nullable', 'integer', 'exists:locations,id'],
         ]);
 
         $parent = isset($data['parent_id']) ? Location::find($data['parent_id']) : null;
@@ -74,6 +76,17 @@ class LocationController extends Controller
             $data['is_sellable'] = false; // quarantined stock is never available to sell
         }
         $data['sort_order'] ??= 0;
+
+        // Receipts landing bin: sites only, and it must be an active non-quarantine bin of that site.
+        if ($data['type'] !== Location::TYPE_SITE) {
+            $data['receive_location_id'] = null;
+        } elseif (! empty($data['receive_location_id'])) {
+            $bin = Location::find($data['receive_location_id']);
+            $siteBins = $location ? app(StockQuery::class)->binIdsUnder($location) : [];
+            if (! $bin->isBin() || ! $bin->is_active || $bin->is_quarantine || ! in_array($bin->id, $siteBins, true)) {
+                throw ValidationException::withMessages(['receive_location_id' => 'Choose an active, non-quarantine bin at this site.']);
+            }
+        }
 
         return $data;
     }

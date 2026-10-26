@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CountTask;
+use App\Models\Location;
 use App\Models\Order;
 use App\Models\PurchaseOrder;
+use App\Models\StockBalance;
 use App\Support\BusinessDate;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -30,6 +33,32 @@ class DashboardController extends Controller
         if ($user->can('purchase_orders.view')) {
             $widgets['overdue_pos'] = PurchaseOrder::whereIn('status', ['sent', 'partially_received'])
                 ->whereDate('expected_date', '<', BusinessDate::today())->count();
+        }
+
+        if ($user->can('stock.view')) {
+            $negative = StockBalance::query()->where('stock_balances.on_hand', '<', 0)
+                ->join('locations', 'locations.id', '=', 'stock_balances.location_id')
+                ->join('products', 'products.id', '=', 'stock_balances.product_id');
+            $widgets['negative_bins'] = [
+                'total' => (clone $negative)->count(),
+                'rows' => $negative->orderBy('stock_balances.on_hand')->limit(10)
+                    ->get(['stock_balances.product_id', 'stock_balances.location_id', 'stock_balances.on_hand', 'products.sku', 'products.name'])
+                    ->map(fn ($b) => ['product_id' => $b->product_id, 'sku' => $b->sku, 'name' => $b->name, 'on_hand' => (int) $b->on_hand,
+                        'bin' => Location::find($b->location_id)?->path()]),
+            ];
+
+            $open = CountTask::where('status', CountTask::STATUS_OPEN);
+            $widgets['count_tasks'] = [
+                'total' => (clone $open)->count(),
+                'rows' => $open->with(['location.parent.parent', 'product:id,sku'])->oldest()->limit(10)->get()
+                    ->map(fn (CountTask $t) => ['id' => $t->id, 'location_id' => $t->location_id, 'bin' => $t->location->path(), 'sku' => $t->product?->sku,
+                        'on_hand_at_raise' => $t->on_hand_at_raise, 'times_raised' => $t->times_raised, 'raised_at' => $t->created_at->toIso8601String()]),
+                'can_manage' => $user->can('stocktakes.manage'),
+            ];
+
+            // Only non-zero when a site receives into a non-sellable bin (RECEIVING + put-away).
+            $widgets['awaiting_putaway'] = StockBalance::where('on_hand', '>', 0)
+                ->whereIn('location_id', Location::bins()->where('is_receiving', true)->where('is_sellable', false)->select('id'))->count();
         }
 
         return Inertia::render('Dashboard', ['widgets' => $widgets]);

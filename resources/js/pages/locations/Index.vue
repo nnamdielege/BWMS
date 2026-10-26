@@ -10,6 +10,7 @@ import { computed, ref } from 'vue';
 interface LocationRow {
     id: number;
     parent_id: number | null;
+    receive_location_id: number | null;
     type: 'site' | 'zone' | 'bin';
     code: string;
     name: string;
@@ -38,7 +39,7 @@ const rows = computed(() => {
 });
 const parents = computed(() => props.locations.filter((l) => l.type !== 'bin'));
 
-const blank = { type: 'bin', parent_id: null as number | null, code: '', name: '', is_sellable: true, is_quarantine: false, is_receiving: false, is_active: true, sort_order: 0 };
+const blank = { type: 'bin', parent_id: null as number | null, receive_location_id: null as number | null, code: '', name: '', is_sellable: true, is_quarantine: false, is_receiving: false, is_active: true, sort_order: 0 };
 const form = useForm({ ...blank });
 const editingId = ref<number | null>(null);
 
@@ -56,6 +57,20 @@ const submit = () =>
     editingId.value
         ? form.put(route('locations.update', editingId.value), { preserveScroll: true, onSuccess: reset })
         : form.post(route('locations.store'), { preserveScroll: true, onSuccess: reset });
+// Bins under the site being edited, for its "receive into" setting.
+const siteBins = computed(() => {
+    const out: LocationRow[] = [];
+    const walk = (parentId: number) =>
+        props.locations
+            .filter((l) => l.parent_id === parentId)
+            .forEach((l) => {
+                if (l.type === 'bin' && l.is_active && !l.is_quarantine) out.push(l);
+                walk(l.id);
+            });
+    if (editingId.value) walk(editingId.value);
+    return out;
+});
+const binCode = (id: number | null) => props.locations.find((l) => l.id === id)?.code;
 const flags = (l: LocationRow) =>
     [l.is_sellable && 'sellable', l.is_receiving && 'receiving', l.is_quarantine && 'quarantine', !l.is_active && 'inactive'].filter(Boolean).join(', ');
 </script>
@@ -74,7 +89,9 @@ const flags = (l: LocationRow) =>
                         <td class="py-2 font-mono" :style="{ paddingLeft: `${l.depth * 1.25}rem` }">{{ l.code }}</td>
                         <td>{{ l.name }}</td>
                         <td class="capitalize">{{ l.type }}</td>
-                        <td class="text-muted-foreground">{{ l.type === 'bin' ? flags(l) : '' }}</td>
+                        <td class="text-muted-foreground">
+                            {{ l.type === 'bin' ? flags(l) : l.type === 'site' && l.receive_location_id ? `receives into ${binCode(l.receive_location_id)}` : '' }}
+                        </td>
                         <td class="text-right"><Button v-if="canManage" size="sm" variant="ghost" @click="edit(l)">Edit</Button></td>
                     </tr>
                 </tbody>
@@ -99,6 +116,14 @@ const flags = (l: LocationRow) =>
                     <label class="flex items-center gap-2"><input type="checkbox" v-model="form.is_sellable" :disabled="form.is_quarantine" /> Stock here is sellable</label>
                     <label class="flex items-center gap-2"><input type="checkbox" v-model="form.is_receiving" /> Receiving bin</label>
                     <label class="flex items-center gap-2"><input type="checkbox" v-model="form.is_quarantine" /> Quarantine (never sellable)</label>
+                </div>
+                <div v-if="form.type === 'site' && editingId" class="space-y-1 text-sm">
+                    <label for="receive_location_id" class="text-muted-foreground">Received stock goes into</label>
+                    <select id="receive_location_id" v-model="form.receive_location_id" class="h-9 w-full rounded-md border bg-background px-2">
+                        <option :value="null">Automatic (first sellable bin)</option>
+                        <option v-for="b in siteBins" :key="b.id" :value="b.id">{{ b.code }} — {{ b.name }}{{ b.is_sellable ? '' : ' (not sellable: needs put-away)' }}</option>
+                    </select>
+                    <InputError :message="form.errors.receive_location_id" />
                 </div>
                 <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_active" /> Active</label>
                 <div class="flex gap-2">

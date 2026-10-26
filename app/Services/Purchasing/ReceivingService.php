@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  * Receive goods against a PO.
  *
  * Per receipt line (several lines may reference one PO line, e.g. two lots):
- *  - accepted -> `receipt` movement into the chosen bin (default: site receiving bin)
+ *  - accepted -> `receipt` movement into the chosen bin (default: the site's landing bin, see landingBin())
  *  - damaged  -> `receipt` movement into the site's quarantine bin (counted, never sellable)
  *  - rejected -> not stocked; recorded as a discrepancy (goods went back)
  *
@@ -35,6 +35,21 @@ use Illuminate\Support\Facades\DB;
 class ReceivingService
 {
     public function __construct(private StockLedger $ledger, private StockQuery $stock) {}
+
+    /**
+     * Where accepted stock lands by default: the site's configured bin if it is
+     * still an active, non-quarantine bin at that site; otherwise the first
+     * sellable bin; otherwise a receiving bin.
+     */
+    public function landingBin(Location $site): ?Location
+    {
+        $siteBins = $this->stock->binIdsUnder($site);
+        $usable = fn () => Location::bins()->whereIn('id', $siteBins)->where('is_active', true)->where('is_quarantine', false);
+
+        return ($site->receive_location_id ? $usable()->whereKey($site->receive_location_id)->first() : null)
+            ?? $usable()->where('is_sellable', true)->orderBy('sort_order')->orderBy('id')->first()
+            ?? $usable()->where('is_receiving', true)->orderBy('sort_order')->orderBy('id')->first();
+    }
 
     /**
      * @param  list<array{purchase_order_line_id:int, qty_accepted_base?:int, qty_damaged_base?:int, qty_rejected_base?:int,
@@ -53,7 +68,7 @@ class ReceivingService
             $poLines = $po->lines()->with('product')->get()->keyBy('id');
             $siteBins = $this->stock->binIdsUnder($po->site);
             $quarantine = Location::bins()->whereIn('id', $siteBins)->where('is_quarantine', true)->where('is_active', true)->orderBy('sort_order')->first();
-            $defaultBin = Location::bins()->whereIn('id', $siteBins)->where('is_receiving', true)->where('is_active', true)->orderBy('sort_order')->first();
+            $defaultBin = $this->landingBin($po->site);
 
             // Validate everything before writing anything.
             $planned = [];

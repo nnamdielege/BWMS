@@ -17,6 +17,7 @@ use App\Http\Controllers\Purchasing\ReceiptController;
 use App\Http\Controllers\Purchasing\SupplierController;
 use App\Http\Controllers\RangeController;
 use App\Http\Controllers\Stock\AdjustmentController;
+use App\Http\Controllers\Stock\CountTaskController;
 use App\Http\Controllers\Stock\MovementController;
 use App\Http\Controllers\Stock\StockController;
 use App\Http\Controllers\Stock\StocktakeController;
@@ -76,6 +77,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::post('stocktakes/{stocktake}/lines', [StocktakeController::class, 'addLine'])->middleware('can:stocktakes.count')->name('stocktakes.lines.store');
     Route::post('stocktakes/{stocktake}/post', [StocktakeController::class, 'post'])->middleware('can:stocktakes.manage')->name('stocktakes.post');
     Route::post('stocktakes/{stocktake}/cancel', [StocktakeController::class, 'cancel'])->middleware('can:stocktakes.manage')->name('stocktakes.cancel');
+    Route::post('count-tasks/{countTask}/dismiss', [CountTaskController::class, 'dismiss'])->middleware('can:stocktakes.manage')->name('count-tasks.dismiss');
 
     // Purchasing
     Route::get('suppliers', [SupplierController::class, 'index'])->middleware('can:suppliers.view')->name('suppliers.index');

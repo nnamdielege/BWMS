@@ -46,6 +46,7 @@ class ReceiptController extends Controller
                     'outstanding_base' => $l->outstandingBase(),
                 ]),
             ],
+            'defaultBinId' => $this->receiving->landingBin($purchaseOrder->site)?->id,
             'bins' => $bins->map(fn (Location $b) => ['id' => $b->id, 'label' => $b->path(), 'receiving' => $b->is_receiving]),
             'reasons' => ReceiptLine::REASONS,
             'clientToken' => (string) Str::uuid(),
