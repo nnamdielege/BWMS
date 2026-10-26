@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
+use App\Authorization\Permissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -12,16 +12,22 @@ class DashboardTest extends TestCase
 
     public function test_guests_are_redirected_to_the_login_page()
     {
-        $response = $this->get('/dashboard');
-        $response->assertRedirect('/login');
+        $this->get('/dashboard')->assertRedirect('/login');
     }
 
     public function test_authenticated_users_can_visit_the_dashboard()
     {
-        $user = User::factory()->create();
-        $this->actingAs($user);
+        $this->actingAs($this->userWithRole(Permissions::ROLE_READ_ONLY))
+            ->get('/dashboard')
+            ->assertOk();
+    }
 
-        $response = $this->get('/dashboard');
-        $response->assertStatus(200);
+    public function test_deactivated_user_is_logged_out_on_next_request()
+    {
+        $user = $this->userWithRole(Permissions::ROLE_READ_ONLY);
+        $user->forceFill(['is_active' => false])->save();
+
+        $this->actingAs($user)->get('/dashboard')->assertRedirect('/login');
+        $this->assertGuest();
     }
 }

@@ -8,6 +8,7 @@ import { ChevronsUpDown } from 'lucide-vue-next';
 import UserMenuContent from './UserMenuContent.vue';
 
 const page = usePage<SharedData>();
+// NavUser only renders inside authenticated layouts.
 const user = page.props.auth.user as User;
 </script>
 

@@ -1,7 +1,9 @@
 import type { LucideIcon } from 'lucide-vue-next';
 
 export interface Auth {
-    user: User;
+    user: User | null;
+    permissions: string[];
+    roles: string[];
 }
 
 export interface BreadcrumbItem {
@@ -14,12 +16,19 @@ export interface NavItem {
     href: string;
     icon?: LucideIcon;
     isActive?: boolean;
+    /** Hide the item unless the user has this permission. */
+    permission?: string;
+}
+
+export interface NavGroup {
+    label: string;
+    items: NavItem[];
 }
 
 export interface SharedData {
     name: string;
-    quote: { message: string; author: string };
     auth: Auth;
+    flash: { success: string | null; error: string | null };
     ziggy: {
         location: string;
         url: string;
@@ -27,6 +36,7 @@ export interface SharedData {
         defaults: Record<string, unknown>;
         routes: Record<string, string>;
     };
+    [key: string]: unknown;
 }
 
 export interface User {
@@ -34,9 +44,14 @@ export interface User {
     name: string;
     email: string;
     avatar?: string;
-    email_verified_at: string | null;
-    created_at: string;
-    updated_at: string;
+}
+
+export interface Paginated<T> {
+    data: T[];
+    links: { url: string | null; label: string; active: boolean }[];
+    current_page: number;
+    last_page: number;
+    total: number;
 }
 
 export type BreadcrumbItemType = BreadcrumbItem;
