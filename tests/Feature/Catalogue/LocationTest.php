@@ -25,7 +25,7 @@ class LocationTest extends TestCase
     public function test_manager_can_add_zone_and_bin()
     {
         $this->seed(DefaultSiteSeeder::class);
-        $site = Location::where('code', 'MAIN')->first();
+        $site = Location::whereNull('parent_id')->where('code', 'CLONTARF')->first();
         $manager = $this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER);
 
         $this->actingAs($manager)->post(route('locations.store'), ['type' => 'zone', 'parent_id' => $site->id, 'code' => 'cool', 'name' => 'Cool room'])
@@ -35,7 +35,7 @@ class LocationTest extends TestCase
         $this->actingAs($manager)->post(route('locations.store'), ['type' => 'bin', 'parent_id' => $zone->id, 'code' => 'C-01', 'name' => 'Shelf 1', 'is_sellable' => true])
             ->assertSessionHasNoErrors();
 
-        $this->assertSame('MAIN / COOL / C-01', Location::where('code', 'C-01')->first()->path());
+        $this->assertSame('CLONTARF / COOL / C-01', Location::where('code', 'C-01')->first()->path());
     }
 
     public function test_hierarchy_rules_are_enforced()
@@ -43,20 +43,20 @@ class LocationTest extends TestCase
         $this->seed(DefaultSiteSeeder::class);
         $manager = $this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER);
         $bin = Location::where('code', 'STOCK')->first();
-        $site = Location::where('code', 'MAIN')->first();
+        $site = Location::whereNull('parent_id')->where('code', 'CLONTARF')->first();
 
         $this->actingAs($manager)->post(route('locations.store'), ['type' => 'bin', 'parent_id' => $bin->id, 'code' => 'X', 'name' => 'X'])
             ->assertSessionHasErrors('parent_id');
         $this->actingAs($manager)->post(route('locations.store'), ['type' => 'bin', 'code' => 'Y', 'name' => 'Y'])
             ->assertSessionHasErrors('parent_id');
-        $this->actingAs($manager)->put(route('locations.update', $site), ['type' => 'bin', 'parent_id' => null, 'code' => 'MAIN', 'name' => 'x'])
+        $this->actingAs($manager)->put(route('locations.update', $site), ['type' => 'bin', 'parent_id' => null, 'code' => 'CLONTARF', 'name' => 'x'])
             ->assertSessionHasErrors();
     }
 
     public function test_quarantine_bins_are_never_sellable()
     {
         $this->seed(DefaultSiteSeeder::class);
-        $site = Location::where('code', 'MAIN')->first();
+        $site = Location::whereNull('parent_id')->where('code', 'CLONTARF')->first();
 
         $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER))
             ->post(route('locations.store'), ['type' => 'bin', 'parent_id' => $site->id, 'code' => 'Q2', 'name' => 'Q2', 'is_quarantine' => true, 'is_sellable' => true]);

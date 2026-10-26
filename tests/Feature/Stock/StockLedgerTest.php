@@ -209,7 +209,7 @@ class StockLedgerTest extends TestCase
         $p = Product::factory()->create();
 
         $this->expectException(InvalidMovement::class);
-        $this->ledger()->postOne($this->draft($p, 1, MovementType::Receipt, ['location' => Location::where('code', 'MAIN')->first()]));
+        $this->ledger()->postOne($this->draft($p, 1, MovementType::Receipt, ['location' => Location::whereNull('parent_id')->where('code', 'CLONTARF')->first()]));
     }
 
     public function test_batch_rules()

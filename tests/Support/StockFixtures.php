@@ -22,9 +22,15 @@ trait StockFixtures
         $this->seed([DefaultSiteSeeder::class, ReasonCodeSeeder::class]);
     }
 
-    protected function bin(string $code = 'STOCK'): Location
+    protected function site(?string $code = null): Location
     {
-        return Location::where('code', $code)->firstOrFail();
+        return Location::whereNull('parent_id')->where('code', $code ?? config('bwms.default_site.code'))->firstOrFail();
+    }
+
+    /** A bin by code within a site (default site unless given); codes repeat across sites. */
+    protected function bin(string $code = 'STOCK', ?Location $site = null): Location
+    {
+        return Location::where('parent_id', ($site ?? $this->site())->id)->where('code', $code)->firstOrFail();
     }
 
     protected function reason(string $code): ReasonCode

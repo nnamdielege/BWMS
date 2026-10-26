@@ -6,18 +6,25 @@ use App\Models\Location;
 use Illuminate\Database\Seeder;
 
 /**
- * Idempotently ensures one site with the minimum bins every flow needs.
- * Spec D-6/Q6: model multi-location, default to one site.
+ * Idempotently ensures the default site exists with the minimum bins every
+ * flow needs. Multi-site is fully supported; this only seeds the first one
+ * (Clontarf Warehouse). Bin codes are unique per site, not globally.
  */
 class DefaultSiteSeeder extends Seeder
 {
     public function run(): void
     {
         $site = Location::firstOrCreate(
-            ['parent_id' => null, 'code' => 'MAIN'],
-            ['type' => Location::TYPE_SITE, 'name' => 'Main warehouse', 'is_sellable' => false],
+            ['parent_id' => null, 'code' => config('bwms.default_site.code')],
+            ['type' => Location::TYPE_SITE, 'name' => config('bwms.default_site.name'), 'is_sellable' => false],
         );
 
+        self::seedStandardBins($site);
+    }
+
+    /** RECEIVING, STOCK and QUARANTINE bins under a site (also used when adding sites). */
+    public static function seedStandardBins(Location $site): void
+    {
         $bins = [
             ['code' => 'RECEIVING', 'name' => 'Receiving dock', 'is_receiving' => true, 'is_sellable' => false, 'sort_order' => 1],
             ['code' => 'STOCK', 'name' => 'General stock', 'is_sellable' => true, 'sort_order' => 2],
