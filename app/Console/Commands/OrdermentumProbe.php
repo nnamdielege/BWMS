@@ -9,6 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Sleep;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -120,10 +121,10 @@ class OrdermentumProbe extends Command
 
         $rows = [];
         foreach (array_unique($candidates) as $value) {
-            $field = array_search($value, $flat, true);
+            $field = implode(' = ', array_map(fn ($k) => "{$linePath}.0.{$k}", array_keys($flat, $value, true)));
             foreach ($styles as $style) {
                 $r = $client->getStock('/v1/items/'.rawurlencode($value), $location ? ['locationId' => $location] : [], $style);
-                $rows[] = ["{$linePath}.0.{$field}", $style, $r->status(), $r->successful() ? $this->scalar($r->json('tracked')) : '-'];
+                $rows[] = [$field, $style, $r->status(), $r->successful() ? $this->scalar($r->json('tracked')) : '-'];
             }
         }
         $this->newLine();
@@ -192,7 +193,7 @@ class OrdermentumProbe extends Command
         $rows = [];
         $counts = ['tracked' => 0, 'untracked' => 0, 'missing' => 0, 'error' => 0];
         foreach ($listings as $listing) {
-            $r = $client->getStock('/v1/items/'.rawurlencode($listing->external_variant_id), $location ? ['locationId' => $location] : []);
+            $r = $this->waitingOutLimits(fn () => $client->getStock('/v1/items/'.rawurlencode($listing->external_variant_id), $location ? ['locationId' => $location] : []));
             $tracked = $r->successful() ? (bool) $r->json('tracked') : null;
             $state = match (true) {
                 $r->status() === 404 => 'missing',
@@ -213,6 +214,22 @@ class OrdermentumProbe extends Command
             : $this->table(['SKU', 'Variant', 'State', 'HTTP'], $rows);
 
         return self::SUCCESS;
+    }
+
+    /** A CLI run waits out rate-limit windows longer than the client's own short wait (a queued job would release instead). */
+    private function waitingOutLimits(callable $call): Response
+    {
+        for ($i = 0; ; $i++) {
+            try {
+                return $call();
+            } catch (OrdermentumException $e) {
+                if ($e->retryAfter === null || $i >= 5) {
+                    throw $e;
+                }
+                $this->line("  rate limit: waiting {$e->retryAfter}s");
+                Sleep::for($e->retryAfter)->seconds();
+            }
+        }
     }
 
     /** Recent order IDs with status and dates only, to pick one for `om:probe order`. */

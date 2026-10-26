@@ -23,7 +23,9 @@ All three are **off** by default. Turn them on only at cutover.
 | `ORDERMENTUM_INGEST_ENABLED` | Lets BWMS process Ordermentum orders. While off, webhooks are stored as `held` and can be replayed later. |
 | `ORDERMENTUM_WEBHOOK_TOKEN` | A long random string, used as the secret in the webhook path. Without it the endpoint returns 404. |
 
-Also set `ORDERMENTUM_SUPPLIER_ID`, `ORDERMENTUM_LOCATION_ID` and `ORDERMENTUM_CONTEXT_HEADERS`. See `.env.example`.
+Also set `ORDERMENTUM_SUPPLIER_ID` and `ORDERMENTUM_LOCATION_ID`. See `.env.example`.
+
+With the API token, the stock API ignores the supplier context headers on reads (even a wrong supplier ID returns 200): the token scopes access to the supplier. BWMS still sends `context-*` (`ORDERMENTUM_CONTEXT_HEADERS=plain`), as the docs and the portal do. Writes have not been tested against this, because the probe is read-only.
 
 ## How it works
 
@@ -51,7 +53,9 @@ Also set `ORDERMENTUM_SUPPLIER_ID`, `ORDERMENTUM_LOCATION_ID` and `ORDERMENTUM_C
 4. A queued job fetches the order from the API (`GET /v1/orders/{id}?includeLines=true`).
 
 Other inbound behaviour:
-- **Polling.** Every 10 minutes, a poll of `GET /v2/orders` catches missed webhooks.
+- **Polling.** Every 10 minutes, a poll of `GET /v2/orders?updatedAt[gte]=…` catches missed webhooks.
+  - The filter was verified live on 2026-10-27: 185 orders matched since 1 October, out of 13,303. Results are not sorted, and the API accepts no sort parameter.
+  - The checkpoint only advances once every page has been read.
 - **Upserts.** Each order is a full-state upsert, versioned by `updatedAt` in ms.
 - **Unmapped variants.** A line with an unmapped variant holds the whole order until it's mapped on the Sync screen.
 
@@ -61,18 +65,15 @@ Other inbound behaviour:
 - **After Ordermentum confirms the scheme:** set the header, secret and algorithm, then switch to `enforce`. Until then, the path token and fetching the order back from the API are the guard.
 - **Finding the header:** the logged headers show which one Ordermentum sends.
 
-**Line item fields**
-- `lineItems` and `lineItem.quantity` are confirmed (support, 2026-10-26).
-- The variant ID field is set by `ORDERMENTUM_LINE_VARIANT_FIELDS` (default candidates: `variantId`, `variant.id`, `variant_id`, `productVariantId`). Confirm it with `om:probe order {id} --structure --headers=both` (docs/om-probe.md).
-- An order whose lines don't match fails with the keys it found. Fix the setting, then replay it.
+**Line item fields** (confirmed on a live order, 2026-10-27)
+- `lineItems[].quantity` is an integer.
+- `lineItems[].variantId` (also `variant.id`) is the stock API item ID and matches the legacy mapping.
+- `ORDERMENTUM_LINE_VARIANT_FIELDS` can re-point the field without a code change. An order whose lines don't match fails with the keys it found; fix the setting, then replay it.
 
 ## Cutover
 
 1. Legacy migration committed (docs/MIGRATION.md). Listings exist, all off.
-2. Run `om:probe` (docs/om-probe.md):
-   1. Confirm the variant field and supplier header.
-   2. Set `ORDERMENTUM_LINE_VARIANT_FIELDS` and `ORDERMENTUM_CONTEXT_HEADERS`.
-   3. Run `om:probe tracking` and turn tracking on in Ordermentum for every item it lists.
+2. Re-run `om:probe tracking` and turn tracking on in Ordermentum for anything it lists. On 2026-10-27 all 120 mapped variants were tracked.
 3. Turn off the portal's own Ordermentum sync (D-6). Switch the portal to token auth before 1 Jan 2027 if it's still running (docs/portal-om-token.md).
 4. Register the webhook in Ordermentum (`order_created`, `order_updated`) at `https://<host>/webhooks/ordermentum/<ORDERMENTUM_WEBHOOK_TOKEN>`.
 5. Set `ORDERMENTUM_INGEST_ENABLED=true`, then watch the Sync screen's inbound events and signature column.

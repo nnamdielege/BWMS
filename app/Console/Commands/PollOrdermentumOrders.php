@@ -13,13 +13,14 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Safety net for missed webhooks (B3.2), every 10 minutes: reads recent orders
- * and queues any that are new or changed since we last applied them. The
- * updatedAt[gte] filter is unconfirmed (B3.1); if ignored, the page size and
- * page cap still bound the work.
+ * and queues any that are new or changed since we last applied them, using
+ * updatedAt[gte] (verified on the live API 2026-10-27; results are not sorted).
+ * The checkpoint only advances once every page was read, so a backlog larger
+ * than the page cap is picked up by the next runs instead of skipped.
  */
 class PollOrdermentumOrders extends Command
 {
-    protected $signature = 'channels:poll-ordermentum {--pages=3}';
+    protected $signature = 'channels:poll-ordermentum {--pages=10}';
 
     protected $description = 'Queue Ordermentum orders that are new or changed since they were last applied';
 
@@ -37,6 +38,7 @@ class PollOrdermentumOrders extends Command
         $since = Carbon::parse(Cache::get(self::LAST_POLL_KEY, now()->subDay()->toIso8601String()))->subMinutes(15);
         $queued = 0;
 
+        $complete = false;
         for ($page = 1; $page <= (int) $this->option('pages'); $page++) {
             try {
                 $response = $client->get('/v2/orders', [
@@ -71,12 +73,17 @@ class PollOrdermentumOrders extends Command
                 }
             }
 
-            if (! $response->json('links.next')) {
+            if (! $response->json('links.next') || $orders === []) {
+                $complete = true;
                 break;
             }
         }
 
-        Cache::forever(self::LAST_POLL_KEY, $startedAt->toIso8601String());
+        if ($complete) {
+            Cache::forever(self::LAST_POLL_KEY, $startedAt->toIso8601String());
+        } else {
+            $this->warn('More orders changed than the page cap; the checkpoint was not advanced.');
+        }
         $this->info("Queued {$queued} order(s).");
 
         return self::SUCCESS;

@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Date;
  * The one place that knows Ordermentum's order JSON shape
  * (config bwms.ordermentum.order_mapping).
  *
- * Confirmed (support, 2026-10-26): orders carry line items with lineItem.quantity.
- * Unconfirmed: the field holding the variant ID. Candidates are tried in
- * order; when none is present the order fails with the keys that were there,
- * so the right path can be configured after `om:probe order`.
+ * Confirmed on a live order (2026-10-27): lineItems[].quantity and
+ * lineItems[].variantId (= the stock API item ID). If Ordermentum's shape ever
+ * changes, the order fails with the keys it found, and the paths can be
+ * re-pointed via config without a code change.
  */
 class OrdermentumOrderMapper
 {

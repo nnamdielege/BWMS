@@ -19,6 +19,7 @@ use App\Services\Orders\AvailabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -310,5 +311,17 @@ class OrdermentumIngestTest extends TestCase
 
         $this->assertTrue($listing->fresh()->push_force);
         $this->assertNotNull($listing->fresh()->push_requested_at);
+    }
+
+    public function test_poll_only_advances_its_checkpoint_after_reading_every_page()
+    {
+        Queue::fake();
+        Cache::forever('ordermentum:last_poll', '2026-11-01T00:00:00Z');
+        Http::fake(['api.om.test/v2/orders*' => Http::response(['data' => [['id' => 'o-1', 'updatedAt' => '2026-11-02T00:00:00Z']], 'links' => ['next' => 'more']])]);
+
+        $this->artisan('channels:poll-ordermentum', ['--pages' => 2])->expectsOutputToContain('checkpoint was not advanced')->assertSuccessful();
+
+        $this->assertSame('2026-11-01T00:00:00Z', Cache::get('ordermentum:last_poll'));
+        Http::assertSent(fn (Request $r) => str_contains(urldecode($r->url()), 'updatedAt[gte]=2026-10-31T23:45:00'));
     }
 }

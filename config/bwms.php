@@ -48,16 +48,16 @@ return [
         ],
 
         /*
-         * Where an order's line items and their fields are. Line items and
-         * lineItem.quantity are confirmed (support, 2026-10-26). The variant ID
-         * field is NOT confirmed: candidates are tried in order until
-         * `om:probe order` shows a real order. Set ORDERMENTUM_LINE_VARIANT_FIELDS
-         * (comma-separated, dot paths) once known.
+         * Where an order's line items and their fields are. Confirmed on a live
+         * order with `om:probe order --structure --headers=both` (2026-10-27):
+         * lineItems[].quantity (int) and lineItems[].variantId, which is the stock
+         * API item ID (also present as variant.id). ORDERMENTUM_LINE_VARIANT_FIELDS
+         * overrides the candidates (comma-separated dot paths).
          */
         'order_mapping' => [
             'lines' => ['lineItems', 'lines'],
             'quantity' => 'quantity',
-            'variant' => array_values(array_filter(explode(',', (string) (env('ORDERMENTUM_LINE_VARIANT_FIELDS') ?: 'variantId,variant.id,variant_id,productVariantId')))),
+            'variant' => array_values(array_filter(explode(',', (string) (env('ORDERMENTUM_LINE_VARIANT_FIELDS') ?: 'variantId,variant.id')))),
             'line_ref' => ['id', 'lineItemId'],
             'unit_price' => 'price',
             'sku' => ['sku', 'variant.sku', 'SKU'],
