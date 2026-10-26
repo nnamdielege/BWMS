@@ -7,6 +7,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductCostController;
 use App\Http\Controllers\RangeController;
 use App\Http\Controllers\Stock\AdjustmentController;
 use App\Http\Controllers\Stock\MovementController;
@@ -33,6 +34,13 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         ->middleware('can:update,product')->name('products.update');
     Route::get('barcodes/{barcode}', [ProductController::class, 'lookupBarcode'])
         ->middleware('can:viewAny,App\Models\Product')->name('barcodes.lookup');
+    // Cost back-fill (D-11): report needs reports.view, changes need products.manage.
+    Route::get('product-costs', [ProductCostController::class, 'index'])->middleware('can:reports.view')->name('product-costs.index');
+    Route::get('product-costs/export', [ProductCostController::class, 'export'])->middleware('can:reports.view')->name('product-costs.export');
+    Route::put('product-costs/{product}', [ProductCostController::class, 'update'])->middleware('can:products.manage')->name('product-costs.update');
+    Route::post('product-costs/import/preview', [ProductCostController::class, 'preview'])->middleware('can:products.manage')->name('product-costs.preview');
+    Route::post('product-costs/import/apply', [ProductCostController::class, 'apply'])->middleware('can:products.manage')->name('product-costs.apply');
+
     Route::post('ranges', [RangeController::class, 'store'])
         ->middleware('can:create,App\Models\Product')->name('ranges.store');
     Route::post('categories', [CategoryController::class, 'store'])

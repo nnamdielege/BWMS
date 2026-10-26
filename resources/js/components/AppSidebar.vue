@@ -4,7 +4,7 @@ import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavGroup } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { Boxes, ClipboardList, LayoutGrid, Package, ScrollText, Users, Warehouse } from 'lucide-vue-next';
+import { Boxes, ClipboardList, DollarSign, LayoutGrid, Package, ScrollText, Users, Warehouse } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 // Later steps add Stock, Purchasing, Orders and Sync groups here.
@@ -24,6 +24,7 @@ const navGroups: NavGroup[] = [
         label: 'Catalogue',
         items: [
             { title: 'Products', href: '/products', icon: Package, permission: 'products.view' },
+            { title: 'Product costs', href: '/product-costs', icon: DollarSign, permission: 'reports.view' },
             { title: 'Locations', href: '/locations', icon: Warehouse, permission: 'locations.view' },
         ],
     },
