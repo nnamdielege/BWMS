@@ -4,7 +4,7 @@ Audit date: 2026-10-26 · Repo: `C:\xampp\htdocs\bwms` @ `6f3756e` (main) · Rea
 
 ## 0. Caveats: read these first
 
-- **I have not seen production data.** The only DB available was the local XAMPP copy (`bwms` on 127.0.0.1). It looks like a dev snapshot: 120 real products (imported from Ordermentum), but suppliers, POs and customers are **seed data** ("Tech Supply Co.", "Global Parts Ltd."). Every data-volume statement below comes from this copy and must be re-checked against the VPS DB before migration. §4.4 has the SQL to run.
+- **Updated 2026-10-26: production has now been checked.** Sections 1–8 were written against the local XAMPP copy (`bwms`), a dev snapshot with seed suppliers, POs and customers. The production dump (MariaDB 10.5.29) has since been compared. **§9 lists every difference, and where §9 disagrees with earlier sections, §9 wins.** In short, the schema is nearly identical, but the production *data* confirms C-1 and C-3 directly and changes the migration scope.
 - **Schema drift:** the local DB ran 6 migrations that are not in the repo (`add_slug_to_products_table`, an older `create_invoices_table`, `create_usage_tracking_table` + rename, an older `create_ordermentum_products_table`, `remove_unique_sku_from_ordermentum_products`). `inventory_push_logs` is in the repo but has **not** run locally. Production may differ again. The migration tool must read the live schema (`information_schema`) and must not trust the repo's migrations.
 - **I have not yet checked Ordermentum's API docs.** §5 describes what the code does. Phase 2 will cover whether those endpoints and payloads match what Ordermentum actually supports.
 - The code was written as a **multi-tenant SaaS template** (Stripe billing, trials, usage limits, super-admin), and Ordermentum was bolted on in Dec 2025. Much of it never worked. Many models have no table, and many routes point at methods that don't exist.
@@ -295,3 +295,44 @@ I found no single obvious socket leak: every `curl_init` is paired with `curl_cl
 ---
 
 **Phase 1 complete. Stopping here for your approval before Phase 2.**
+
+---
+
+## 9. Production comparison (added 2026-10-26)
+
+Source: `bwms_prod_2026-10-26.sql.gz` (MariaDB 10.5.29), restored locally into `bwms_legacy_prod` and read only through a SELECT-only user. The dump and any data from it are **not** committed. Only schema facts and aggregate counts appear here.
+
+### 9.1 Schema differences vs the local copy
+
+| Area | Local copy (§4) | Production | Effect |
+|---|---|---|---|
+| Tables | 48 | 49: adds `inventory_push_logs` (0 rows) | §4.1 note "table missing locally" applies to local only. In prod the table exists, but `push:stock` never recorded a push. |
+| Migrations run | 52 | 47. Prod has **none** of the 6 local-only migrations (§0), and has `inventory_push_logs`. Every repo migration has run in prod. | Prod matches the repo exactly; the local copy was the outlier. |
+| `product_categories.slug` | NOT NULL | NULL allowed | Migration must tolerate NULL slugs. |
+| `product_categories.parent_id` FK | ON DELETE SET NULL | ON DELETE CASCADE (as in repo) | Deleting a parent category in prod would have deleted its children. Not relevant to migration. |
+| `roles.description` | present | absent | None. |
+| Everything else (columns, types, indexes, other FKs) | — | Identical | §4.1 column lists hold for prod. |
+
+### 9.2 Data differences that change findings
+
+| Finding | Local copy | Production | Consequence |
+|---|---|---|---|
+| **C-1 confirmed in practice** | 2 POs | **60 POs / 349 lines**: 1 draft, 11 pending, **47 received**, 1 cancelled. All 261 lines on received POs have `received_quantity = 0`, and **no PO has a `received_date`**. | Staff marked POs "received" by editing the status (`PurchaseOrderController::update` allows it). The receive flow was never used, so **no PO ever changed stock**. Legacy `received_quantity` cannot be used as receipt history. |
+| **C-3 confirmed: stock figures are not trustworthy** | On-hand 1,834, no negatives | 120 inventory rows, all in warehouse 1. **Total on-hand −129; 35 rows negative (min −809, max 1,991); 18 zero.** Last update 2026-10-22 23:01, the final nightly `sync:stock` before shutdown. | The nightly pull copied Ordermentum's own (oversold/negative) figures into BWMS. Strongly supports D-7: opening balances must come from the cutover stocktake, never from legacy `inventory`. |
+| H-11 (client-supplied totals) | — | 21 of 60 POs have `total` ≠ sum of line subtotals (0 zero-total). | Migrate the stored PO total as historical and recompute line totals. Flag the mismatches in the reconciliation report rather than "fixing" them. |
+| Products | 120, all mapped | **123**: 120 with Ordermentum variant ID, **3 without** (added in prod, no inventory row). 113 have `cost = 0`. 40 have a reorder point. 1 barcode. Units: `unit` 118, `EA` 3, blank 2. No duplicate SKUs. No soft-deleted products. | 3 products need manual Ordermentum mapping. Reorder points are worth migrating (40). Cost back-fill is still required (D-11). |
+| `ordermentum_products` staging table | 119 rows | **0 rows** | Mapping comes only from `products.ordermentum_*_id`. |
+| Warehouses | 3 (seed) | 2: one live (all stock and POs), one soft-deleted and unused | Map the live warehouse to Clontarf Warehouse. Ignore the deleted one. |
+| Suppliers / customers | 4 / 3 seed | **14 suppliers** (12 used on POs, all with email) / **20 customers** | Real data. Migrate both. |
+| Sales orders | 4 | **0** | Confirms H-4: no channel or manual sales were ever recorded. Nothing to migrate. |
+| `inventory_transactions` | 19 | 8 (5 adjustment, 3 count; Nov–Dec 2025) | Too sparse to be a ledger. Archive only. |
+| Notifications | 69 | **13,578 `low_stock`** + 22 `new_order` | Confirms M-4/S-9: alert spam driven by the negative figures. Do not migrate. |
+| Users | 7 | 2 (both active) | Invite both into the new app. |
+| Jobs | 25 pending, 9 failed | 4 pending, 0 failed | Queue was effectively idle; nothing to recover. |
+
+### 9.3 Effect on the migration plan (§4.3 / spec §B9)
+
+- **Migrate:** 123 products (+30 categories, reorder points, Ordermentum IDs to channel listings), 14 suppliers, 20 customers, 60 POs + 349 lines as **read-only history**. Legacy status is kept as a label. Received POs are marked "closed (legacy)" with no receipt movements, because they never moved stock.
+- **Do not migrate stock from legacy `inventory`.** Opening balances come from the Clontarf cutover stocktake (D-7). The reconciliation report will still show legacy on-hand next to the stocktake figure for information.
+- **Flag in the reconciliation report:** 3 unmapped products, 113 zero-cost products, 21 PO total mismatches, blank/`EA` units, 35 negative legacy balances.
+- **Engine:** production is MariaDB 10.5.29. The new app's migrations and full test suite have been run on MariaDB 10.5.29 with binary logging on. Ledger triggers need `log_bin_trust_function_creators=1` (or creation by an admin user) when binlog is enabled; the migration fails with instructions otherwise.
