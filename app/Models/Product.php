@@ -20,7 +20,7 @@ class Product extends Model
     use Auditable, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'sku', 'name', 'description', 'category_id', 'base_unit', 'is_batch_tracked',
+        'sku', 'name', 'description', 'category_id', 'range_id', 'base_unit', 'is_batch_tracked',
         'shelf_life_days', 'short_dated_days', 'reorder_point', 'reorder_qty', 'sell_price', 'is_active',
     ];
 
@@ -37,6 +37,11 @@ class Product extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function range(): BelongsTo
+    {
+        return $this->belongsTo(Range::class);
     }
 
     public function units(): HasMany

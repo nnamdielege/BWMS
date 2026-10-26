@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { useCan } from '@/composables/useCan';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 type UnitInput = {
@@ -27,6 +27,7 @@ interface ProductData {
     name: string;
     description: string | null;
     category_id: number | null;
+    range_id: number | null;
     base_unit: string;
     is_batch_tracked: boolean;
     shelf_life_days: number | null;
@@ -41,6 +42,7 @@ interface ProductData {
 const props = defineProps<{
     product: ProductData | null;
     categories: { id: number; name: string }[];
+    ranges: { id: number; name: string }[];
 }>();
 
 const can = useCan();
@@ -58,6 +60,7 @@ const form = useForm({
     name: p?.name ?? '',
     description: p?.description ?? '',
     category_id: p?.category_id ?? null,
+    range_id: p?.range_id ?? null,
     base_unit: p?.base_unit ?? 'each',
     is_batch_tracked: p?.is_batch_tracked ?? false,
     shelf_life_days: p?.shelf_life_days ?? null,
@@ -70,6 +73,11 @@ const form = useForm({
         { name: 'Each', code: null, base_qty: 1, purchasable: true, sellable: true, default_purchase: true, default_sale: true, barcodes: [] },
     ]) as UnitInput[],
 });
+
+const addRange = () => {
+    const name = prompt('New range name (e.g. "Dash syrups")')?.trim();
+    if (name) router.post(route('ranges.store'), { name }, { preserveState: true, preserveScroll: true, only: ['ranges', 'flash', 'errors'] });
+};
 
 const addUnit = () =>
     form.units.push({ name: 'Carton', code: null, base_qty: 12, purchasable: true, sellable: true, default_purchase: false, default_sale: false, barcodes: [] });
@@ -107,6 +115,16 @@ const unitErrors = computed(() =>
                         <option :value="null">—</option>
                         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
                     </select>
+                </div>
+                <div class="grid gap-1">
+                    <Label for="range">Range (optional, groups flavours in lists)</Label>
+                    <div class="flex gap-2">
+                        <select id="range" v-model="form.range_id" class="h-9 flex-1 rounded-md border bg-background px-2 text-sm">
+                            <option :value="null">—</option>
+                            <option v-for="r in ranges" :key="r.id" :value="r.id">{{ r.name }}</option>
+                        </select>
+                        <Button v-if="!readOnly" type="button" variant="outline" size="sm" @click="addRange">New</Button>
+                    </div>
                 </div>
                 <div class="grid gap-1">
                     <Label for="base_unit">Base unit (what one stock unit is)</Label>

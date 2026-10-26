@@ -7,6 +7,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\RangeController;
 use App\Http\Controllers\Stock\AdjustmentController;
 use App\Http\Controllers\Stock\MovementController;
 use App\Http\Controllers\Stock\StockController;
@@ -32,6 +33,8 @@ Route::middleware(['auth', 'active'])->group(function () {
         ->middleware('can:update,product')->name('products.update');
     Route::get('barcodes/{barcode}', [ProductController::class, 'lookupBarcode'])
         ->middleware('can:viewAny,App\Models\Product')->name('barcodes.lookup');
+    Route::post('ranges', [RangeController::class, 'store'])
+        ->middleware('can:create,App\Models\Product')->name('ranges.store');
     Route::post('categories', [CategoryController::class, 'store'])
         ->middleware('can:create,App\Models\Product')->name('categories.store');
 

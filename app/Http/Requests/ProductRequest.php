@@ -33,6 +33,7 @@ class ProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'range_id' => ['nullable', 'integer', 'exists:ranges,id'],
             'base_unit' => ['required', 'string', 'max:32'],
             'is_batch_tracked' => ['boolean'],
             'shelf_life_days' => ['nullable', 'integer', 'min:1', 'max:3650'],

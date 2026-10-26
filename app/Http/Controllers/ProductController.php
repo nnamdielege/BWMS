@@ -6,6 +6,7 @@ use App\Http\Requests\ProductRequest;
 use App\Models\Barcode;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Range;
 use App\Services\Catalogue\ProductService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -22,11 +23,13 @@ class ProductController extends Controller
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:active,inactive,all'],
+            'range_id' => ['nullable', 'integer'],
         ]);
 
         $products = Product::query()
-            ->with(['category:id,name', 'units:id,product_id,name,base_qty'])
+            ->with(['category:id,name', 'range:id,name', 'units:id,product_id,name,base_qty'])
             ->search($filters['q'] ?? null)
+            ->when($filters['range_id'] ?? null, fn ($q, $r) => $q->where('range_id', $r))
             ->when(($filters['status'] ?? 'active') !== 'all', fn ($q) => $q->where('is_active', ($filters['status'] ?? 'active') === 'active'))
             ->orderBy('name')
             ->paginate(50)
@@ -35,6 +38,7 @@ class ProductController extends Controller
         return Inertia::render('products/Index', [
             'products' => $products,
             'filters' => $filters,
+            'ranges' => Range::orderBy('name')->get(['id', 'name']),
             'canManage' => $request->user()->can('create', Product::class),
         ]);
     }
@@ -44,6 +48,7 @@ class ProductController extends Controller
         return Inertia::render('products/Form', [
             'product' => null,
             'categories' => Category::orderBy('name')->get(['id', 'name']),
+            'ranges' => Range::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -59,6 +64,7 @@ class ProductController extends Controller
         return Inertia::render('products/Form', [
             'product' => $product->load('units.barcodes'),
             'categories' => Category::orderBy('name')->get(['id', 'name']),
+            'ranges' => Range::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
