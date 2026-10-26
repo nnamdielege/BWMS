@@ -34,6 +34,16 @@ class UserFactory extends Factory
         ];
     }
 
+    /** Confirmed TOTP 2FA with a known secret (see TwoFactorTest). */
+    public function withTwoFactor(string $secret = 'JBSWY3DPEHPK3PXP'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'two_factor_secret' => encrypt($secret),
+            'two_factor_recovery_codes' => encrypt(json_encode(['recovery-code-one', 'recovery-code-two'])),
+            'two_factor_confirmed_at' => now(),
+        ]);
+    }
+
     public function inactive(): static
     {
         return $this->state(fn (array $attributes) => [

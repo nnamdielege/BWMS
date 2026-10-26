@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
 use App\Support\Audit;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -35,18 +36,22 @@ class LoginRequest extends FormRequest
     }
 
     /**
-     * Attempt to authenticate the request's credentials. Inactive users are
-     * rejected with the same generic message as a wrong password.
+     * Verify credentials. Inactive users get the same generic message as a
+     * wrong password. Users with confirmed 2FA are NOT logged in here: they
+     * are parked in the session for Fortify's two-factor challenge.
+     *
+     * @return bool true when a two-factor challenge is required
      *
      * @throws ValidationException
      */
-    public function authenticate(): void
+    public function authenticate(): bool
     {
         $this->ensureIsNotRateLimited();
 
-        $credentials = [...$this->only('email', 'password'), 'is_active' => true];
+        $provider = Auth::getProvider();
+        $user = $provider->retrieveByCredentials(['email' => Str::lower($this->string('email')), 'is_active' => true]);
 
-        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
+        if (! $user instanceof User || ! $provider->validateCredentials($user, $this->only('password'))) {
             RateLimiter::hit($this->throttleKey());
             Audit::record('login_failed', meta: ['email' => Str::lower($this->string('email'))]);
 
@@ -57,9 +62,18 @@ class LoginRequest extends FormRequest
 
         RateLimiter::clear($this->throttleKey());
 
-        $user = Auth::user();
-        $user->forceFill(['last_login_at' => now()])->saveQuietly();
-        Audit::record('login', $user, userId: $user->id);
+        if ($user->two_factor_secret && $user->two_factor_confirmed_at) {
+            $this->session()->put([
+                'login.id' => $user->getKey(),
+                'login.remember' => $this->boolean('remember'),
+            ]);
+
+            return true;
+        }
+
+        Auth::login($user, $this->boolean('remember'));
+
+        return false;
     }
 
     /**

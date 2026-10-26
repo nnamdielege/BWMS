@@ -18,6 +18,7 @@ class RouteAuthorizationTest extends TestCase
         'home',                 // redirect only
         'login', 'password.request', 'password.email', 'password.reset', 'password.store',
         'invitations.show', 'invitations.accept',
+        'two-factor.login', 'two-factor.login.store', // challenge after password; requires session login.id
         'storage.local',        // framework local-disk route (signed URLs only)
     ];
 
@@ -25,7 +26,29 @@ class RouteAuthorizationTest extends TestCase
     private const ANY_AUTHENTICATED = [
         'dashboard', 'logout', 'password.confirm', 'password.confirm.store',
         'settings', 'profile.edit', 'profile.update', 'password.edit', 'password.update', 'appearance',
+        // Own 2FA management (password-confirmed). Admin-only restrictions are enforced in the controller.
+        'two-factor.show', 'two-factor.enable', 'two-factor.confirm', 'two-factor.disable',
+        'two-factor.qr-code', 'two-factor.secret-key', 'two-factor.recovery-codes', 'two-factor.regenerate-recovery-codes',
     ];
+
+    /** Own-account routes deliberately outside the admin 2FA gate (so admins can set it up). */
+    private const OUTSIDE_ADMIN_2FA_GATE = [
+        'logout', 'password.confirm', 'password.confirm.store',
+        'settings', 'profile.edit', 'profile.update', 'password.edit', 'password.update', 'appearance',
+        'two-factor.show', 'two-factor.enable', 'two-factor.confirm', 'two-factor.disable',
+        'two-factor.qr-code', 'two-factor.secret-key', 'two-factor.recovery-codes', 'two-factor.regenerate-recovery-codes',
+    ];
+
+    public function test_every_business_route_is_behind_the_admin_2fa_gate()
+    {
+        $missing = collect(RouteFacade::getRoutes())
+            ->filter(fn (Route $r) => in_array('auth', $r->gatherMiddleware(), true))
+            ->reject(fn (Route $r) => in_array($r->getName(), self::OUTSIDE_ADMIN_2FA_GATE, true))
+            ->reject(fn (Route $r) => in_array('2fa.admin', $r->gatherMiddleware(), true))
+            ->map(fn (Route $r) => $r->getName() ?? $r->uri())->values()->all();
+
+        $this->assertSame([], $missing, 'Routes not behind 2fa.admin: '.implode(', ', $missing));
+    }
 
     public function test_every_route_is_public_by_allowlist_or_authenticated_and_authorized()
     {

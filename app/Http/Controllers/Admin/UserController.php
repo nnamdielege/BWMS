@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Laravel\Fortify\Actions\DisableTwoFactorAuthentication;
 
 class UserController extends Controller
 {
@@ -28,6 +29,7 @@ class UserController extends Controller
                     'email' => $u->email,
                     'is_active' => $u->is_active,
                     'last_login_at' => $u->last_login_at?->toIso8601String(),
+                    'two_factor' => (bool) $u->two_factor_confirmed_at,
                     'roles' => $u->roles->pluck('name'),
                     'can_manage' => $actor->can('updateRoles', $u),
                 ]),
@@ -61,6 +63,15 @@ class UserController extends Controller
         Audit::record('roles_changed', $user, ['roles' => $before], ['roles' => $roles]);
 
         return back()->with('success', "Roles updated for {$user->name}.");
+    }
+
+    /** Lost-device recovery: clears another user's 2FA so they set it up again. */
+    public function resetTwoFactor(User $user, DisableTwoFactorAuthentication $disable): RedirectResponse
+    {
+        $disable($user);
+        Audit::record('two_factor_reset_by_admin', $user);
+
+        return back()->with('success', "Two-factor reset for {$user->name}. They must set it up again".($user->hasRole(Permissions::ROLE_ADMIN) ? ' before continuing.' : '.'));
     }
 
     public function setActive(Request $request, User $user): RedirectResponse

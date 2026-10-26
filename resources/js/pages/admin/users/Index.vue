@@ -14,6 +14,7 @@ interface UserRow {
     email: string;
     is_active: boolean;
     last_login_at: string | null;
+    two_factor: boolean;
     roles: string[];
     can_manage: boolean;
 }
@@ -56,6 +57,9 @@ const toggleActive = (u: UserRow) => {
     if (u.is_active && !confirm(`Deactivate ${u.name}? They will be signed out immediately.`)) return;
     router.put(route('admin.users.active', u.id), { is_active: !u.is_active }, { preserveScroll: true });
 };
+const resetTwoFactor = (u: UserRow) =>
+    confirm(`Reset two-factor for ${u.name}? They will have to set it up again.`) &&
+    router.delete(route('admin.users.reset-two-factor', u.id), { preserveScroll: true });
 const resend = (i: InvitationRow) => router.post(route('admin.invitations.resend', i.id), {}, { preserveScroll: true });
 const revoke = (i: InvitationRow) => confirm(`Revoke invitation for ${i.email}?`) && router.delete(route('admin.invitations.destroy', i.id), { preserveScroll: true });
 </script>
@@ -115,7 +119,7 @@ const revoke = (i: InvitationRow) => confirm(`Revoke invitation for ${i.email}?`
                 <h2 class="mb-2 font-semibold">Users</h2>
                 <table class="w-full text-left text-sm">
                     <thead class="border-b text-muted-foreground">
-                        <tr><th class="py-2">Name</th><th>Email</th><th>Roles</th><th>Last login</th><th>Status</th><th></th></tr>
+                        <tr><th class="py-2">Name</th><th>Email</th><th>Roles</th><th>Last login</th><th>2FA</th><th>Status</th><th></th></tr>
                     </thead>
                     <tbody>
                         <tr v-for="u in users" :key="u.id" class="border-b align-top">
@@ -130,6 +134,7 @@ const revoke = (i: InvitationRow) => confirm(`Revoke invitation for ${i.email}?`
                                 <span v-else class="capitalize">{{ u.roles.map(label).join(', ') || '—' }}</span>
                             </td>
                             <td>{{ fmt(u.last_login_at) }}</td>
+                            <td>{{ u.two_factor ? 'On' : u.roles.includes('admin') ? 'Required — not set up' : 'Off' }}</td>
                             <td>{{ u.is_active ? 'Active' : 'Deactivated' }}</td>
                             <td class="space-x-2 whitespace-nowrap text-right">
                                 <template v-if="u.can_manage">
@@ -138,6 +143,7 @@ const revoke = (i: InvitationRow) => confirm(`Revoke invitation for ${i.email}?`
                                         <Button size="sm" variant="ghost" @click="editing = null">Cancel</Button>
                                     </template>
                                     <Button v-else size="sm" variant="outline" @click="startEdit(u)">Edit roles</Button>
+                                    <Button v-if="u.two_factor" size="sm" variant="ghost" @click="resetTwoFactor(u)">Reset 2FA</Button>
                                     <Button size="sm" variant="ghost" @click="toggleActive(u)">{{ u.is_active ? 'Deactivate' : 'Activate' }}</Button>
                                 </template>
                             </td>

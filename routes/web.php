@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
 
-Route::middleware(['auth', 'active'])->group(function () {
+Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     // Catalogue
@@ -67,6 +67,8 @@ Route::middleware(['auth', 'active'])->group(function () {
             ->middleware('can:updateRoles,user')->name('users.roles');
         Route::put('users/{user}/active', [UserController::class, 'setActive'])
             ->middleware('can:setActive,user')->name('users.active');
+        Route::delete('users/{user}/two-factor', [UserController::class, 'resetTwoFactor'])
+            ->middleware('can:setActive,user')->name('users.reset-two-factor');
 
         Route::post('invitations', [InvitationController::class, 'store'])
             ->middleware('can:create,App\Models\UserInvitation')->name('invitations.store');

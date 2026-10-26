@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use Illuminate\Support\Facades\Route;
+use Laravel\Fortify\Http\Controllers\TwoFactorAuthenticatedSessionController;
 
 // There is deliberately no registration route: users join by invitation only.
 
@@ -27,6 +28,13 @@ Route::middleware('guest')->group(function () {
 
     Route::post('reset-password', [NewPasswordController::class, 'store'])
         ->name('password.store');
+
+    // Two-factor challenge (D-8). The POST is Fortify's controller.
+    Route::get('two-factor-challenge', [AuthenticatedSessionController::class, 'twoFactorChallenge'])
+        ->name('two-factor.login');
+    Route::post('two-factor-challenge', [TwoFactorAuthenticatedSessionController::class, 'store'])
+        ->middleware('throttle:two-factor')
+        ->name('two-factor.login.store');
 
     Route::get('invitations/{token}', [AcceptInvitationController::class, 'show'])
         ->middleware('throttle:20,1')

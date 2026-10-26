@@ -7,12 +7,13 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use Auditable, HasFactory, HasRoles, Notifiable;
+    use Auditable, HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * Roles and is_active are deliberately not fillable: they change only
@@ -32,10 +33,12 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
     ];
 
-    /** @var list<string> */
-    protected array $auditExclude = ['password', 'remember_token', 'last_login_at'];
+    /** Secrets never enter the audit log; 2FA changes are audited as events instead. */
+    protected array $auditExclude = ['password', 'remember_token', 'last_login_at', 'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at'];
 
     /**
      * @return array<string, string>
@@ -45,6 +48,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'two_factor_confirmed_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
         ];

@@ -29,11 +29,26 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request): RedirectResponse
     {
-        $request->authenticate();
+        if ($request->authenticate()) {
+            return redirect()->route('two-factor.login');
+        }
 
         $request->session()->regenerate();
 
         return redirect()->intended(route('dashboard', absolute: false));
+    }
+
+    /**
+     * Show the two-factor challenge (credentials already verified; the user is
+     * parked in the session as login.id). Fortify handles the POST.
+     */
+    public function twoFactorChallenge(Request $request): Response|RedirectResponse
+    {
+        if (! $request->session()->has('login.id')) {
+            return redirect()->route('login');
+        }
+
+        return Inertia::render('auth/TwoFactorChallenge');
     }
 
     /**
