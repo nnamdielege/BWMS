@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Integrations\Ordermentum\OrdermentumClient;
 use App\Integrations\Ordermentum\OrdermentumException;
+use App\Models\ChannelListing;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
@@ -12,23 +13,24 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Read-only diagnostics against the live Ordermentum account, used to close
- * spec B11 items 1, 2 and 4 (line item fields, stock decrement, stock API
- * headers). Procedure: docs/om-probe.md. Only GET requests reach Ordermentum
- * (plus the login POST while on username/password auth).
+ * Read-only diagnostics against the live Ordermentum account (docs/om-probe.md).
+ * Only GET requests reach Ordermentum. `tracking` stores what it reads on the
+ * local channel listings; nothing is ever written to Ordermentum.
  */
 class OrdermentumProbe extends Command
 {
     protected $signature = 'om:probe
-        {what : order or stock}
-        {id : Ordermentum order ID, or stock item ID (variant ID, unconfirmed)}
+        {what : order, stock, tracking or recent}
+        {id? : Ordermentum order ID (order) or variant ID (stock)}
         {--json : Print only the raw response body}
+        {--structure : order: print field names and types only, plus line item ID/quantity values (no customer details)}
         {--no-include-lines : order: do not add includeLines=true}
         {--location= : stock: locationId query (default ORDERMENTUM_LOCATION_ID)}
-        {--headers=both : stock: context headers to send: both, plain (context-*) or x (x-context-*)}
-        {--label= : stock: note recorded with the reading, e.g. "after placed"}';
+        {--headers= : stock: context headers to send (plain, x, both); order: test each style against the first line variant}
+        {--label= : stock: note recorded with the reading}
+        {--limit=5 : recent: how many orders to list}';
 
-    protected $description = 'Read-only: fetch one Ordermentum order or one stock item and print the raw response';
+    protected $description = 'Read-only: inspect Ordermentum orders, stock items and stock tracking';
 
     /** Keys worth highlighting when looking for line item product/variant IDs and quantities. */
     private const FIELD_PATTERN = '/product|variant|sku|quantity|qty/i';
@@ -37,11 +39,18 @@ class OrdermentumProbe extends Command
 
     public function handle(OrdermentumClient $client): int
     {
+        $what = (string) $this->argument('what');
+        if (in_array($what, ['order', 'stock'], true) && blank($this->argument('id'))) {
+            return $this->failWith("om:probe {$what} needs an ID.");
+        }
+
         try {
-            return match ($this->argument('what')) {
+            return match ($what) {
                 'order' => $this->probeOrder($client, (string) $this->argument('id')),
                 'stock' => $this->probeStock($client, (string) $this->argument('id')),
-                default => $this->failWith('First argument must be "order" or "stock".'),
+                'tracking' => $this->probeTracking($client),
+                'recent' => $this->probeRecent($client),
+                default => $this->failWith('First argument must be order, stock, tracking or recent.'),
             };
         } catch (OrdermentumException $e) {
             return $this->failWith($e->getMessage());
@@ -57,11 +66,13 @@ class OrdermentumProbe extends Command
             return $this->printRawOrFail($response, "GET /v1/orders/{$id}");
         }
 
-        $data = $response->json();
-        $this->printHeader("Order {$id}", $response, $client);
-        $this->printHighlightedJson($data);
+        $data = (array) $response->json();
+        $this->printHeader("Order {$id}", $response);
+        if (! $this->option('structure')) {
+            $this->printHighlightedJson($data);
+            $this->newLine();
+        }
 
-        $this->newLine();
         $lineArrays = $this->findLineArrays($data);
         if ($lineArrays === []) {
             $this->warn('No line array found in the response (looked for lists of objects under a key containing "line" or "item").');
@@ -71,35 +82,72 @@ class OrdermentumProbe extends Command
             }
         }
 
-        $rows = [];
-        $this->collectFields($data, '', $rows);
-        if ($rows === []) {
-            $this->warn('No product, variant, SKU or quantity fields found.');
+        if ($this->option('structure')) {
+            $rows = [];
+            $this->collectStructure($data, '', $rows, array_keys($lineArrays));
+            $this->table(['Path', 'Type', 'Value (line ID/quantity fields only)'], $rows);
         } else {
-            $this->line('Product / variant / SKU / quantity fields:');
-            $this->table(['Path', 'Value'], $rows);
+            $rows = [];
+            $this->collectFields($data, '', $rows);
+            $rows === []
+                ? $this->warn('No product, variant, SKU or quantity fields found.')
+                : $this->table(['Path', 'Value'], $rows);
+        }
+
+        if ($this->option('headers') && $lineArrays !== []) {
+            $this->checkHeaders($client, $data, array_key_first($lineArrays));
         }
 
         return self::SUCCESS;
     }
 
+    /**
+     * For each candidate ID field on the first line, GET it from the stock API with each
+     * context-header style separately: shows which field is the stock item ID and which header works.
+     */
+    private function checkHeaders(OrdermentumClient $client, array $data, string $linePath): void
+    {
+        $line = (array) (data_get($data, $linePath)[0] ?? []);
+        $candidates = [];
+        array_walk_recursive($line, function ($value, $key) use (&$candidates) {
+            if (is_string($value) && preg_match('/^[0-9a-f-]{32,36}$/i', $value)) {
+                $candidates[] = $value;
+            }
+        });
+        $flat = $this->flatten($line);
+        $styles = $this->option('headers') === 'both' ? ['plain', 'x'] : [(string) $this->option('headers')];
+        $location = config('services.ordermentum.location_id');
+
+        $rows = [];
+        foreach (array_unique($candidates) as $value) {
+            $field = array_search($value, $flat, true);
+            foreach ($styles as $style) {
+                $r = $client->getStock('/v1/items/'.rawurlencode($value), $location ? ['locationId' => $location] : [], $style);
+                $rows[] = ["{$linePath}.0.{$field}", $style, $r->status(), $r->successful() ? $this->scalar($r->json('tracked')) : '-'];
+            }
+        }
+        $this->newLine();
+        $this->line('Stock API lookups of the first line\'s ID fields, per context-header style:');
+        $rows === [] ? $this->warn('No UUID-like fields on the first line.') : $this->table(['Line field', 'Headers', 'HTTP', 'tracked'], $rows);
+    }
+
     private function probeStock(OrdermentumClient $client, string $id): int
     {
         $location = $this->option('location') ?? config('services.ordermentum.location_id');
-        $headers = (string) $this->option('headers');
+        $headers = $this->option('headers') ?: null;
         $query = filled($location) ? ['locationId' => $location] : [];
 
         $response = $client->getStock('/v1/items/'.rawurlencode($id), $query, $headers);
         $at = Carbon::now();
         $data = $response->json();
 
-        $this->record($at, $id, $location, $headers, $response, is_array($data) ? $data : null);
+        $this->record($at, $id, $location, $headers ?? (string) config('services.ordermentum.context_headers'), $response, is_array($data) ? $data : null);
 
         if ($this->option('json') || ! $response->successful()) {
             return $this->printRawOrFail($response, "GET stock /v1/items/{$id}");
         }
 
-        $this->printHeader("Stock item {$id}", $response, $client, $at);
+        $this->printHeader("Stock item {$id}", $response, $at);
         $this->line('Context headers sent: '.implode(', ', array_keys($client->contextHeaders($headers))));
         $this->line('locationId: '.($location ?: '(none)'));
         if ($this->option('label')) {
@@ -127,21 +175,76 @@ class OrdermentumProbe extends Command
         return self::SUCCESS;
     }
 
-    private function printHeader(string $title, Response $response, OrdermentumClient $client, ?Carbon $at = null): void
+    /**
+     * Mapped listings whose Ordermentum item has stock tracking off. Ordermentum only
+     * decrements tracked items at order placement, so these need attention before cutover.
+     * The result is stored on each listing and shown on the sync screen.
+     */
+    private function probeTracking(OrdermentumClient $client): int
+    {
+        $listings = ChannelListing::where('channel', 'ordermentum')->with('product:id,sku,name')->orderBy('id')->get();
+        if ($listings->isEmpty()) {
+            return $this->failWith('No Ordermentum listings. Run the legacy migration (or map variants) first.');
+        }
+        $location = config('services.ordermentum.location_id');
+        $this->info("Checking {$listings->count()} mapped variants (read-only; rate-limited)...");
+
+        $rows = [];
+        $counts = ['tracked' => 0, 'untracked' => 0, 'missing' => 0, 'error' => 0];
+        foreach ($listings as $listing) {
+            $r = $client->getStock('/v1/items/'.rawurlencode($listing->external_variant_id), $location ? ['locationId' => $location] : []);
+            $tracked = $r->successful() ? (bool) $r->json('tracked') : null;
+            $state = match (true) {
+                $r->status() === 404 => 'missing',
+                ! $r->successful() => 'error',
+                $tracked => 'tracked',
+                default => 'untracked',
+            };
+            $counts[$state]++;
+            $listing->forceFill(['remote_tracked' => $tracked, 'remote_status' => $state, 'last_checked_at' => now()])->save();
+            if ($state !== 'tracked') {
+                $rows[] = [$listing->product?->sku, $listing->external_variant_id, $state, $r->status()];
+            }
+        }
+
+        $this->table(['Tracked', 'Not tracked', 'Not found (404)', 'Error'], [array_values($counts)]);
+        $rows === []
+            ? $this->info('Every mapped variant has stock tracking on.')
+            : $this->table(['SKU', 'Variant', 'State', 'HTTP'], $rows);
+
+        return self::SUCCESS;
+    }
+
+    /** Recent order IDs with status and dates only, to pick one for `om:probe order`. */
+    private function probeRecent(OrdermentumClient $client): int
+    {
+        $response = $client->get('/v2/orders', [
+            'supplierId' => config('services.ordermentum.supplier_id'), 'pageNo' => 1, 'pageSize' => (int) $this->option('limit'),
+        ]);
+        if (! $response->successful()) {
+            return $this->printRawOrFail($response, 'GET /v2/orders');
+        }
+        $this->table(['id', 'status', 'createdAt', 'updatedAt', 'cancelled'], array_map(fn ($o) => [
+            $o['id'] ?? '', $o['status'] ?? '', $o['createdAt'] ?? '', $o['updatedAt'] ?? '', filled($o['cancelledAt'] ?? null) ? 'yes' : '',
+        ], (array) $response->json('data')));
+
+        return self::SUCCESS;
+    }
+
+    private function printHeader(string $title, Response $response, ?Carbon $at = null): void
     {
         $at ??= Carbon::now();
         $this->info($title);
         $this->line(sprintf(
-            'Fetched %s (%s) | HTTP %d | auth: %s',
+            'Fetched %s (%s) | HTTP %d',
             $at->copy()->setTimezone(config('bwms.business_timezone'))->format('Y-m-d H:i:s T'),
             $at->copy()->utc()->toIso8601String(),
             $response->status(),
-            $client->authMode(),
         ));
         $this->newLine();
     }
 
-    /** Appends one stock reading so a decrement test leaves a timeline (docs/om-probe.md). */
+    /** Appends one stock reading (stock figures only) to a local timeline. */
     private function record(Carbon $at, string $id, ?string $location, string $headers, Response $response, ?array $data): void
     {
         File::ensureDirectoryExists(dirname(storage_path(self::LOG_PATH)));
@@ -153,6 +256,7 @@ class OrdermentumProbe extends Command
             'headers' => $headers,
             'status' => $response->status(),
             'available' => data_get($data, 'available'),
+            'tracked' => data_get($data, 'tracked'),
             'stock' => data_get($data, 'stock'),
         ], JSON_UNESCAPED_SLASHES)."\n");
     }
@@ -199,6 +303,48 @@ class OrdermentumProbe extends Command
             $isMatch = $matched || (is_string($key) && preg_match(self::FIELD_PATTERN, $key) === 1);
             $this->collectFields($value, $path === '' ? (string) $key : "{$path}.{$key}", $rows, $isMatch);
         }
+    }
+
+    /**
+     * Every field path with its type; a value only for ID-like and quantity fields
+     * inside line arrays. Retailer names, addresses, notes etc. are never printed.
+     * Only the first entry of each list is described.
+     *
+     * @param  list<array{0: string, 1: string, 2: string}>  $rows
+     * @param  list<string>  $linePaths
+     */
+    private function collectStructure(mixed $node, string $path, array &$rows, array $linePaths): void
+    {
+        if (is_array($node) && $node !== []) {
+            if (array_is_list($node)) {
+                $rows[] = [$path, 'list('.count($node).')', ''];
+                $this->collectStructure($node[0], "{$path}.0", $rows, $linePaths);
+
+                return;
+            }
+            foreach ($node as $key => $value) {
+                $this->collectStructure($value, $path === '' ? (string) $key : "{$path}.{$key}", $rows, $linePaths);
+            }
+
+            return;
+        }
+
+        $inLine = collect($linePaths)->contains(fn ($p) => str_starts_with($path, "{$p}.0."));
+        $leaf = (string) last(explode('.', $path));
+        $showValue = $inLine && preg_match('/(^id$|Id$|_id$|quantity|qty)/i', $leaf);
+        $rows[] = [$path, get_debug_type($node), $showValue ? $this->scalar($node) : ''];
+    }
+
+    /** @return array<string, mixed> dot path => leaf */
+    private function flatten(array $data, string $prefix = ''): array
+    {
+        $out = [];
+        foreach ($data as $k => $v) {
+            $key = $prefix === '' ? (string) $k : "{$prefix}.{$k}";
+            is_array($v) ? $out += $this->flatten($v, $key) : $out[$key] = $v;
+        }
+
+        return $out;
     }
 
     /** @return array<string, int> path => entry count */

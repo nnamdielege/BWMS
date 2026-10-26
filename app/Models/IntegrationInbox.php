@@ -25,7 +25,7 @@ class IntegrationInbox extends Model
 
     protected function casts(): array
     {
-        return ['headers' => 'array', 'processed_at' => 'datetime'];
+        return ['headers' => 'array', 'meta' => 'array', 'processed_at' => 'datetime'];
     }
 
     public function mark(string $status, ?string $error = null): void

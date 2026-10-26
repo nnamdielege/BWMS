@@ -36,14 +36,11 @@ return [
     ],
 
     /*
-     * Ordermentum (spec B3). Auth: x-api-key when ORDERMENTUM_API_KEY is set,
-     * otherwise the legacy username/password login (deprecated 1 Jan 2027, R-1).
+     * Ordermentum (spec B3). Auth is the API token only (x-api-key, confirmed
+     * 2026-10-27); username/password is not supported.
      */
     'ordermentum' => [
         'api_key' => env('ORDERMENTUM_API_KEY'),
-        'username' => env('ORDERMENTUM_USERNAME'),
-        'password' => env('ORDERMENTUM_PASSWORD'),
-        'auth_url' => env('ORDERMENTUM_AUTH_URL', 'https://app.ordermentum.com/v1/auth'),
         'base_url' => env('ORDERMENTUM_BASE_URL', 'https://api.ordermentum.com'),
         'stock_url' => env('ORDERMENTUM_STOCK_URL', 'https://stock.ordermentum.com'),
         'supplier_id' => env('ORDERMENTUM_SUPPLIER_ID'),
@@ -52,6 +49,21 @@ return [
         'timeout' => (int) env('ORDERMENTUM_TIMEOUT', 15),
         // A 429 whose Retry-After is at most this many seconds is waited out; longer fails.
         'max_retry_wait' => (int) env('ORDERMENTUM_MAX_RETRY_WAIT', 30),
+        // Stock API supplier headers: plain (context-*), x (x-context-*) or both. The portal's
+        // client reports plain works; confirm with `om:probe stock {id} --headers=...`.
+        'context_headers' => env('ORDERMENTUM_CONTEXT_HEADERS', 'plain'),
+        // Client-side budgets per minute, "host:METHOD[:path prefix]" (most specific wins).
+        // Stock PUT 20 and POST 12 are confirmed (2026-10-27); PATCH is unconfirmed (asked),
+        // so it gets the conservative POST figure. Core API figures are from the docs (B3.1).
+        'rate_limits' => [
+            'stock:PUT' => (int) env('ORDERMENTUM_RPM_STOCK_PUT', 20),
+            'stock:POST' => (int) env('ORDERMENTUM_RPM_STOCK_POST', 12),
+            'stock:PATCH' => (int) env('ORDERMENTUM_RPM_STOCK_PATCH', 12),
+            'stock:GET' => (int) env('ORDERMENTUM_RPM_STOCK_GET', 40),
+            'core:GET:/v1/orders' => 24,
+            'core:GET:/v2/orders' => 40,
+            'core:GET' => 40,
+        ],
     ],
 
 ];

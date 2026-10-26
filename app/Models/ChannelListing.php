@@ -17,6 +17,7 @@ class ChannelListing extends Model
     /** Push/check bookkeeping is logged in sync_attempts, not the audit log. */
     protected array $auditExclude = [
         'last_pushed_qty', 'last_pushed_at', 'last_response_code', 'last_error', 'last_remote_qty', 'last_checked_at',
+        'push_requested_at', 'push_force', 'remote_tracked', 'remote_status',
     ];
 
     protected $fillable = [
@@ -28,6 +29,8 @@ class ChannelListing extends Model
     {
         return [
             'sync_enabled' => 'boolean',
+            'push_force' => 'boolean',
+            'remote_tracked' => 'boolean',
             'last_pushed_at' => 'datetime',
             'last_checked_at' => 'datetime',
         ];
