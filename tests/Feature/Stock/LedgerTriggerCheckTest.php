@@ -16,6 +16,8 @@ class LedgerTriggerCheckTest extends TestCase
 
     protected function tearDown(): void
     {
+        // A test may have disabled triggers in config; restore before re-creating them.
+        config(['bwms.ledger_db_triggers' => true]);
         $this->artisan('migrate:refresh', [
             '--path' => 'database/migrations/2026_10_26_100100_add_stock_movement_immutability_triggers.php',
             '--force' => true,
