@@ -12,6 +12,7 @@ import {
     LayoutGrid,
     ListChecks,
     Package,
+    RefreshCw,
     ScrollText,
     Settings,
     ShoppingCart,
@@ -22,7 +23,6 @@ import {
 } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
-// Later steps add Stock, Purchasing, Orders and Sync groups here.
 const navGroups: NavGroup[] = [
     {
         label: 'Overview',
@@ -57,6 +57,10 @@ const navGroups: NavGroup[] = [
             { title: 'Product costs', href: '/product-costs', icon: DollarSign, permission: 'reports.view' },
             { title: 'Locations', href: '/locations', icon: Warehouse, permission: 'locations.view' },
         ],
+    },
+    {
+        label: 'Integrations',
+        items: [{ title: 'Sync', href: '/sync', icon: RefreshCw, permission: 'sync.view' }],
     },
     {
         label: 'Admin',

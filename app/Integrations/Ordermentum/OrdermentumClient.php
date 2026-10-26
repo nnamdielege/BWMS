@@ -21,7 +21,7 @@ use LogicException;
  * Only for console commands and queued jobs: it refuses to run during a web
  * request or inside a DB transaction.
  *
- * Read-only for now (GET). Writes arrive with the stock push (step 6).
+ * The only write is putStock (absolute stock level); om:probe uses GETs only.
  */
 class OrdermentumClient
 {
@@ -54,6 +54,14 @@ class OrdermentumClient
         return $this->send(fn () => $this->request()
             ->withHeaders($this->contextHeaders($contextHeaders))
             ->get($this->url('stock_url', $path), $query));
+    }
+
+    /** Absolute stock set: PUT /v1/items/{variantId} on the stock API. Retries are naturally idempotent. */
+    public function putStock(string $path, array $body, string $contextHeaders = 'both'): Response
+    {
+        return $this->send(fn () => $this->request()
+            ->withHeaders($this->contextHeaders($contextHeaders))
+            ->put($this->url('stock_url', $path), $body));
     }
 
     /**
@@ -166,7 +174,11 @@ class OrdermentumClient
         if (! app()->runningInConsole()) {
             throw new LogicException('Ordermentum calls are not allowed during a web request; dispatch a job.');
         }
-        if (DB::transactionLevel() > 0) {
+        // The transactions manager ignores a test's RefreshDatabase wrapper but sees every real transaction.
+        $open = app()->bound('db.transactions')
+            ? app('db.transactions')->callbackApplicableTransactions()->isNotEmpty()
+            : DB::transactionLevel() > 0;
+        if ($open) {
             throw new LogicException('Ordermentum calls are not allowed inside a database transaction.');
         }
     }

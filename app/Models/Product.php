@@ -49,6 +49,11 @@ class Product extends Model
         return $this->hasMany(ProductUnit::class)->orderBy('base_qty');
     }
 
+    public function channelListings(): HasMany
+    {
+        return $this->hasMany(ChannelListing::class);
+    }
+
     public function batches(): HasMany
     {
         return $this->hasMany(Batch::class);

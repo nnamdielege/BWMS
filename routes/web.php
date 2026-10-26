@@ -22,6 +22,7 @@ use App\Http\Controllers\Stock\MovementController;
 use App\Http\Controllers\Stock\StockController;
 use App\Http\Controllers\Stock\StocktakeController;
 use App\Http\Controllers\Stock\TransferController;
+use App\Http\Controllers\Sync\SyncController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
@@ -121,6 +122,14 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::put('pick-lists/{pickList}/picked', [PickListController::class, 'record'])->middleware('can:picking.perform')->name('pick-lists.record');
     Route::post('pick-lists/{pickList}/dispatch', [PickListController::class, 'dispatch'])->middleware('can:picking.perform')->name('pick-lists.dispatch');
     Route::post('pick-lists/{pickList}/cancel', [PickListController::class, 'cancel'])->middleware('can:picking.perform')->name('pick-lists.cancel');
+
+    Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');
+    Route::post('sync/listings/{listing}/push', [SyncController::class, 'push'])->middleware('can:sync.manage')->name('sync.push');
+    Route::put('sync/listings/{listing}', [SyncController::class, 'toggle'])->middleware('can:sync.manage')->name('sync.listings.update');
+    Route::post('sync/listings-enable-all', [SyncController::class, 'enableAll'])->middleware('can:sync.manage')->name('sync.listings.enable-all');
+    Route::post('sync/retry-failed', [SyncController::class, 'retryFailed'])->middleware('can:sync.manage')->name('sync.retry-failed');
+    Route::post('sync/inbox/{inbox}/replay', [SyncController::class, 'replay'])->middleware('can:sync.manage')->name('sync.inbox.replay');
+    Route::post('sync/unmapped/{variant}/map', [SyncController::class, 'map'])->middleware('can:sync.manage')->name('sync.unmapped.map');
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('settings', [SettingsController::class, 'edit'])->middleware('can:settings.manage')->name('settings.edit');

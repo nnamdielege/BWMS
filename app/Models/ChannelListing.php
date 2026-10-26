@@ -14,6 +14,11 @@ class ChannelListing extends Model
 {
     use Auditable;
 
+    /** Push/check bookkeeping is logged in sync_attempts, not the audit log. */
+    protected array $auditExclude = [
+        'last_pushed_qty', 'last_pushed_at', 'last_response_code', 'last_error', 'last_remote_qty', 'last_checked_at',
+    ];
+
     protected $fillable = [
         'channel', 'product_id', 'product_unit_id', 'external_product_id', 'external_variant_id', 'external_sku',
         'external_location_id', 'sync_enabled', 'safety_buffer',
