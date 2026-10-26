@@ -7,6 +7,9 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\Orders\CustomerController;
+use App\Http\Controllers\Orders\OrderController;
+use App\Http\Controllers\Orders\PickListController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductCostController;
 use App\Http\Controllers\Purchasing\PurchaseOrderController;
@@ -95,6 +98,27 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::get('purchase-orders/{purchaseOrder}/pdf', [PurchaseOrderController::class, 'pdf'])->middleware('can:purchase_orders.view')->name('purchase-orders.pdf');
     Route::get('purchase-orders/{purchaseOrder}/receive', [ReceiptController::class, 'create'])->middleware('can:receiving.perform')->name('purchase-orders.receive');
     Route::post('purchase-orders/{purchaseOrder}/receipts', [ReceiptController::class, 'store'])->middleware('can:receiving.perform')->name('purchase-orders.receipts.store');
+
+    // Orders & fulfilment
+    Route::get('customers', [CustomerController::class, 'index'])->middleware('can:orders.view')->name('customers.index');
+    Route::get('customers/create', [CustomerController::class, 'create'])->middleware('can:orders.manage')->name('customers.create');
+    Route::post('customers', [CustomerController::class, 'store'])->middleware('can:orders.manage')->name('customers.store');
+    Route::get('customers/{customer}/edit', [CustomerController::class, 'edit'])->middleware('can:orders.view')->name('customers.edit');
+    Route::put('customers/{customer}', [CustomerController::class, 'update'])->middleware('can:orders.manage')->name('customers.update');
+
+    Route::get('orders', [OrderController::class, 'index'])->middleware('can:orders.view')->name('orders.index');
+    Route::get('orders/create', [OrderController::class, 'create'])->middleware('can:orders.manage')->name('orders.create');
+    Route::post('orders', [OrderController::class, 'store'])->middleware('can:orders.manage')->name('orders.store');
+    Route::get('orders/{order}', [OrderController::class, 'show'])->middleware('can:orders.view')->name('orders.show');
+    Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->middleware('can:orders.manage')->name('orders.cancel');
+    Route::post('orders/{order}/clear-flags', [OrderController::class, 'clearFlags'])->middleware('can:orders.manage')->name('orders.clear-flags');
+
+    Route::get('pick-lists', [PickListController::class, 'index'])->middleware('can:picking.perform')->name('pick-lists.index');
+    Route::post('pick-lists', [PickListController::class, 'store'])->middleware('can:picking.perform')->name('pick-lists.store');
+    Route::get('pick-lists/{pickList}', [PickListController::class, 'show'])->middleware('can:picking.perform')->name('pick-lists.show');
+    Route::put('pick-lists/{pickList}/picked', [PickListController::class, 'record'])->middleware('can:picking.perform')->name('pick-lists.record');
+    Route::post('pick-lists/{pickList}/dispatch', [PickListController::class, 'dispatch'])->middleware('can:picking.perform')->name('pick-lists.dispatch');
+    Route::post('pick-lists/{pickList}/cancel', [PickListController::class, 'cancel'])->middleware('can:picking.perform')->name('pick-lists.cancel');
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('settings', [SettingsController::class, 'edit'])->middleware('can:settings.manage')->name('settings.edit');

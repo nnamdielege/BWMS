@@ -67,9 +67,23 @@ Full checklist: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 |---|---|---|
 | 1 | Scaffold, invite-only auth, roles/permissions, audit log | Done |
 | 2 | Products, pack sizes, barcodes, locations | Done |
-| 3 | Stock ledger, batches/best-before, FEFO, adjustments, transfers, stocktakes | Done (review checkpoint) |
-| 4 | Suppliers, POs, receiving, PO PDF/mail | Not started |
-| 5 | Reservations, pick lists, dispatch | Not started |
+| 3 | Stock ledger, batches/best-before, FEFO, adjustments, transfers, stocktakes | Done (reviewed) |
+| — | Review changes: ranges, admin 2FA, trigger check + deploy docs, cost back-fill | Done |
+| 4 | Suppliers, POs, receiving with discrepancies, PO PDF (mPDF) + queued mail | Done |
+| 5 | Customers, orders, reservations, pick lists (FEFO), dispatch | Done (review checkpoint) |
+| — | Legacy data migration (dump available) | Next, after step 5 review |
 | 6 | Ordermentum stock push + sync status | Not started |
 | 7 | Portal integration API | Not started |
-| — | Ordermentum order ingestion, legacy data migration | Blocked (interfaces/stubs only) |
+| — | Ordermentum order ingestion | Blocked (interfaces/stubs only, step 6) |
+
+## Concurrency rules (read before touching stock code)
+
+- Lock order is always **products → stock balances**. Reservations, receiving and
+  dispatch lock the product rows (`FOR UPDATE`, id order) before anything else.
+- Any check-then-write inside a transaction must use **locking reads**
+  (`sharedLock()` / `lockForUpdate()`). MariaDB's REPEATABLE READ snapshot
+  otherwise hides rows committed by concurrent transactions. This caused an
+  oversell in testing before it was fixed.
+- Never `INSERT IGNORE` and then `SELECT … FOR UPDATE` the same row inside a
+  transaction (S→X upgrade deadlock). Lock first; insert only if missing.
+- `php artisan test --group=concurrency` runs real multi-process races.

@@ -9,8 +9,11 @@
  */
 
 use App\Enums\MovementType;
+use App\Enums\OrderChannel;
 use App\Models\Location;
 use App\Models\Product;
+use App\Services\Orders\ChannelOrderData;
+use App\Services\Orders\OrderService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Services\Stock\MovementDraft;
 use App\Services\Stock\StockLedger;
@@ -59,6 +62,16 @@ try {
                 $ledger->post([$draft($args['location_id'], $in ? $qty : -$qty, $in ? MovementType::Receipt : MovementType::Sale, "{$args['key']}:{$i}", true)]);
                 $results[] = 'ok';
             }
+            break;
+
+        case 'reserve':
+            // A portal order for `qty`; must be refused cleanly when availability runs out.
+            app(OrderService::class)->upsertFromChannel(new ChannelOrderData(
+                channel: OrderChannel::Portal, externalRef: $args['key'], version: 1, status: 'confirmed',
+                siteId: $args['site_id'],
+                lines: [['line_ref' => '1', 'product_id' => $product->id, 'product_unit_id' => $args['unit_id'], 'qty' => $args['qty']]],
+            ));
+            $results[] = 'ok';
             break;
 
         case 'crossing-transfers':

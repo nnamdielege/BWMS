@@ -17,9 +17,11 @@ class FefoAllocator
     public function __construct(private StockQuery $stock) {}
 
     /**
+     * @param  array<string, int>  $alreadyAllocated  "{location_id}-{batch_key}" => qty already promised
+     *                                                to other open pick lists; subtracted from on hand
      * @return array{lines: list<array{balance: StockBalance, qty: int}>, shortfall: int}
      */
-    public function allocate(Product $product, int $qty, ?Location $within = null): array
+    public function allocate(Product $product, int $qty, ?Location $within = null, array $alreadyAllocated = []): array
     {
         $query = StockBalance::query()
             ->select('stock_balances.*')
@@ -50,7 +52,11 @@ class FefoAllocator
             if ($remaining <= 0) {
                 break;
             }
-            $take = min($remaining, $balance->on_hand);
+            $free = $balance->on_hand - ($alreadyAllocated["{$balance->location_id}-{$balance->batch_key}"] ?? 0);
+            if ($free <= 0) {
+                continue;
+            }
+            $take = min($remaining, $free);
             $lines[] = ['balance' => $balance, 'qty' => $take];
             $remaining -= $take;
         }

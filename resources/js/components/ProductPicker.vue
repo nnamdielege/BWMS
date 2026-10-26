@@ -2,7 +2,7 @@
 import { Input } from '@/components/ui/input';
 import { ref, watch } from 'vue';
 
-export interface PickedUnit {
+export type PickedUnit = {
     id: number;
     name: string;
     base_qty: number;
@@ -10,8 +10,8 @@ export interface PickedUnit {
     sellable: boolean;
     default_purchase: boolean;
     default_sale: boolean;
-}
-export interface PickedProduct {
+};
+export type PickedProduct = {
     id: number;
     sku: string;
     name: string;
@@ -20,7 +20,7 @@ export interface PickedProduct {
     sell_price: string | null;
     is_batch_tracked: boolean;
     units: PickedUnit[];
-}
+};
 
 const emit = defineEmits<{ pick: [product: PickedProduct] }>();
 defineProps<{ placeholder?: string }>();

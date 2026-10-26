@@ -6,6 +6,7 @@ use App\Console\Commands\VerifyStockBalances;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\StockMovement;
+use App\Services\Orders\AvailabilityService;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Symfony\Component\Process\Process;
 use Tests\Support\StockFixtures;
@@ -82,6 +83,22 @@ class StockLedgerConcurrencyTest extends TestCase
         $this->assertSame($workers * $iterations, StockMovement::where('product_id', $product->id)->count());
         $this->assertSame($this->ledgerSum($product), $this->balance($product), 'Projection must equal ledger: an update was lost.');
         $this->assertSame([], VerifyStockBalances::findDrift());
+    }
+
+    public function test_concurrent_portal_reservations_never_oversell()
+    {
+        $product = Product::factory()->create();
+        $this->stockIn($product, 10);
+
+        // 8 portal orders of 3 against 10 available: exactly 3 may be accepted (D-3).
+        $results = $this->runWorkers(8, fn (int $i) => ['reserve', [
+            'product_id' => $product->id, 'site_id' => $this->site()->id,
+            'unit_id' => $product->units()->value('id'), 'qty' => 3, 'key' => "P-race-{$i}",
+        ]]);
+
+        $this->assertSame(3, count(array_filter($results, fn ($r) => $r === 'ok')), json_encode($results));
+        $this->assertSame(5, count(array_filter($results, fn ($r) => $r === 'rejected:InsufficientAvailability')), json_encode($results));
+        $this->assertSame(1, app(AvailabilityService::class)->available($product));
     }
 
     public function test_crossing_multi_slot_postings_do_not_deadlock_or_drift()

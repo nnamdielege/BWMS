@@ -199,7 +199,8 @@ class ReceivingService
         if ($qty <= 0) {
             return;
         }
-        $onHand = max(0, (int) StockBalance::where('product_id', $product->id)->sum('on_hand'));
+        // Locking read: the REPEATABLE READ snapshot may predate concurrent movements.
+        $onHand = max(0, (int) StockBalance::where('product_id', $product->id)->sharedLock()->sum('on_hand'));
         $value = bcmul((string) $onHand, (string) $product->avg_cost, 4);
         foreach ($inputs as [$q, $c]) {
             $value = bcadd($value, bcmul((string) $q, $c, 4), 4);

@@ -25,9 +25,18 @@ class StockQuery
      * expired batches (D-13). Reservations are subtracted by the availability
      * service added in step 5 (available = on_hand - reserved).
      */
-    public function sellableOnHand(Product $product): int
+    /**
+     * @param  bool  $current  use a locking read so the figure reflects the latest
+     *                         committed data, not the transaction's REPEATABLE READ
+     *                         snapshot. Required inside check-then-write transactions.
+     */
+    public function sellableOnHand(Product $product, ?Location $within = null, bool $current = false): int
     {
-        return (int) $this->sellableBalances()->where('stock_balances.product_id', $product->id)->sum('stock_balances.on_hand');
+        return (int) $this->sellableBalances()
+            ->where('stock_balances.product_id', $product->id)
+            ->when($within, fn ($q) => $q->whereIn('stock_balances.location_id', $this->binIdsUnder($within)))
+            ->when($current, fn ($q) => $q->sharedLock())
+            ->sum('stock_balances.on_hand');
     }
 
     /** @return array<int, int> product_id => sellable on hand */

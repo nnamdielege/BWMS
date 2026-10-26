@@ -153,9 +153,11 @@ class StocktakeService
 
     private function currentOnHand(StocktakeLine $line): int
     {
+        // Locking read so the figure is current even inside post()'s transaction.
         return (int) StockBalance::where('product_id', $line->product_id)
             ->where('location_id', $line->location_id)
             ->where('batch_key', $line->batch_key)
+            ->sharedLock()
             ->value('on_hand');
     }
 

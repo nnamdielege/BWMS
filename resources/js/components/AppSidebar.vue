@@ -4,7 +4,22 @@ import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavGroup } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { Boxes, ClipboardList, DollarSign, FileText, LayoutGrid, Package, ScrollText, Settings, Truck, Users, Warehouse } from 'lucide-vue-next';
+import {
+    Boxes,
+    ClipboardList,
+    DollarSign,
+    FileText,
+    LayoutGrid,
+    ListChecks,
+    Package,
+    ScrollText,
+    Settings,
+    ShoppingCart,
+    Store,
+    Truck,
+    Users,
+    Warehouse,
+} from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 // Later steps add Stock, Purchasing, Orders and Sync groups here.
@@ -12,6 +27,14 @@ const navGroups: NavGroup[] = [
     {
         label: 'Overview',
         items: [{ title: 'Dashboard', href: '/dashboard', icon: LayoutGrid }],
+    },
+    {
+        label: 'Orders',
+        items: [
+            { title: 'Orders', href: '/orders', icon: ShoppingCart, permission: 'orders.view' },
+            { title: 'Pick lists', href: '/pick-lists', icon: ListChecks, permission: 'picking.perform' },
+            { title: 'Customers', href: '/customers', icon: Store, permission: 'orders.view' },
+        ],
     },
     {
         label: 'Stock',
