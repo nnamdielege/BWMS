@@ -59,7 +59,15 @@ What the legacy app is *trying* to do, stated as requirements. Defects are in th
 
 ## B2. Stock model
 
-### B2.1 Units and pack sizes
+### B2.1 Products, ranges, pack sizes
+
+**Decided 2026-10-26:**
+- **Flavours and other variants are separate products**, each with its own SKU and its own stock (e.g. "Dash Syrup Vanilla 750 mL" and "Dash Syrup Caramel 750 mL" are two products).
+- **Range** (optional, display only): a product may belong to one range (e.g. "Dash syrups"), used only to group, filter and sort lists. A range has no stock, price or sync behaviour of its own.
+- **Pack sizes** are `product_units` of one product (Each, Carton ×12…), as built in step 2.
+- **An Ordermentum variant maps to exactly one product + one pack size** (`channel_listings.product_id` + `product_unit_id`). Pushed quantity = `floor(ATS_base / pack base_qty)`.
+
+### B2.1a Units and pack sizes
 - Each product has one **base unit**, the smallest unit you ever stock or sell separately (e.g. *bottle*). All ledger quantities are **integers in base units**.
 - `product_units` defines pack sizes: name (e.g. *carton*), `base_qty` (e.g. 12), barcode (GTIN/ITF-14), and flags `purchasable`, `sellable`, `default_purchase`, `default_sale`.
 - PO lines, sales lines and channel listings each name a unit. The system converts to base units on write and stores both the entered unit/qty and the base qty.
@@ -118,7 +126,7 @@ Doc index: https://docs.ordermentum.io/llms.txt. Status key: **Confirmed** = doc
 | Read stock | `GET /v1/items/{id}?locationId=` returns `{available, tracked, allowOversell, stock:[{locationId, available}]}`. | Confirmed | [Get item](https://docs.ordermentum.io/reference/get_v1-items-id.md) |
 | Stock locations | `GET/POST /v1/locations` returns `{id, name, default, externalId}`. | Confirmed | [List locations](https://docs.ordermentum.io/reference/get_v1-locations.md) |
 | Variant stock fields | The Variant schema has only `outOfStock` (bool), `SKU` (capital), `barcode`, `unit`, `uom`. No quantity. The old app's `sync:stock` read `available/quantity` from this endpoint, which the schema does not define. | Confirmed | [Get variant](https://docs.ordermentum.io/reference/get_v1-products-productid-variants-id.md) |
-| **Does Ordermentum decrement its own `available` when an order is placed?** | Not documented anywhere. | ⚠ **Critical unconfirmed.** Test in sandbox | — |
+| **Does Ordermentum decrement its own `available` when an order is placed?** | Not documented anywhere. **Evidence from legacy production data (2026-10-26):** the legacy BWMS's nightly job copied Ordermentum's per-variant figure into `inventory.quantity_on_hand` verbatim, and that table holds **35 negative values (min −809)** with no BWMS process able to produce negatives (see audit §9.2). The most plausible explanation is that Ordermentum **decrements tracked stock per order and allows it to go negative** (oversell permitted, or tracking on with `allowOversell`). | ⚠ **Likely, pending confirmation from api@ordermentum.com. Not confirmed.** Design assumes it may be true (B3.2 gap 2, D-3). | Audit §9.2 |
 | Webhook registration | `POST /v1/webhooks` `{name, url, entityType, entityId, events[]}`. List/get/update/delete exist. | Confirmed | [Create webhook](https://docs.ordermentum.io/reference/post_v1-webhooks.md), [Guide](https://docs.ordermentum.io/docs/registering-webhooks-for-order-events-1.md) |
 | Webhook events | Reference enum: `order_created`, `order_updated`, `invoice_created`, `invoice_updated`, `product_created`, `product_updated`, `purchaser_created`, `purchaser_updated`. The guide also lists `credit_note_created/updated/completed/cancelled` and omits the product events. | Confirmed for the order events. ⚠ credit_note/product events contradictory | Same |
 | Webhook payload | `{event, timestamp, data:{id, createdAt, updatedAt, total, …}}`. | Confirmed (example only, not a schema) | [Guide](https://docs.ordermentum.io/docs/registering-webhooks-for-order-events-1.md) |
@@ -155,7 +163,7 @@ Doc index: https://docs.ordermentum.io/llms.txt. Status key: **Confirmed** = doc
 
 **Gaps that block a reliable build (resolve first)**
 1. Order line items with variant ID and quantity: confirm `includeLines` / `GET /v1/orders/{id}` output on the live or sandbox account.
-2. Whether Ordermentum decrements `available` itself on order placement. If it does, there is a window where our push could overwrite a just-placed order's decrement. This is acceptable because the order webhook then deducts in BWMS and re-pushes, but the oversell window has to be accepted **[D-3]**.
+2. Whether Ordermentum decrements `available` itself on order placement. Legacy data makes this **likely** (B3.1, pending confirmation). If it does, there is a window where our push could overwrite a just-placed order's decrement. This is acceptable because the order webhook then deducts in BWMS and re-pushes, but the oversell window has to be accepted **[D-3]**.
 3. Webhook authenticity: confirm with Ordermentum whether basic-auth or header credentials can be configured on a webhook.
 4. Stock API rate limits and exact context header names.
 5. An API key (x-api-key) issued for the account. The legacy username/password flow dies on 1 Jan 2027.
@@ -178,18 +186,52 @@ Doc index: https://docs.ordermentum.io/llms.txt. Status key: **Confirmed** = doc
 
 **Recommendation: Option 1.** On the same VPS, call over localhost or a private hostname to avoid public DNS (relevant to the DNS incident).
 
-### B4.3 Portal flow (Option 1)
+### B4.3 Portal flow (Option 1, D-5 revised 2026-10-26)
+
+**Principle: the portal must never stop taking orders because BWMS is down.**
+
 1. The portal checks its cached `stock_qty` at add-to-cart and checkout (soft check).
-2. On order **confirmed** (after payment, or immediately for invoice/COD **[D-2]**), the portal writes the event to its own outbox and a portal job POSTs it to BWMS. The portal web request never calls BWMS synchronously **[D-5]**.
-3. BWMS stores it in `integration_inbox`, dedupes, upserts `channel_orders(channel=portal)`, and writes `sale` or `reservation` movements.
-4. The stock change → `PushChannelStock(portal)` and `PushChannelStock(ordermentum)`.
-5. On cancel or edit, the portal sends a new event version. BWMS diffs and reverses deltas, exactly as in B3.2.
-6. Mapping: `channel_listings(channel=portal, external_product_id=portal products.id, units_per_listing = portal unit_quantity?)` ⚠ confirm what `unit_quantity` means in the portal (likely units per pack).
+2. At order placement, the portal calls `POST /api/portal/v1/reservations` **synchronously, with a 3s total timeout** (1s connect).
+   - **201 `confirmed`**: the reservation is held and the order proceeds normally.
+   - **409 `insufficient_stock`**: the portal **rejects** the order (or the affected lines) and shows the shopper the available quantity from the response (D-3: no oversell on the portal).
+   - **Timeout, connection error, 5xx or 429**: the portal **accepts** the order, marks it `reservation_status = unconfirmed`, writes the request to its outbox, and a portal queue job retries with exponential backoff (10s, 30s, 1m, 5m, then every 15m, no maximum while the order is open) using the **same idempotency key**.
+   - When a retry later returns `confirmed`, the portal clears the flag.
+   - When a retry returns `insufficient_stock`, the portal flags the order `reservation_failed` and **alerts staff** (email + portal admin banner). BWMS also lists it on its sync screen. A human decides: short-ship, substitute, or contact the café. No automatic cancellation.
+3. Payment completion, cancellation and edits are sent as later events against the same reservation (B4.4). Each is an idempotent upsert of the whole order.
+4. BWMS stores every inbound call in `integration_inbox`, dedupes, upserts `channel_orders(channel=portal)`, and creates or adjusts **reservations** (D-2: deduct at dispatch).
+5. The stock change → `PushChannelStock(portal)` and `PushChannelStock(ordermentum)`.
+6. Mapping: `channel_listings(channel=portal, external_product_id = portal products.id, product_unit_id)`. ⚠ Confirm what the portal's `unit_quantity` means (likely units per pack).
 7. The portal's `stock_qty` is unsigned. BWMS pushes `max(0, ATS)`.
+
+### B4.4 Portal ↔ BWMS integration contract (v1)
+
+**Transport and auth (both directions)**
+- HTTPS. On the same VPS, use a private hostname or localhost so no public DNS is involved.
+- Headers: `X-BWMS-Key-Id`, `X-BWMS-Timestamp` (unix seconds), `X-BWMS-Signature` = hex HMAC-SHA256 of `timestamp + "." + raw_body` with the shared secret for that key ID.
+- The receiver rejects a missing or bad signature, or a timestamp more than 300s off (401). Two key IDs may be active at once, for rotation.
+- Every mutating request carries `Idempotency-Key`. The receiver stores `(key, request hash, response)`. A replay with the same hash returns the stored response; the same key with a different body gets 422 `idempotency_conflict`.
+
+**Portal → BWMS**
+
+| Call | Purpose | Request (essentials) | Responses |
+|---|---|---|---|
+| `POST /api/portal/v1/reservations` | Reserve stock for a new order (sync, 3s timeout) | `Idempotency-Key: portal:order:{reference}`; `{order_ref, customer: {portal_user_id, business_name}, requested_delivery_date, lines: [{line_ref, portal_product_id, qty, unit_quantity}]}` | `201 {status:"confirmed", reservation_id, lines:[{line_ref, reserved_qty}]}` · `409 {status:"insufficient_stock", lines:[{line_ref, requested, available}]}` (nothing reserved; all-or-nothing) · `422` validation / unknown product (no retry; alert) · `5xx`/timeout → portal retries per B4.3 |
+| `PUT /api/portal/v1/orders/{order_ref}` | Full-state upsert after any change (paid, edited, cancelled) | `Idempotency-Key: portal:order:{reference}:v{version}`; `{version, status, lines:[…]}`, where status ∈ `confirmed, cancelled` | `200 {status, lines}`. BWMS diffs against the current reservation and applies the delta. Stale versions (≤ current) return `200` unchanged. Cancel releases every reservation not yet dispatched. |
+| `GET /api/portal/v1/orders/{order_ref}` | Reconciliation / support | — | `200 {status, reservation_status, lines:[{line_ref, reserved, dispatched}]}` |
+| `GET /api/portal/v1/stock?product_ids=…` | On-demand ATS for display or repair | — | `200 [{portal_product_id, available}]` |
+
+**BWMS → Portal**
+
+| Call | Purpose | Request | Expected response |
+|---|---|---|---|
+| `PUT {portal}/api/bwms/v1/stock` | Push available-to-sell (unique/debounced job, B3.2 rules) | `[{portal_product_id, available, as_of}]` (batch up to 100), `available = max(0, floor(ATS_base / pack base_qty))` | `200`. The portal stores the value only if `as_of` is newer than what it holds (out-of-order safe). |
+| `POST {portal}/api/bwms/v1/order-events` | Dispatch notifications | `{order_ref, event: "dispatched"\|"short_shipped", lines:[{line_ref, qty}], at}` | `200` (idempotent by `order_ref + event + at`) |
+
+**Timeouts and retries:** portal→BWMS reservation: 3s total. All other calls: 5s connect / 15s total, retried from a queue with backoff. Neither app ever calls the other inside a DB transaction.
 
 ## B5. Target data model (summary)
 
-Core: `products`, `product_units`, `product_barcodes`, `categories`, `suppliers`, `supplier_contacts`, `supplier_products` (supplier SKU, cost, pack, lead time, MOQ), `locations` (site → zone → bin, self-referencing, flags `sellable`, `quarantine`, `receiving`), `batches`, `stock_movements` (append-only), `stock_balances` (projection), `reservations`, `reason_codes`, `purchase_orders`, `purchase_order_lines`, `receipts`, `receipt_lines` (batch, location, qty received/damaged/rejected, discrepancy note), `stocktakes`, `stocktake_lines`, `channel_orders`, `channel_order_lines`, `customers` (with `ordermentum_retailer_id`, `portal_user_id`), `pick_lists`, `pick_list_lines`, `dispatches`.
+Core: `ranges` (display grouping), `products`, `product_units`, `product_barcodes`, `categories`, `suppliers`, `supplier_contacts`, `supplier_products` (supplier SKU, cost, pack, lead time, MOQ), `locations` (site → zone → bin, self-referencing, flags `sellable`, `quarantine`, `receiving`), `batches`, `stock_movements` (append-only), `stock_balances` (projection), `reservations`, `reason_codes`, `purchase_orders`, `purchase_order_lines`, `receipts`, `receipt_lines` (batch, location, qty received/damaged/rejected, discrepancy note), `stocktakes`, `stocktake_lines`, `channel_orders`, `channel_order_lines`, `customers` (with `ordermentum_retailer_id`, `portal_user_id`), `pick_lists`, `pick_list_lines`, `dispatches`.
 
 Integration: `channels`, `channel_listings` (channel, product, unit, external IDs, location ID, `units_per_listing`, `sync_enabled`, last pushed qty/at/status/error), `integration_inbox` (raw inbound, dedupe key unique, status, attempts, error), `sync_attempts` (outbound log: channel, product, request summary, response code, duration, error, attempt no.), `integration_credentials` (encrypted).
 
@@ -199,7 +241,7 @@ Platform: `users` (invite-only), spatie `roles/permissions`, `audit_log` (who/wh
 
 | Area | MVP (go-live) | Phase 2 | Later |
 |---|---|---|---|
-| **Products** | SKU, name, category, base unit, pack sizes, barcodes, cost, price, active, batch-required flag, shelf-life/short-dated days, reorder point/qty | Supplier-product catalogue (supplier SKU, cost history, lead time, MOQ); product images | Kits/bundles |
+| **Products** | SKU, name, category, optional range (display grouping), base unit, pack sizes, barcodes, cost, price, active, batch-required flag, shelf-life/short-dated days, reorder point/qty; flavours = separate products; cost back-fill (zero-cost report, inline edit, CSV import with preview) | Supplier-product catalogue (supplier SKU, cost history, lead time, MOQ); product images | Kits/bundles |
 | **Locations** | One site, flat bins, sellable/quarantine/receiving flags, default receiving location | Zone/aisle hierarchy, bin capacity, putaway suggestions | Multi-site transfers with in-transit state |
 | **Stock ledger** | All movement types in §B2.2 except returns; derived on-hand and ATS; nightly projection check | Returns (customer, supplier) | Valuation by FIFO cost layers (MVP: weighted average cost on receipt) |
 | **Batches / expiry** | Lot + best-before on receipt for batch-required products; FEFO pick order; expired batches excluded from ATS; expiry alert | Write-off suggestions, short-dated price-down flag to channels | Recall report by lot → customers |
@@ -247,7 +289,7 @@ Platform: `users` (invite-only), spatie `roles/permissions`, `audit_log` (who/wh
 | NFR-11 | Feature tests (Pest or PHPUnit) for: every movement type, negative-stock rules, idempotent re-delivery, out-of-order webhook delivery, partial receipt, cancel-after-deduct, unit conversion, ATS calculation, unique/debounced job dispatch, 429 handling (HTTP fakes). CI runs them. |
 | NFR-12 | Observability: structured logs with correlation ID (inbox ID → job → outbound attempt); `sync_attempts` retained 90 days; Horizon (if Redis) or a queue dashboard; health endpoint reporting queue lag and last sync times. |
 | NFR-13 | Security: secrets in `.env` only, integration credentials encrypted at rest, HTTPS only, CSRF on the Inertia app, session auth (no tokens in localStorage), rate-limited login, 2FA for Admin **[D-8]**. |
-| NFR-14 | Ops on the VPS: Supervisor workers, cron `schedule:run`, a local caching DNS resolver (systemd-resolved/unbound), `ulimit -n` and PHP-FPM `pm.max_children` sized and documented, daily DB backup with a restore test. ⚠ Needs VPS access to confirm. |
+| NFR-14 | Ops on the VPS: Supervisor workers, cron `schedule:run`, a local caching DNS resolver (systemd-resolved/unbound), `ulimit -n` and PHP-FPM `pm.max_children` sized and documented, daily DB backup with a restore test. **Database (confirmed 2026-10-26): MariaDB 10.5.29.** Ledger triggers need the TRIGGER grant and, with binary logging on, `log_bin_trust_function_creators=1` (verified: error 1419 otherwise). `php artisan bwms:check-triggers` must pass after every deploy (deploy checklist in the app repo, `docs/DEPLOY.md`). ⚠ Remaining items need VPS access to confirm. |
 | NFR-15 | Performance: stock screens < 1s for 5k SKUs; outbound push latency p95 < 60s from movement commit (including the debounce). |
 | NFR-16 | Accessibility/usability: receiving and stocktake screens usable on a tablet; barcode-scanner (keyboard wedge) input on SKU/barcode fields. |
 
@@ -269,13 +311,13 @@ Status: **Decided** = you chose it (2026-10-26). **Accepted (default)** = my rec
 | D-2 | When a sale reduces stock | **Reserve at order placement, deduct at pick/dispatch.** `available = on_hand − reserved`. Dispatch posts `sale` movements against the FEFO-picked batches and releases the reservation. | **Decided** |
 | D-3 | Oversell | **Portal: blocked.** BWMS rejects a portal reservation that would take available below 0, and the portal shows the order as failed/out of stock. **Ordermentum: always accepted.** The reservation is created even if available goes negative; the order is flagged `oversold` and an alert is raised. Ordermentum items are pushed with `allowOversell=false`, and available is pushed as `max(0, ATS)`. | **Decided** |
 | D-4 | Channel allocation | Shared pool, plus an optional per-product, per-channel safety buffer (default 0). | Accepted (default) |
-| D-5 | Portal checkout guarantee | With D-3, the portal needs a real answer at checkout, so the portal calls BWMS `POST /api/portal/v1/reservations` **from a portal job immediately after order placement**, and the order stays `awaiting_stock` until BWMS confirms or rejects. That is asynchronous from the shopper's request, with sub-second latency on the same VPS. The cached `stock_qty` is still used for the soft check at add-to-cart. | Accepted (default; adjusted to fit D-3) |
+| D-5 | Portal checkout guarantee | **Synchronous reservation call at order placement with a ~3s timeout.** BWMS says insufficient → portal rejects. BWMS unreachable/timeout → portal accepts the order, flags it "unconfirmed reservation", queues the reservation and retries until BWMS answers; if the answer is insufficient stock, staff are alerted. The portal never stops taking orders because BWMS is down. Contract: B4.3–B4.4. | **Decided** (revised 2026-10-26) |
 | D-6 | Portal's own Ordermentum sync | **Disabled at BWMS go-live** (set portal `ORDERMENTUM_SYNC_MODE` to off; remove its webhook registration). BWMS becomes the only Ordermentum stock writer. | Accepted (default) |
 | D-7 | Opening balance source | **Physical stocktake at cutover**, imported as `opening_balance` ledger entries (with batch and best-before where counted). | **Decided** |
-| D-8 | Roles; 2FA | Roles: Admin, Warehouse Manager, Warehouse Staff, Purchasing, Read-only. TOTP 2FA **required for Admin**, optional for others (Phase 2 feature; MVP ships the roles). | Accepted (default) |
+| D-8 | Roles; 2FA | Roles: Admin, Warehouse Manager, Warehouse Staff, Purchasing, Read-only. **TOTP 2FA (Laravel Fortify) with recovery codes is in the MVP**: required for Admin (an admin without 2FA is sent to set it up before anything else, and cannot disable it); optional for everyone else. | **Decided** (2FA moved to MVP 2026-10-26); roles Accepted (default) |
 | D-9 | Sync conflict rule | **BWMS always wins.** The nightly reconciliation re-pushes divergent figures and logs them. Stock edits made in the Ordermentum back office are never pulled back. | Accepted (default) |
 | D-10 | Ordermentum credit notes | Financial-only by default. A physical return is recorded in BWMS as `customer_return` to the quarantine location (Phase 2). | Accepted (default) |
-| D-11 | Valuation | **Weighted average cost**, updated on each receipt. Cost back-fill is a migration/report task (113/120 products currently have cost 0). | Accepted (default) |
+| D-11 | Valuation | **Weighted average cost**, updated on each receipt. **Cost back-fill (MVP):** a "Product costs" screen listing products with cost = 0 (CSV export), inline cost editing, and bulk CSV import (`sku, cost, pack`) with a preview before applying. Every change is audited. (113/123 products in production have cost 0.) | Accepted (default); back-fill path **Decided** 2026-10-26 |
 | D-12 | PO numbering & branding | `PO-YYYY-NNNNN` from a DB sequence (no `count()+1`). Company details come from settings, seeded as "Local Selection" with placeholders you fill in. | Accepted (default) |
 | D-13 | Expired stock | At best-before, the batch is excluded from available (it stays on-hand). An expiry job flags it for write-off. Selling past best-before isn't supported in MVP. | Accepted (default) |
 
