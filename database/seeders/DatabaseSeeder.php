@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             RolesAndPermissionsSeeder::class,
             DefaultSiteSeeder::class,
             ReasonCodeSeeder::class,
+            CompanySettingsSeeder::class,
         ]);
     }
 }

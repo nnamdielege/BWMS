@@ -4,7 +4,7 @@ import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavGroup } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { Boxes, ClipboardList, DollarSign, LayoutGrid, Package, ScrollText, Users, Warehouse } from 'lucide-vue-next';
+import { Boxes, ClipboardList, DollarSign, FileText, LayoutGrid, Package, ScrollText, Settings, Truck, Users, Warehouse } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 // Later steps add Stock, Purchasing, Orders and Sync groups here.
@@ -21,6 +21,13 @@ const navGroups: NavGroup[] = [
         ],
     },
     {
+        label: 'Purchasing',
+        items: [
+            { title: 'Purchase orders', href: '/purchase-orders', icon: FileText, permission: 'purchase_orders.view' },
+            { title: 'Suppliers', href: '/suppliers', icon: Truck, permission: 'suppliers.view' },
+        ],
+    },
+    {
         label: 'Catalogue',
         items: [
             { title: 'Products', href: '/products', icon: Package, permission: 'products.view' },
@@ -33,6 +40,7 @@ const navGroups: NavGroup[] = [
         items: [
             { title: 'Users', href: '/admin/users', icon: Users, permission: 'users.view' },
             { title: 'Audit log', href: '/admin/audit-log', icon: ScrollText, permission: 'audit.view' },
+            { title: 'Company settings', href: '/admin/settings', icon: Settings, permission: 'settings.manage' },
         ],
     },
 ];

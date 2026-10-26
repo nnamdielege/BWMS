@@ -75,6 +75,19 @@ class ProductController extends Controller
         return back()->with('success', "Product {$product->sku} saved.");
     }
 
+    /** Typeahead for order/PO line entry: active products with their pack sizes. */
+    public function search(Request $request): JsonResponse
+    {
+        $q = (string) $request->validate(['q' => ['required', 'string', 'min:1', 'max:100']])['q'];
+
+        return response()->json(
+            Product::search($q)->where('is_active', true)
+                ->with('units:id,product_id,name,base_qty,purchasable,sellable,default_purchase,default_sale')
+                ->orderBy('name')->limit(20)
+                ->get(['id', 'sku', 'name', 'base_unit', 'avg_cost', 'sell_price', 'is_batch_tracked']),
+        );
+    }
+
     /** Scanner lookup: resolve a barcode to its product and pack size. */
     public function lookupBarcode(string $barcode): JsonResponse
     {

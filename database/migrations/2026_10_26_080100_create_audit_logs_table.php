@@ -13,7 +13,8 @@ return new class extends Migration
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->string('event', 64);
             $table->string('auditable_type')->nullable();
-            $table->unsignedBigInteger('auditable_id')->nullable();
+            // String so models with non-integer keys (e.g. settings.key) can be audited.
+            $table->string('auditable_id', 64)->nullable();
             $table->json('old_values')->nullable();
             $table->json('new_values')->nullable();
             $table->json('meta')->nullable();
