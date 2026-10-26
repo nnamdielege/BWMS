@@ -7,3 +7,6 @@ $tz = config('bwms.business_timezone');
 
 // NFR-9: the balance projection must equal the ledger.
 Schedule::command('stock:verify')->dailyAt('02:15')->timezone($tz)->withoutOverlapping();
+
+// NFR-9: the ledger must stay append-only at the database level.
+Schedule::command('bwms:check-triggers')->dailyAt('02:10')->timezone($tz);

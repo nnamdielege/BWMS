@@ -44,15 +44,22 @@ authentication plus a `can:` check, unless it is explicitly allowlisted.
 - Sellable = sellable, active, non-quarantine bins, excluding batches past
   best-before (Brisbane date). FEFO allocation: `FefoAllocator`.
 
-## Ops notes
+## Deploying (production: MariaDB 10.5.29)
 
-- The DB user needs the `TRIGGER` privilege (and on MySQL with binlog,
-  `log_bin_trust_function_creators=1`) for the ledger triggers. If that
-  can't be granted, set `BWMS_LEDGER_DB_TRIGGERS=false` and record why.
-- Scheduler: `* * * * * php artisan schedule:run`. Queue workers under
-  Supervisor (configured in later steps).
-- Developed against MariaDB 10.4 locally. Confirm the production engine
-  and version.
+Full checklist: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+> **Database requirement:** the ledger triggers need
+> `log_bin_trust_function_creators = 1` in the MariaDB server config (binary
+> logging is normally on) **and** `GRANT TRIGGER ON <schema>.*` for the app user.
+> Without the first, migrations fail with MariaDB error 1419 (verified on
+> 10.5.29). After every deploy, run `php artisan bwms:check-triggers`. It exits
+> non-zero, prints the fix and logs a critical error if the triggers are missing.
+> It also runs daily from the scheduler.
+
+- Scheduler: `* * * * * php artisan schedule:run`. Queue workers under Supervisor.
+- Local development uses MariaDB 10.4. The suite has also been run on MariaDB
+  10.5.29 (Docker, binary logging on). Avoid MySQL 8-only SQL.
+- Admins must set up TOTP two-factor before they can use the app (D-8).
 
 ## Build status
 
