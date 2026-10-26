@@ -44,6 +44,11 @@ class Product extends Model
         return $this->hasMany(ProductUnit::class)->orderBy('base_qty');
     }
 
+    public function batches(): HasMany
+    {
+        return $this->hasMany(Batch::class);
+    }
+
     public function baseUnit(): HasOne
     {
         return $this->hasOne(ProductUnit::class)->where('is_base', true);

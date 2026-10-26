@@ -7,6 +7,11 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\Stock\AdjustmentController;
+use App\Http\Controllers\Stock\MovementController;
+use App\Http\Controllers\Stock\StockController;
+use App\Http\Controllers\Stock\StocktakeController;
+use App\Http\Controllers\Stock\TransferController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
@@ -36,6 +41,21 @@ Route::middleware(['auth', 'active'])->group(function () {
         ->middleware('can:create,App\Models\Location')->name('locations.store');
     Route::put('locations/{location}', [LocationController::class, 'update'])
         ->middleware('can:update,location')->name('locations.update');
+
+    // Stock
+    Route::get('stock', [StockController::class, 'index'])->middleware('can:stock.view')->name('stock.index');
+    Route::get('stock/movements', [MovementController::class, 'index'])->middleware('can:stock.view')->name('stock.movements');
+    Route::get('stock/{product}', [StockController::class, 'show'])->middleware('can:stock.view')->name('stock.show');
+    Route::post('stock/{product}/adjustments', [AdjustmentController::class, 'store'])->middleware('can:stock.adjust')->name('stock.adjust');
+    Route::post('stock/{product}/transfers', [TransferController::class, 'store'])->middleware('can:stock.transfer')->name('stock.transfer');
+
+    Route::get('stocktakes', [StocktakeController::class, 'index'])->middleware('can:stocktakes.count')->name('stocktakes.index');
+    Route::post('stocktakes', [StocktakeController::class, 'store'])->middleware('can:stocktakes.manage')->name('stocktakes.store');
+    Route::get('stocktakes/{stocktake}', [StocktakeController::class, 'show'])->middleware('can:stocktakes.count')->name('stocktakes.show');
+    Route::put('stocktakes/{stocktake}/lines/{line}', [StocktakeController::class, 'count'])->middleware('can:stocktakes.count')->name('stocktakes.count');
+    Route::post('stocktakes/{stocktake}/lines', [StocktakeController::class, 'addLine'])->middleware('can:stocktakes.count')->name('stocktakes.lines.store');
+    Route::post('stocktakes/{stocktake}/post', [StocktakeController::class, 'post'])->middleware('can:stocktakes.manage')->name('stocktakes.post');
+    Route::post('stocktakes/{stocktake}/cancel', [StocktakeController::class, 'cancel'])->middleware('can:stocktakes.manage')->name('stocktakes.cancel');
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('users', [UserController::class, 'index'])

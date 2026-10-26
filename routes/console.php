@@ -1,8 +1,9 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+// All schedules run in the business timezone; the app clock itself is UTC.
+$tz = config('bwms.business_timezone');
+
+// NFR-9: the balance projection must equal the ledger.
+Schedule::command('stock:verify')->dailyAt('02:15')->timezone($tz)->withoutOverlapping();
