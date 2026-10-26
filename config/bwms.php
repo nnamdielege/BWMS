@@ -25,11 +25,27 @@ return [
         'webhook_token' => env('ORDERMENTUM_WEBHOOK_TOKEN'),
         // Site whose available stock is pushed and where Ordermentum orders are fulfilled.
         'site_code' => env('ORDERMENTUM_SITE_CODE', env('BWMS_DEFAULT_SITE_CODE', 'CLONTARF')),
-        // A burst of stock changes for one product becomes one push after this delay.
+        // A burst of stock changes becomes one push run after this delay.
         'debounce_seconds' => (int) env('ORDERMENTUM_DEBOUNCE_SECONDS', 10),
-        // Client-side limits per minute. Stock API limits are undocumented (B3.1); order fetch is 24/min.
-        'stock_requests_per_minute' => (int) env('ORDERMENTUM_STOCK_RPM', 40),
-        'order_requests_per_minute' => (int) env('ORDERMENTUM_ORDER_RPM', 20),
+        // More than one pending item goes by bulk PATCH /v1/items (preferred), in chunks of this size.
+        'bulk_push' => (bool) env('ORDERMENTUM_BULK_PUSH', true),
+        'bulk_chunk' => (int) env('ORDERMENTUM_BULK_CHUNK', 50),
+        // Pushes wait while order events are being ingested (so a push never overwrites a
+        // decrement BWMS has not seen); an event older than this is treated as stuck.
+        'ingest_wait_minutes' => (int) env('ORDERMENTUM_INGEST_WAIT_MINUTES', 10),
+
+        /*
+         * Webhook signature (Ordermentum signs webhooks; header name and algorithm
+         * unconfirmed, asked 2026-10-27). Modes: report (check and record, never
+         * reject), enforce (reject invalid), off. The path token and re-fetching
+         * the order stay the guard until the scheme is confirmed.
+         */
+        'webhook_signature' => [
+            'mode' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_MODE', 'report'),
+            'header' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_HEADER'),
+            'secret' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_SECRET'),
+            'algorithm' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_ALGO', 'sha256'),
+        ],
 
         /*
          * Where an order's line items and their fields are. Line items and

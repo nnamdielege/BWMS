@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Sync;
 use App\Http\Controllers\Controller;
 use App\Integrations\Ordermentum\OrderInbox;
 use App\Jobs\ProcessOrdermentumOrder;
-use App\Jobs\PushChannelStock;
+use App\Jobs\PushOrdermentumStock;
 use App\Models\ChannelListing;
 use App\Models\ChannelUnmappedVariant;
 use App\Models\IntegrationInbox;
@@ -38,7 +38,8 @@ class SyncController extends Controller
                 'push_enabled' => (bool) config('bwms.ordermentum.push_enabled'),
                 'ingest_enabled' => (bool) config('bwms.ordermentum.ingest_enabled'),
                 'webhook_configured' => filled(config('bwms.ordermentum.webhook_token')),
-                'auth_mode' => filled(config('services.ordermentum.api_key')) ? 'api_key' : 'password (deprecated 1 Jan 2027)',
+                'api_key_set' => filled(config('services.ordermentum.api_key')),
+                'signature_mode' => config('bwms.ordermentum.webhook_signature.mode'),
                 'variant_fields' => config('bwms.ordermentum.order_mapping.variant'),
             ],
             'health' => [
@@ -54,9 +55,12 @@ class SyncController extends Controller
             'mismatches' => (clone $listings)->where('sync_enabled', true)->whereNotNull('last_checked_at')
                 ->whereColumn('last_remote_qty', '!=', 'last_pushed_qty')->with('product:id,sku,name')->limit(50)->get()
                 ->map(fn (ChannelListing $l) => $this->listingRow($l)),
+            // Ordermentum only decrements tracked items at order placement (confirmed 2026-10-27).
+            'untracked' => (clone $listings)->whereIn('remote_status', ['untracked', 'missing'])->with('product:id,sku,name')->orderBy('id')->limit(200)->get()
+                ->map(fn (ChannelListing $l) => $this->listingRow($l)),
             'inbox' => IntegrationInbox::where('channel', self::CHANNEL)
                 ->when($filters['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
-                ->latest('id')->limit(50)->get(['id', 'event', 'external_id', 'status', 'attempts', 'error', 'created_at', 'processed_at']),
+                ->latest('id')->limit(50)->get(['id', 'event', 'external_id', 'status', 'signature_status', 'attempts', 'error', 'created_at', 'processed_at']),
             'inboxCounts' => IntegrationInbox::where('channel', self::CHANNEL)->groupBy('status')->selectRaw('status, COUNT(*) AS n')->pluck('n', 'status'),
             'unmappedVariants' => $unmappedVariants->map(fn (ChannelUnmappedVariant $v) => [
                 'id' => $v->id, 'external_variant_id' => $v->external_variant_id, 'external_sku' => $v->external_sku, 'name' => $v->name,
@@ -79,7 +83,10 @@ class SyncController extends Controller
 
     public function push(ChannelListing $listing): RedirectResponse
     {
-        PushChannelStock::dispatch($listing->product_id, true);
+        if (! config('bwms.ordermentum.push_enabled')) {
+            return back()->with('error', 'Stock push is switched off (ORDERMENTUM_PUSH_ENABLED).');
+        }
+        PushOrdermentumStock::request([$listing->product_id], force: true);
         Audit::record('sync_push_requested', $listing);
 
         return back()->with('success', 'Push queued.');
@@ -88,7 +95,7 @@ class SyncController extends Controller
     public function retryFailed(): RedirectResponse
     {
         $ids = ChannelListing::where('channel', self::CHANNEL)->whereNotNull('last_error')->distinct()->pluck('product_id');
-        $ids->each(fn ($id) => PushChannelStock::dispatch($id, true));
+        PushOrdermentumStock::request($ids, force: true);
         Audit::record('sync_retry_all', meta: ['products' => $ids->count()]);
 
         return back()->with('success', "{$ids->count()} push(es) queued.");
@@ -98,7 +105,7 @@ class SyncController extends Controller
     {
         $listing->update($request->validate(['sync_enabled' => ['required', 'boolean'], 'safety_buffer' => ['sometimes', 'integer', 'min:0', 'max:100000']]));
         if ($listing->sync_enabled) {
-            PushChannelStock::dispatch($listing->product_id, true);
+            PushOrdermentumStock::request([$listing->product_id], force: true);
         }
 
         return back()->with('success', 'Listing saved.');
@@ -183,6 +190,8 @@ class SyncController extends Controller
             'last_error' => $l->last_error,
             'last_remote_qty' => $l->last_remote_qty,
             'last_checked_at' => $l->last_checked_at?->toIso8601String(),
+            'remote_status' => $l->remote_status,
+            'pending' => $l->push_requested_at !== null,
         ];
     }
 }

@@ -6,10 +6,8 @@ use App\Events\OrderOversold;
 use App\Integrations\Ordermentum\OrdermentumClient;
 use App\Support\Audit;
 use Illuminate\Auth\Events\Login;
-use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -32,10 +30,6 @@ class AppServiceProvider extends ServiceProvider
             $event->user->forceFill(['last_login_at' => now()])->saveQuietly();
             Audit::record('login', $event->user, userId: $event->user->getAuthIdentifier());
         });
-
-        // Client-side request budgets for Ordermentum (NFR-1); queued jobs wait their turn.
-        RateLimiter::for('ordermentum-stock', fn () => Limit::perMinute(config('bwms.ordermentum.stock_requests_per_minute')));
-        RateLimiter::for('ordermentum-orders', fn () => Limit::perMinute(config('bwms.ordermentum.order_requests_per_minute')));
 
         // D-3 alert. The dashboard lists flagged orders; email/Slack alerts are Phase 2 (B6).
         Event::listen(OrderOversold::class, fn (OrderOversold $e) => Log::warning('Order accepted beyond available stock', ['order_id' => $e->orderId, 'skus' => $e->skus]));

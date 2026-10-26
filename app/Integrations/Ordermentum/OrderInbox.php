@@ -17,7 +17,7 @@ class OrderInbox
     public const ORDER_EVENTS = ['order_created', 'order_updated', 'poll'];
 
     /** @return IntegrationInbox|null null when this exact event was already stored */
-    public function record(string $event, ?string $orderId, ?string $updatedAt, string $rawPayload, array $headers = []): ?IntegrationInbox
+    public function record(string $event, ?string $orderId, ?string $updatedAt, string $rawPayload, array $headers = [], ?string $signature = null): ?IntegrationInbox
     {
         $dedupe = hash('sha256', implode('|', [$event, $orderId, $updatedAt ?? hash('sha256', $rawPayload)]));
         $isOrder = in_array($event, self::ORDER_EVENTS, true) && filled($orderId);
@@ -34,6 +34,7 @@ class OrderInbox
             'dedupe_key' => $dedupe,
             'status' => $status,
             'headers' => json_encode($headers),
+            'signature_status' => $signature,
             'payload' => $rawPayload,
             'created_at' => now(),
             'updated_at' => now(),

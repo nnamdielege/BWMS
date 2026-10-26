@@ -22,15 +22,18 @@ type Listing = {
     last_error: string | null;
     last_remote_qty: number | null;
     last_checked_at: string | null;
+    remote_status: string | null;
+    pending: boolean;
 };
 type Suggestion = { id: number; sku: string; name: string; units: { id: number; name: string; base_qty: number; sellable: boolean }[] };
 
 const props = defineProps<{
-    switches: { push_enabled: boolean; ingest_enabled: boolean; webhook_configured: boolean; auth_mode: string; variant_fields: string[] };
+    switches: { push_enabled: boolean; ingest_enabled: boolean; webhook_configured: boolean; api_key_set: boolean; signature_mode: string; variant_fields: string[] };
     health: { last_push_ok: string | null; last_order_ok: string | null; failures_24h: number; queue_depth: number; listings: number; listings_enabled: number };
     failures: Listing[];
     mismatches: Listing[];
-    inbox: { id: number; event: string; external_id: string | null; status: string; attempts: number; error: string | null; created_at: string }[];
+    untracked: Listing[];
+    inbox: { id: number; event: string; external_id: string | null; status: string; signature_status: string | null; attempts: number; error: string | null; created_at: string }[];
     inboxCounts: Record<string, number>;
     unmappedVariants: { id: number; external_variant_id: string; external_sku: string | null; name: string | null; occurrences: number; last_seen_at: string; suggestion: Suggestion | null }[];
     unmappedProducts: { total: number; rows: { id: number; sku: string; name: string }[] };
@@ -85,7 +88,8 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                 <div class="rounded-lg border p-3">
                     <div class="text-sm text-muted-foreground">Failures (24h) / queue</div>
                     <div class="font-semibold tabular-nums" :class="{ 'text-red-700': health.failures_24h }">{{ health.failures_24h }} / {{ health.queue_depth }}</div>
-                    <div class="text-xs text-muted-foreground">Auth: {{ switches.auth_mode }}</div>
+                    <div class="text-xs" :class="switches.api_key_set ? 'text-muted-foreground' : 'text-red-700'">API token: {{ switches.api_key_set ? 'set' : 'not set' }}</div>
+                    <div class="text-xs text-muted-foreground">Webhook signatures: {{ switches.signature_mode }}</div>
                 </div>
                 <div class="rounded-lg border p-3">
                     <div class="text-sm text-muted-foreground">Listings enabled</div>
@@ -126,6 +130,20 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                 </table>
             </section>
 
+            <section v-if="untracked.length" class="rounded-lg border border-amber-300 p-4">
+                <h2 class="mb-1 font-semibold text-amber-800">Stock tracking off in Ordermentum ({{ untracked.length }})</h2>
+                <p class="mb-2 text-sm text-muted-foreground">
+                    Ordermentum only decrements tracked items when an order is placed. Turn tracking on for these in Ordermentum (found by
+                    <code>om:probe tracking</code> and the nightly check).
+                </p>
+                <ul class="columns-2 text-sm md:columns-3">
+                    <li v-for="l in untracked" :key="l.id">
+                        <span class="font-mono">{{ l.product?.sku }}</span>
+                        <span class="ml-1 text-muted-foreground">{{ l.remote_status === 'missing' ? '(not found)' : '' }}</span>
+                    </li>
+                </ul>
+            </section>
+
             <section v-if="unmappedVariants.length" class="rounded-lg border border-amber-300 p-4">
                 <h2 class="mb-2 font-semibold text-amber-800">Ordermentum variants needing mapping</h2>
                 <p class="mb-2 text-sm text-muted-foreground">Orders containing these are held. Mapping one replays them.</p>
@@ -163,13 +181,14 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                     </Button>
                 </div>
                 <table class="w-full text-left text-sm">
-                    <thead class="text-muted-foreground"><tr><th class="py-1">#</th><th>Event</th><th>Order</th><th>Status</th><th>Tries</th><th>Error</th><th>Received</th><th></th></tr></thead>
+                    <thead class="text-muted-foreground"><tr><th class="py-1">#</th><th>Event</th><th>Order</th><th>Status</th><th>Signature</th><th>Tries</th><th>Error</th><th>Received</th><th></th></tr></thead>
                     <tbody>
                         <tr v-for="i in inbox" :key="i.id" class="border-t align-top">
                             <td class="py-1 tabular-nums">{{ i.id }}</td>
                             <td>{{ i.event }}</td>
                             <td class="font-mono text-xs">{{ i.external_id }}</td>
                             <td>{{ i.status }}</td>
+                            <td class="text-xs" :class="{ 'text-red-700': i.signature_status === 'invalid' }">{{ i.signature_status ?? '' }}</td>
                             <td class="tabular-nums">{{ i.attempts }}</td>
                             <td class="max-w-md text-xs text-red-700">{{ i.error }}</td>
                             <td class="whitespace-nowrap">{{ when(i.created_at) }}</td>
@@ -177,7 +196,7 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                                 <Button v-if="canManage && i.external_id && i.status !== 'ignored'" size="sm" variant="ghost" @click="post(route('sync.inbox.replay', i.id))">Replay</Button>
                             </td>
                         </tr>
-                        <tr v-if="!inbox.length"><td colspan="8" class="py-2 text-muted-foreground">Nothing received yet.</td></tr>
+                        <tr v-if="!inbox.length"><td colspan="9" class="py-2 text-muted-foreground">Nothing received yet.</td></tr>
                     </tbody>
                 </table>
             </section>
@@ -205,7 +224,10 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                             </td>
                             <td class="text-right tabular-nums">{{ l.last_pushed_qty ?? '—' }}</td>
                             <td class="whitespace-nowrap">{{ when(l.last_pushed_at) }}</td>
-                            <td :class="{ 'text-red-700': l.last_error }">{{ l.last_error ? 'error' : l.last_response_code ?? '' }}</td>
+                            <td :class="{ 'text-red-700': l.last_error }" :title="l.last_error ?? ''">
+                                {{ l.pending ? 'pending' : l.last_error ? 'error' : (l.last_response_code ?? '') }}
+                                <span v-if="l.remote_status === 'untracked'" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-900">untracked</span>
+                            </td>
                             <td class="text-right"><Button v-if="canManage && l.sync_enabled" size="sm" variant="ghost" @click="post(route('sync.push', l.id))">Push</Button></td>
                         </tr>
                     </tbody>

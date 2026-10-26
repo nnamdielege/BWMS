@@ -3,10 +3,12 @@
 namespace App\Integrations\Ordermentum;
 
 use App\Enums\OrderChannel;
+use App\Jobs\PushOrdermentumStock;
 use App\Models\ChannelListing;
 use App\Models\ChannelUnmappedVariant;
 use App\Models\Customer;
 use App\Models\IntegrationInbox;
+use App\Models\Order;
 use App\Models\SyncAttempt;
 use App\Services\Orders\ChannelOrderData;
 use App\Services\Orders\OrderService;
@@ -16,8 +18,12 @@ use App\Services\Stock\Exceptions\InvalidMovement;
  * Ordermentum order -> BWMS order (spec B3.2 inbound). The webhook is only a
  * hint: the order is fetched from the API, which is authoritative and defeats
  * spoofed webhooks. The upsert is full-state and versioned by updatedAt, so
- * replays and out-of-order deliveries are harmless. Ordermentum orders are
- * always accepted (D-3); shortfalls flag the order oversold.
+ * replays and out-of-order deliveries are harmless.
+ *
+ * Ordermentum decrements its own tracked stock at placement and blocks orders
+ * beyond it (confirmed 2026-10-27), so an order here is only a BWMS reservation
+ * and is never deducted in Ordermentum again. Orders are still always accepted
+ * (D-3) as a safety net for sync lag; a shortfall flags the order oversold.
  */
 class OrderIngestor
 {
@@ -55,6 +61,9 @@ class OrderIngestor
                 $this->rememberUnmapped($line);
             }
 
+            // meta.variants: the order's mapped SKUs are not pushed while it waits (a push would hide its decrement).
+            $inbox?->forceFill(['meta' => ['variants' => array_values(array_unique(array_column($mapped['lines'], 'variant_id')))]])->save();
+
             return $this->finish($inbox, IntegrationInbox::STATUS_NEEDS_MAPPING,
                 'Unmapped variant(s): '.implode(', ', array_unique(array_column($unmapped, 'variant_id'))).'. Map them on the sync screen, then replay.');
         }
@@ -76,11 +85,19 @@ class OrderIngestor
             requestedDeliveryDate: $mapped['delivery_date'],
         );
 
+        $existing = Order::where('channel', OrderChannel::Ordermentum)->where('external_ref', $mapped['external_ref'])->first();
         try {
-            $this->orders->upsertFromChannel($data);
+            $order = $this->orders->upsertFromChannel($data);
         } catch (InvalidMovement $e) {
             // e.g. a cancellation for an order we never saw, or a change to a dispatched order
             return $this->finish($inbox, IntegrationInbox::STATUS_IGNORED, $e->getMessage());
+        }
+
+        // An edit or cancellation may or may not have restored Ordermentum's own stock
+        // (unconfirmed, asked 2026-10-27): re-send the absolute figure for every SKU involved.
+        if ($existing) {
+            $productIds = $order->lines()->pluck('product_id')->merge($existing->lines()->pluck('product_id'));
+            PushOrdermentumStock::request($productIds, force: true);
         }
 
         return $this->finish($inbox, IntegrationInbox::STATUS_PROCESSED, null);

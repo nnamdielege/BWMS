@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\PushChannelStock;
+use App\Jobs\PushOrdermentumStock as PushJob;
 use App\Jobs\ReconcileChannelListing;
 use App\Models\ChannelListing;
 use Illuminate\Console\Command;
@@ -29,7 +29,7 @@ class PushOrdermentumStock extends Command
         $listings = ChannelListing::where('channel', 'ordermentum')->where('sync_enabled', true);
 
         return match ($this->argument('action')) {
-            'push' => $this->queued($listings->distinct()->pluck('product_id')->each(fn ($id) => PushChannelStock::dispatch($id, true))->count(), 'push'),
+            'push' => $this->queued(tap($listings->distinct()->pluck('product_id'), fn ($ids) => PushJob::request($ids, force: true))->count(), 'product push'),
             'reconcile' => $this->queued($listings->pluck('id')->each(fn ($id) => ReconcileChannelListing::dispatch($id))->count(), 'check'),
             default => tap(self::FAILURE, fn () => $this->error('Action must be push or reconcile.')),
         };

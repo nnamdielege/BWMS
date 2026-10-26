@@ -10,7 +10,6 @@ use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Carbon;
 use Throwable;
@@ -49,7 +48,6 @@ class ProcessOrdermentumOrder implements ShouldBeUniqueUntilProcessing, ShouldQu
     {
         return [
             (new WithoutOverlapping('om-order:'.$this->orderId))->releaseAfter(10)->expireAfter(180),
-            new RateLimited('ordermentum-orders'),
         ];
     }
 

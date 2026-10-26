@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia;
 use Tests\Support\OrdermentumFixtures;
@@ -262,5 +263,52 @@ class OrdermentumIngestTest extends TestCase
         Queue::assertPushed(ProcessOrdermentumOrder::class);
         Http::assertNothingSent();
         $this->assertDatabaseHas('audit_logs', ['event' => 'sync_inbox_replayed']);
+    }
+
+    public function test_webhook_signature_is_checked_and_recorded_but_only_enforced_when_configured()
+    {
+        Queue::fake();
+        Log::spy();
+        config(['bwms.ordermentum.webhook_signature' => ['mode' => 'report', 'header' => 'X-OM-Signature', 'secret' => 'sig-secret', 'algorithm' => 'sha256']]);
+        $body = json_encode(['event' => 'order_created', 'data' => ['id' => 'o-1', 'updatedAt' => 'u1']]);
+        $post = fn (string $body, array $headers) => $this->call('POST', '/webhooks/ordermentum/hook-secret-123', [], [], [], array_merge(['CONTENT_TYPE' => 'application/json'], $headers), $body);
+
+        $post($body, ['HTTP_X_OM_SIGNATURE' => 'sha256='.hash_hmac('sha256', $body, 'sig-secret')])->assertOk();
+        $other = json_encode(['event' => 'order_updated', 'data' => ['id' => 'o-1', 'updatedAt' => 'u2']]);
+        $post($other, ['HTTP_X_OM_SIGNATURE' => 'forged'])->assertOk(); // report mode: stored, flagged
+
+        $this->assertSame(['valid', 'invalid'], IntegrationInbox::orderBy('id')->pluck('signature_status')->all());
+        Log::shouldHaveReceived('info')->withArgs(fn ($msg, $ctx) => $msg === 'Ordermentum webhook received'
+            && isset($ctx['headers']['x-om-signature']) && ! str_contains(json_encode($ctx), 'order_created') && ! str_contains(json_encode($ctx), 'hook-secret-123'));
+
+        config(['bwms.ordermentum.webhook_signature.mode' => 'enforce']);
+        $third = json_encode(['event' => 'order_updated', 'data' => ['id' => 'o-1', 'updatedAt' => 'u3']]);
+        $post($third, ['HTTP_X_OM_SIGNATURE' => 'forged'])->assertStatus(401);
+        $this->assertSame(2, IntegrationInbox::count());
+    }
+
+    public function test_held_order_records_its_variants_and_an_edit_forces_a_repush_of_its_skus()
+    {
+        config(['bwms.ordermentum.push_enabled' => true]);
+        Queue::fake();
+        $p = Product::factory()->create();
+        $this->stockIn($p, 10);
+        $listing = $this->listing($p, 'var-1');
+
+        $inbox = IntegrationInbox::create(['channel' => 'ordermentum', 'event' => 'order_created', 'external_id' => 'o-2', 'dedupe_key' => str_repeat('d', 64), 'payload' => '{}']);
+        $this->fakeOrder($this->omOrder('o-2', [['variantId' => 'var-1', 'quantity' => 1], ['variantId' => 'var-new', 'quantity' => 1]]));
+        app(OrderIngestor::class)->ingest('o-2', $inbox);
+        $this->assertSame(['var-1', 'var-new'], $inbox->fresh()->meta['variants']);
+
+        Http::fake(['api.om.test/v1/orders/o-3*' => Http::sequence()
+            ->push($this->omOrder('o-3', [['id' => 'a', 'variantId' => 'var-1', 'quantity' => 2]], '2026-11-02T01:00:00.000Z'))
+            ->push($this->omOrder('o-3', [['id' => 'a', 'variantId' => 'var-1', 'quantity' => 1]], '2026-11-02T02:00:00.000Z'))]);
+        app(OrderIngestor::class)->ingest('o-3');
+        ChannelListing::query()->update(['push_requested_at' => null, 'push_force' => false]);
+
+        app(OrderIngestor::class)->ingest('o-3'); // edit: Ordermentum may or may not have restored stock, so re-send ours
+
+        $this->assertTrue($listing->fresh()->push_force);
+        $this->assertNotNull($listing->fresh()->push_requested_at);
     }
 }
