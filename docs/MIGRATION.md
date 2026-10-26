@@ -11,7 +11,7 @@
 | `products.ordermentum_*` | `channel_listings` (channel `ordermentum`) | **`sync_enabled = false`**: nothing is pushed to Ordermentum until listings are switched on at cutover. |
 | `suppliers`, `customers` | suppliers, customers | Address lines are joined. Mobile, tax ID, payment terms and credit limit go to notes. |
 | `purchase_orders` + items | purchase orders + lines | History only. `received` → closed, `cancelled` → cancelled, `draft`/`pending` → closed (or draft/sent with `--open-legacy-pos`). Stored totals are kept as recorded; mismatches are reported. **No receipts and no stock movements** (legacy receiving never moved stock, audit C-1). |
-| `inventory` | nothing | Shown in the report only. Legacy figures are Ordermentum's oversold numbers (audit C-3). |
+| `inventory` | nothing | Shown in the report only. Legacy figures are unusable: the negatives are likely legacy BWMS writes or untracked products (audit C-3, re-classified 2026-10-27). |
 | cutover stocktake CSV | `opening_balance` movements | The only source of stock (D-7). |
 | `users` | nothing | Listed in the report. Invite them from Admin > Users. |
 
@@ -39,7 +39,7 @@ php artisan bwms:migrate-legacy --commit --opening-balances=stocktake.csv --cuto
 | Option | Effect |
 |---|---|
 | `--open-legacy-pos` | Draft/pending legacy POs stay open (draft/sent) so they can be received against. |
-| `--with-ordermentum` | Adds Ordermentum's current `available` per variant to the report. One read-only GET per variant; needs Ordermentum credentials. |
+| `--with-ordermentum` | Adds Ordermentum's current `available` per variant to the report. One read-only GET per variant; needs `ORDERMENTUM_API_KEY`. |
 | `--portal=<connection>` | Adds the portal's `stock_qty` per SKU (configure the `portal` connection with a read-only user). |
 | `--site=CODE` | Site for POs and opening balances (default: the configured default site). |
 
