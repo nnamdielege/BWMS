@@ -9,7 +9,7 @@ import { type BreadcrumbItem } from '@/types';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
-interface UnitInput {
+type UnitInput = {
     id?: number;
     name: string;
     code: string | null;
@@ -19,7 +19,7 @@ interface UnitInput {
     default_purchase: boolean;
     default_sale: boolean;
     barcodes: string[];
-}
+};
 
 interface ProductData {
     id: number;
