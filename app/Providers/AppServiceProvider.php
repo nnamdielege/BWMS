@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Events\OrderOversold;
+use App\Integrations\Ordermentum\OrdermentumClient;
 use App\Support\Audit;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
@@ -16,7 +17,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(OrdermentumClient::class, fn () => new OrdermentumClient(config('services.ordermentum')));
     }
 
     /**
