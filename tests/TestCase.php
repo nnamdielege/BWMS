@@ -4,12 +4,29 @@ namespace Tests;
 
 use App\Authorization\Permissions;
 use App\Models\User;
+use App\Support\DatabaseSafety;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Foundation\Testing\DatabaseTruncation;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Spatie\Permission\Models\Role;
 
 abstract class TestCase extends BaseTestCase
 {
+    /** Database traits (RefreshDatabase, DatabaseTruncation, DatabaseMigrations) only ever touch a *_test database. */
+    protected function setUpTraits()
+    {
+        $uses = class_uses_recursive(static::class);
+        foreach ([RefreshDatabase::class, DatabaseTruncation::class, DatabaseMigrations::class] as $trait) {
+            if (isset($uses[$trait])) {
+                DatabaseSafety::assertDestructiveAllowed(class_basename($trait));
+            }
+        }
+
+        return parent::setUpTraits();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

@@ -2,6 +2,7 @@
 
 namespace Tests\Support;
 
+use App\Support\DatabaseSafety;
 use PDO;
 
 /**
@@ -11,7 +12,15 @@ use PDO;
  */
 trait LegacyFixture
 {
-    protected string $legacyDb = 'bwms_legacy_testing';
+    protected string $legacyDb = 'bwms_legacy_test';
+
+    /** The fixture database is dropped and recreated: it must be a *_test name (DatabaseSafety). */
+    private function assertFixtureDbIsDisposable(): void
+    {
+        if (! str_ends_with($this->legacyDb, DatabaseSafety::SUFFIX)) {
+            throw new \RuntimeException("Refusing to drop {$this->legacyDb}: fixture databases must end in _test.");
+        }
+    }
 
     protected function legacyPdo(?string $db = null): PDO
     {
@@ -24,6 +33,7 @@ trait LegacyFixture
     /** Recreates the fixture DB and points the `legacy` connection at it. */
     protected function buildLegacyFixture(?callable $tweak = null): void
     {
+        $this->assertFixtureDbIsDisposable();
         $this->legacyPdo()->exec("DROP DATABASE IF EXISTS {$this->legacyDb}; CREATE DATABASE {$this->legacyDb} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         $pdo = $this->legacyPdo($this->legacyDb);
 
@@ -83,6 +93,7 @@ trait LegacyFixture
 
     protected function dropLegacyFixture(): void
     {
+        $this->assertFixtureDbIsDisposable();
         app('db')->purge('legacy');
         $this->legacyPdo()->exec("DROP DATABASE IF EXISTS {$this->legacyDb}");
     }

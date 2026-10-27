@@ -6,7 +6,9 @@ use App\Events\OrderOversold;
 use App\Integrations\Ordermentum\OrdermentumClient;
 use App\Integrations\Portal\PortalClient;
 use App\Support\Audit;
+use App\Support\DatabaseSafety;
 use Illuminate\Auth\Events\Login;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
@@ -27,6 +29,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // migrate:fresh/refresh/reset/rollback and db:wipe only run on a *_test database.
+        DB::prohibitDestructiveCommands(! DatabaseSafety::destructiveAllowed());
+
         // Every completed sign-in (password-only, or after the 2FA challenge).
         Event::listen(Login::class, function (Login $event) {
             $event->user->forceFill(['last_login_at' => now()])->saveQuietly();

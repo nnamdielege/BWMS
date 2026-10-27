@@ -11,13 +11,16 @@ Laravel 12 · Inertia · Vue 3 (TypeScript) · MySQL/MariaDB.
 ```bash
 composer install && npm ci
 cp .env.example .env && php artisan key:generate
-# create databases bwms_next and bwms_next_testing (utf8mb4)
+cp .env.testing.example .env.testing   # then set APP_KEY (php artisan key:generate --show)
+# create databases bwms_next and bwms_next_test (utf8mb4)
 php artisan migrate --seed          # roles, default site + bins, reason codes
 php artisan bwms:invite-admin you@example.com "Your Name"   # prints a one-time link
 npm run dev && php artisan serve --port=8001
 ```
 
 There is no registration and no default password: every user is invited.
+
+**Database safety.** `migrate:fresh/refresh/reset/rollback`, `db:wipe`, `RefreshDatabase` and `DatabaseTruncation` refuse unless the database name ends in `_test` (`App\Support\DatabaseSafety`). Tests run on `bwms_next_test` (forced in `phpunit.xml`, also in `.env.testing`). On any other database, restore a backup instead of rolling back.
 
 ## Quality gates
 
