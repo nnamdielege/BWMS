@@ -149,7 +149,12 @@ class LegacyImporter
                 continue;
             }
 
-            $sku = strtoupper(trim($row->sku));
+            // Case/whitespace normalisation only when that yields a valid SKU. An SKU that
+            // is still invalid (e.g. contains a space) is kept exactly as-is and flagged:
+            // renaming it is a human decision.
+            $normalised = strtoupper(trim($row->sku));
+            $valid = preg_match('/^[A-Z0-9][A-Z0-9._\-\/]*$/', $normalised) === 1;
+            $sku = $valid ? $normalised : $row->sku;
             if (Product::withTrashed()->where('sku', $sku)->exists()) {
                 $this->report->issue('Conflicts', "Product SKU {$sku} (legacy #{$row->id}) already exists in BWMS without this legacy ID. Not imported.");
                 $this->report->count('products', 'skipped');
@@ -159,8 +164,8 @@ class LegacyImporter
             if ($sku !== $row->sku) {
                 $this->report->issue('SKUs changed on import', "\"{$row->sku}\" imported as {$sku} (uppercase, trimmed).");
             }
-            if (! preg_match('/^[A-Z0-9][A-Z0-9._\-\/]*$/', $sku)) {
-                $this->report->issue('SKUs to fix by hand', "{$sku}: not a valid SKU format (letters, digits, . _ - / only). Editing this product will ask for a new SKU.");
+            if (! $valid) {
+                $this->report->issue('SKUs to fix by hand', "\"{$row->sku}\" (legacy #{$row->id}): not a valid SKU (letters, digits, . _ - / only). Imported unchanged; rename it in BWMS (editing the product asks for a valid SKU), and check Ordermentum/portal references.");
             }
 
             $product = new Product([

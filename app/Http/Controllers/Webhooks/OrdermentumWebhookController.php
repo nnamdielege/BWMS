@@ -27,8 +27,8 @@ class OrdermentumWebhookController extends Controller
         $headers = collect($request->headers->all())->except(['authorization', 'cookie', 'php-auth-pw'])
             ->map(fn ($v) => implode(', ', $v))->all();
         $result = $signature->check($request);
-        // Headers only (never the body or the path token), to identify Ordermentum's signature header.
-        Log::info('Ordermentum webhook received', ['headers' => $headers, 'signature' => $result]);
+        // Header names only (no values, body or path token), to spot Ordermentum's signature header.
+        Log::info('Ordermentum webhook received', ['header_names' => array_keys($headers), 'signature' => $result]);
 
         if ($signature->shouldReject($result)) {
             return response()->json(['error' => 'Invalid signature.'], 401);

@@ -73,9 +73,9 @@ class ReceivingTest extends TestCase
         $this->assertSame('2.0000', (string) $movement->unit_cost); // $24 / 12
         $this->assertSame('receipt', $movement->source_type);
 
-        $this->receive($po, ['qty_accepted_base' => 72, 'location_id' => $this->bin('RECEIVING')->id])->assertSessionHasNoErrors();
+        $this->receive($po, ['qty_accepted_base' => 72, 'location_id' => $this->receivingBin()->id])->assertSessionHasNoErrors();
         $this->assertSame(PurchaseOrderStatus::Received, $po->fresh()->status);
-        $this->assertSame(72, $this->balance($product, $this->bin('RECEIVING')));
+        $this->assertSame(72, $this->balance($product, $this->receivingBin()));
     }
 
     public function test_receiving_requires_a_sent_po()
@@ -219,14 +219,14 @@ class ReceivingTest extends TestCase
 
         $admin = $this->userWithRole(Permissions::ROLE_ADMIN);
         $this->actingAs($admin)->put(route('locations.update', $site), [
-            'type' => 'site', 'code' => $site->code, 'name' => $site->name, 'is_active' => true, 'receive_location_id' => $this->bin('RECEIVING')->id,
+            'type' => 'site', 'code' => $site->code, 'name' => $site->name, 'is_active' => true, 'receive_location_id' => $this->receivingBin()->id,
         ])->assertSessionHasNoErrors();
 
         $po = $this->sentPo();
         $product = $po->lines->first()->product;
         $this->receive($po, ['qty_accepted_base' => 24])->assertSessionHasNoErrors();
 
-        $this->assertSame(24, $this->balance($product, $this->bin('RECEIVING')));
+        $this->assertSame(24, $this->balance($product, $this->receivingBin()));
         $this->assertSame(0, app(StockQuery::class)->sellableOnHand($product), 'Not sellable until put away');
     }
 
@@ -247,8 +247,8 @@ class ReceivingTest extends TestCase
 
     public function test_deactivated_landing_bin_falls_back_to_a_sellable_bin()
     {
-        $this->site()->update(['receive_location_id' => $this->bin('RECEIVING')->id]);
-        $this->bin('RECEIVING')->update(['is_active' => false]);
+        $this->site()->update(['receive_location_id' => $this->receivingBin()->id]);
+        $this->receivingBin()->update(['is_active' => false]);
 
         $po = $this->sentPo();
         $this->receive($po, ['qty_accepted_base' => 12])->assertSessionHasNoErrors();

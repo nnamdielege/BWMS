@@ -18,7 +18,7 @@ class LocationTest extends TestCase
         $this->seed(DefaultSiteSeeder::class);
 
         $this->assertSame(1, Location::where('type', 'site')->count());
-        $this->assertSame(['QUARANTINE', 'RECEIVING', 'STOCK'], Location::bins()->orderBy('code')->pluck('code')->all());
+        $this->assertSame(['QUARANTINE', 'STOCK'], Location::bins()->orderBy('code')->pluck('code')->all());
         $this->assertSame(['STOCK'], Location::sellable()->pluck('code')->all());
     }
 

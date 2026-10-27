@@ -56,7 +56,7 @@ class FefoAndAvailabilityTest extends TestCase
         $today = $this->batch($p, 'TODAY', '2026-11-10');  // still sellable today
         $this->stockIn($p, 5, $this->bin(), $expired);
         $this->stockIn($p, 3, $this->bin('QUARANTINE'), $today);
-        $this->stockIn($p, 2, $this->bin('RECEIVING'), $today);
+        $this->stockIn($p, 2, $this->receivingBin(), $today);
         $this->stockIn($p, 1, $this->bin(), $today);
 
         $result = app(FefoAllocator::class)->allocate($p, 4);

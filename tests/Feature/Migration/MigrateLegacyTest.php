@@ -218,4 +218,15 @@ class MigrateLegacyTest extends TestCase
         $this->expectException(QueryException::class); // 1792: read-only transaction
         DB::connection('legacy')->table('users')->insert(['id' => 2, 'name' => 'x', 'email' => 'x', 'is_active' => 1, 'password' => 'x']);
     }
+
+    public function test_sku_still_invalid_after_normalising_is_imported_unchanged_and_flagged()
+    {
+        $this->buildLegacyFixture(fn ($pdo) => $pdo->exec("UPDATE products SET sku = 'Tonic 200' WHERE id = 3"));
+
+        $this->migrate(['--commit' => true])->assertSuccessful();
+
+        $this->assertSame('Tonic 200', Product::where('legacy_id', 3)->value('sku'));
+        $this->assertStringContainsString('"Tonic 200" (legacy #3): not a valid SKU', $this->latestReport());
+        $this->assertStringNotContainsString('imported as TONIC 200', $this->latestReport());
+    }
 }

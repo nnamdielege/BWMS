@@ -33,6 +33,16 @@ trait StockFixtures
         return Location::where('parent_id', ($site ?? $this->site())->id)->where('code', $code)->firstOrFail();
     }
 
+    /** An optional, non-sellable RECEIVING bin (not seeded by default; D-14 put-away option). */
+    protected function receivingBin(?Location $site = null): Location
+    {
+        $site ??= $this->site();
+
+        return Location::firstOrCreate(['parent_id' => $site->id, 'code' => 'RECEIVING'], [
+            'type' => Location::TYPE_BIN, 'name' => 'Receiving dock', 'is_receiving' => true, 'is_sellable' => false, 'is_active' => true, 'sort_order' => 1,
+        ]);
+    }
+
     protected function reason(string $code): ReasonCode
     {
         return ReasonCode::where('code', $code)->firstOrFail();

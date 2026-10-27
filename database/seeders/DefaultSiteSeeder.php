@@ -22,11 +22,14 @@ class DefaultSiteSeeder extends Seeder
         self::seedStandardBins($site);
     }
 
-    /** RECEIVING, STOCK and QUARANTINE bins under a site (also used when adding sites). */
+    /**
+     * STOCK and QUARANTINE bins under a site (also used when adding sites). A
+     * RECEIVING bin for put-away is optional: add it on the Locations screen and
+     * select it as the site's landing bin (D-14).
+     */
     public static function seedStandardBins(Location $site): void
     {
         $bins = [
-            ['code' => 'RECEIVING', 'name' => 'Receiving dock', 'is_receiving' => true, 'is_sellable' => false, 'sort_order' => 1],
             ['code' => 'STOCK', 'name' => 'General stock', 'is_sellable' => true, 'sort_order' => 2],
             ['code' => 'QUARANTINE', 'name' => 'Quarantine / damaged', 'is_quarantine' => true, 'is_sellable' => false, 'sort_order' => 9],
         ];
@@ -38,7 +41,7 @@ class DefaultSiteSeeder extends Seeder
             );
         }
 
-        // Received stock lands in sellable STOCK by default; RECEIVING + put-away is opt-in per site.
+        // Received stock lands in sellable STOCK by default.
         if (! $site->receive_location_id) {
             $site->update(['receive_location_id' => Location::where('parent_id', $site->id)->where('code', 'STOCK')->value('id')]);
         }

@@ -280,7 +280,8 @@ class OrdermentumIngestTest extends TestCase
 
         $this->assertSame(['valid', 'invalid'], IntegrationInbox::orderBy('id')->pluck('signature_status')->all());
         Log::shouldHaveReceived('info')->withArgs(fn ($msg, $ctx) => $msg === 'Ordermentum webhook received'
-            && isset($ctx['headers']['x-om-signature']) && ! str_contains(json_encode($ctx), 'order_created') && ! str_contains(json_encode($ctx), 'hook-secret-123'));
+            && in_array('x-om-signature', $ctx['header_names'], true) && ! str_contains(json_encode($ctx), 'order_created')
+            && ! str_contains(json_encode($ctx), 'hook-secret-123') && ! str_contains(json_encode($ctx), hash_hmac('sha256', $body, 'sig-secret')));
 
         config(['bwms.ordermentum.webhook_signature.mode' => 'enforce']);
         $third = json_encode(['event' => 'order_updated', 'data' => ['id' => 'o-1', 'updatedAt' => 'u3']]);
