@@ -23,6 +23,8 @@ trait OrdermentumFixtures
             'bwms.ordermentum.push_enabled' => $switches['push'] ?? true,
             'bwms.ordermentum.ingest_enabled' => $switches['ingest'] ?? true,
             'bwms.ordermentum.webhook_token' => 'hook-secret-123',
+            'bwms.ordermentum.webhook_require_token' => true,
+            'bwms.ordermentum.webhook_signature' => ['mode' => 'enforce', 'header' => 'x-ordermentum-signature', 'secret' => 'sig-secret', 'algorithm' => 'sha256'],
         ]);
         $this->app->forgetInstance(OrdermentumClient::class);
         Sleep::fake(syncWithCarbon: true);

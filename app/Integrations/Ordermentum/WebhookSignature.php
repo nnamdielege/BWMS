@@ -5,16 +5,17 @@ namespace App\Integrations\Ordermentum;
 use Illuminate\Http\Request;
 
 /**
- * Ordermentum signs webhooks, but the header name and algorithm are not
- * confirmed yet (asked 2026-10-27). This checks an HMAC of the raw body
- * against a configurable header (hex or base64, optional "sha256=" prefix).
- * Until the scheme is confirmed it runs in "report" mode: results are recorded
- * on the inbox row and never reject a delivery; the path token and fetching
- * the order back from the API remain the guard.
+ * Ordermentum webhook signature (confirmed by Ordermentum support, 2026-10-27):
+ * header `x-ordermentum-signature` = HMAC-SHA256 of the raw body, keyed with the
+ * supplier's `sharedSecret` (GET /v1/suppliers/{supplierId}; `om:probe secret`).
+ * The digest is accepted hex- or base64-encoded (optionally "sha256=" prefixed);
+ * which one matched is recorded so the encoding can be pinned once seen live.
  */
 class WebhookSignature
 {
-    public const VALID = 'valid';
+    public const VALID_HEX = 'valid_hex';
+
+    public const VALID_BASE64 = 'valid_base64';
 
     public const INVALID = 'invalid';
 
@@ -24,9 +25,9 @@ class WebhookSignature
 
     public function check(Request $request): string
     {
-        $header = config('bwms.ordermentum.webhook_signature.header');
+        $header = (string) config('bwms.ordermentum.webhook_signature.header');
         $secret = (string) config('bwms.ordermentum.webhook_signature.secret');
-        if (blank($header) || $secret === '') {
+        if ($header === '' || $secret === '') {
             return self::UNCONFIGURED;
         }
 
@@ -34,17 +35,28 @@ class WebhookSignature
         if ($given === '') {
             return self::MISSING;
         }
-        $algo = (string) config('bwms.ordermentum.webhook_signature.algorithm');
-        $given = preg_replace('/^[a-z0-9]+=/i', '', $given);
-        $raw = hash_hmac($algo, $request->getContent(), $secret, true);
+        $given = preg_replace('/^sha256=/i', '', $given);
+        $raw = hash_hmac((string) config('bwms.ordermentum.webhook_signature.algorithm'), $request->getContent(), $secret, true);
 
-        return hash_equals(bin2hex($raw), strtolower($given)) || hash_equals(base64_encode($raw), $given)
-            ? self::VALID
-            : self::INVALID;
+        return match (true) {
+            hash_equals(bin2hex($raw), strtolower($given)) => self::VALID_HEX,
+            hash_equals(base64_encode($raw), $given) => self::VALID_BASE64,
+            default => self::INVALID,
+        };
+    }
+
+    public static function isValid(string $result): bool
+    {
+        return in_array($result, [self::VALID_HEX, self::VALID_BASE64], true);
+    }
+
+    public function enforced(): bool
+    {
+        return config('bwms.ordermentum.webhook_signature.mode') === 'enforce';
     }
 
     public function shouldReject(string $result): bool
     {
-        return config('bwms.ordermentum.webhook_signature.mode') === 'enforce' && $result !== self::VALID;
+        return $this->enforced() && ! self::isValid($result);
     }
 }

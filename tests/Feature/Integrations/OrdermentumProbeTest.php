@@ -232,4 +232,89 @@ class OrdermentumProbeTest extends TestCase
         $this->expectException(LogicException::class);
         DB::transaction(fn () => app(OrdermentumClient::class)->get('/v1/orders/x'));
     }
+
+    public function test_secret_reports_found_and_length_only_and_can_write_the_env_file()
+    {
+        $envDir = sys_get_temp_dir().'/bwms-env-'.uniqid();
+        File::ensureDirectoryExists($envDir);
+        File::put($envDir.'/'.$this->app->environmentFile(), "APP_NAME=BWMS\nORDERMENTUM_WEBHOOK_SECRET=old\n");
+        $this->app->useEnvironmentPath($envDir);
+        Http::fake(['api.om.test/v1/suppliers/sup-1' => Http::response(['id' => 'sup-1', 'name' => 'x', 'settings' => ['sharedSecret' => 'Sh4red-S3cret']])]);
+
+        $this->artisan('om:probe', ['what' => 'secret'])
+            ->expectsOutputToContain('sharedSecret: found (length 13)')
+            ->doesntExpectOutputToContain('Sh4red-S3cret')
+            ->assertSuccessful();
+        $this->assertStringContainsString('=old', File::get($envDir.'/'.$this->app->environmentFile()), 'Not written without --write-env');
+
+        $this->artisan('om:probe', ['what' => 'secret', '--write-env' => true])->doesntExpectOutputToContain('Sh4red-S3cret')->assertSuccessful();
+        $env = File::get($envDir.'/'.$this->app->environmentFile());
+        $this->assertStringContainsString('ORDERMENTUM_WEBHOOK_SECRET="Sh4red-S3cret"', $env);
+        $this->assertSame(1, substr_count($env, 'ORDERMENTUM_WEBHOOK_SECRET='));
+        File::deleteDirectory($envDir);
+        Http::assertSent(fn (Request $r) => $r->method() === 'GET');
+    }
+
+    public function test_write_test_refuses_without_confirm()
+    {
+        Http::fake();
+        $this->artisan('om:probe', ['what' => 'write-test', 'id' => 'v-1'])->expectsOutputToContain('--confirm')->assertFailed();
+        Http::assertNothingSent();
+    }
+
+    public function test_write_test_rewrites_the_same_value_through_put_and_patch()
+    {
+        Http::fake(['stock.om.test/*' => fn (Request $r) => $r->method() === 'GET'
+            ? Http::response(['available' => 7, 'tracked' => true, 'allowOversell' => false])
+            : Http::response(['ok' => true])]);
+
+        $this->artisan('om:probe', ['what' => 'write-test', 'id' => 'v-1', '--confirm' => true])
+            ->expectsTable(['Step', 'HTTP', 'available after', 'Value'], [
+                ['read', 200, 7, 'baseline'],
+                ['PUT (context-*)', 200, 7, 'unchanged'],
+                ['PUT (x-context-*)', 200, 7, 'unchanged'],
+                ['PATCH UPDATE', 200, 7, 'unchanged'],
+            ])
+            ->expectsOutputToContain('available stayed at 7')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r['available'] === 7 && $r['tracked'] === true && $r->hasHeader('context-id') && ! $r->hasHeader('x-context-id'));
+        Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r->hasHeader('x-context-id') && ! $r->hasHeader('context-id'));
+        Http::assertSent(fn (Request $r) => $r->method() === 'PATCH' && $r['actions'][0]['action'] === 'UPDATE' && $r['actions'][0]['quantity'] === 7);
+    }
+
+    public function test_write_test_stops_and_restores_if_the_figure_changes()
+    {
+        $reads = 0;
+        Http::fake(['stock.om.test/*' => function (Request $r) use (&$reads) {
+            if ($r->method() !== 'GET') {
+                return Http::response(['ok' => true]);
+            }
+
+            return Http::response(['available' => ++$reads === 1 ? 7 : 6, 'tracked' => true]);
+        }]);
+
+        $this->artisan('om:probe', ['what' => 'write-test', 'id' => 'v-1', '--confirm' => true])
+            ->expectsOutputToContain('Put the original 7 back')
+            ->assertFailed();
+
+        Http::assertNotSent(fn (Request $r) => $r->method() === 'PATCH'); // stopped after the first change
+        Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r['available'] === 7);
+    }
+
+    public function test_bulk_patch_calls_are_spaced_but_not_rate_capped()
+    {
+        config(['services.ordermentum.min_interval' => ['stock:PATCH' => 5]]);
+        $this->app->forgetInstance(OrdermentumClient::class);
+        Http::fake(['stock.om.test/*' => Http::response([])]);
+        $client = app(OrdermentumClient::class);
+
+        $client->patchStock('/v1/items', ['actions' => []]);
+        $client->patchStock('/v1/items', ['actions' => []]);
+        $client->putStock('/v1/items/a', ['available' => 1]); // other group: not spaced
+
+        Sleep::assertSleptTimes(1);
+        Sleep::assertSlept(fn ($duration) => $duration->totalMilliseconds >= 4900 && $duration->totalMilliseconds <= 5000);
+        Http::assertSentCount(3);
+    }
 }

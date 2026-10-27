@@ -21,13 +21,16 @@ return [
     'ordermentum' => [
         'push_enabled' => (bool) env('ORDERMENTUM_PUSH_ENABLED', false),
         'ingest_enabled' => (bool) env('ORDERMENTUM_INGEST_ENABLED', false),
-        // Long random token in the webhook path; the only authentication Ordermentum allows (B3.1).
+        // Secret path token. Optional once signatures are verified on a real event (set
+        // ORDERMENTUM_WEBHOOK_REQUIRE_TOKEN=false); only honoured while signatures are enforced.
         'webhook_token' => env('ORDERMENTUM_WEBHOOK_TOKEN'),
+        'webhook_require_token' => (bool) env('ORDERMENTUM_WEBHOOK_REQUIRE_TOKEN', true),
         // Site whose available stock is pushed and where Ordermentum orders are fulfilled.
         'site_code' => env('ORDERMENTUM_SITE_CODE', env('BWMS_DEFAULT_SITE_CODE', 'CLONTARF')),
         // A burst of stock changes becomes one push run after this delay.
         'debounce_seconds' => (int) env('ORDERMENTUM_DEBOUNCE_SECONDS', 10),
         // More than one pending item goes by bulk PATCH /v1/items (preferred), in chunks of this size.
+        // PATCH has no rate limit (Ordermentum, 2026-10-27); the client spaces calls 5s apart to stay polite.
         'bulk_push' => (bool) env('ORDERMENTUM_BULK_PUSH', true),
         'bulk_chunk' => (int) env('ORDERMENTUM_BULK_CHUNK', 50),
         // Pushes wait while order events are being ingested (so a push never overwrites a
@@ -35,16 +38,16 @@ return [
         'ingest_wait_minutes' => (int) env('ORDERMENTUM_INGEST_WAIT_MINUTES', 10),
 
         /*
-         * Webhook signature (Ordermentum signs webhooks; header name and algorithm
-         * unconfirmed, asked 2026-10-27). Modes: report (check and record, never
-         * reject), enforce (reject invalid), off. The path token and re-fetching
-         * the order stay the guard until the scheme is confirmed.
+         * Webhook signature (confirmed by Ordermentum, 2026-10-27): header
+         * x-ordermentum-signature = HMAC-SHA256(raw body, supplier sharedSecret from
+         * GET /v1/suppliers/{id}). Enforced: a missing or wrong signature is 401.
+         * Set the secret with `php artisan om:probe secret --write-env`.
          */
         'webhook_signature' => [
-            'mode' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_MODE', 'report'),
-            'header' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_HEADER'),
-            'secret' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_SECRET'),
-            'algorithm' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_ALGO', 'sha256'),
+            'mode' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_MODE', 'enforce'), // enforce | report
+            'header' => env('ORDERMENTUM_WEBHOOK_SIGNATURE_HEADER', 'x-ordermentum-signature'),
+            'secret' => env('ORDERMENTUM_WEBHOOK_SECRET'),
+            'algorithm' => 'sha256',
         ],
 
         /*

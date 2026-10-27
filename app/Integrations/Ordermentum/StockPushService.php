@@ -77,7 +77,7 @@ class StockPushService
      * @throws OrdermentumException on 429 beyond the client's wait, or connection failure (job retries)
      * @throws ChannelRetryableError on 5xx (job retries)
      */
-    public function pushPending(int $maxCalls = 10): array
+    public function pushPending(int $maxCalls = 3): array
     {
         $chunk = (int) config('bwms.ordermentum.bulk_chunk');
         $listings = ChannelListing::where('channel', self::CHANNEL)->where('sync_enabled', true)->whereNotNull('push_requested_at')
@@ -144,7 +144,7 @@ class StockPushService
     /** @param  list<array{0: ChannelListing, 1: int}>  $batch */
     private function patchMany(array $batch): void
     {
-        // UPDATE is assumed to set the quantity (spec B3.1, unconfirmed); the nightly check would expose otherwise.
+        // UPDATE sets the quantity (to be shown live by `om:probe write-test`); the nightly check would expose otherwise.
         $items = collect($batch)->map(fn ($pair) => [$pair[0], $pair[1], array_filter([
             'id' => $pair[0]->external_variant_id,
             'productId' => $pair[0]->external_product_id,

@@ -20,7 +20,7 @@ class RouteAuthorizationTest extends TestCase
         'invitations.show', 'invitations.accept',
         'two-factor.login', 'two-factor.login.store', // challenge after password; requires session login.id
         'storage.local',        // framework local-disk route (signed URLs only)
-        'webhooks.ordermentum', // secret path token (Ordermentum has no signing); only stores and queues
+        'webhooks.ordermentum', 'webhooks.ordermentum.signed', // HMAC signature (+ optional path token); only stores and queues
     ];
 
     /** Authenticated routes any active user may use (own account / landing page). */

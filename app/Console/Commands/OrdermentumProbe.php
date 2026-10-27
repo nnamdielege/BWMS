@@ -14,24 +14,27 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Read-only diagnostics against the live Ordermentum account (docs/om-probe.md).
- * Only GET requests reach Ordermentum. `tracking` stores what it reads on the
- * local channel listings; nothing is ever written to Ordermentum.
+ * Diagnostics against the live Ordermentum account (docs/om-probe.md). Every
+ * mode is read-only (GET) except `write-test`, which needs --confirm and only
+ * re-writes the value it just read. `tracking` stores what it reads on the local
+ * listings; `secret --write-env` writes the webhook secret to the local .env.
  */
 class OrdermentumProbe extends Command
 {
     protected $signature = 'om:probe
-        {what : order, stock, tracking or recent}
-        {id? : Ordermentum order ID (order) or variant ID (stock)}
+        {what : order, stock, tracking, recent, secret or write-test}
+        {id? : Ordermentum order ID (order) or variant ID (stock, write-test)}
         {--json : Print only the raw response body}
         {--structure : order: print field names and types only, plus line item ID/quantity values (no customer details)}
         {--no-include-lines : order: do not add includeLines=true}
         {--location= : stock: locationId query (default ORDERMENTUM_LOCATION_ID)}
         {--headers= : stock: context headers to send (plain, x, both); order: test each style against the first line variant}
         {--label= : stock: note recorded with the reading}
-        {--limit=5 : recent: how many orders to list}';
+        {--limit=5 : recent: how many orders to list}
+        {--write-env : secret: write ORDERMENTUM_WEBHOOK_SECRET to .env (the value is never printed)}
+        {--confirm : write-test: required; PUTs/PATCHes the value just read back to Ordermentum}';
 
-    protected $description = 'Read-only: inspect Ordermentum orders, stock items and stock tracking';
+    protected $description = 'Inspect Ordermentum orders, stock, tracking and the webhook secret (read-only, except write-test)';
 
     /** Keys worth highlighting when looking for line item product/variant IDs and quantities. */
     private const FIELD_PATTERN = '/product|variant|sku|quantity|qty/i';
@@ -41,7 +44,7 @@ class OrdermentumProbe extends Command
     public function handle(OrdermentumClient $client): int
     {
         $what = (string) $this->argument('what');
-        if (in_array($what, ['order', 'stock'], true) && blank($this->argument('id'))) {
+        if (in_array($what, ['order', 'stock', 'write-test'], true) && blank($this->argument('id'))) {
             return $this->failWith("om:probe {$what} needs an ID.");
         }
 
@@ -51,7 +54,9 @@ class OrdermentumProbe extends Command
                 'stock' => $this->probeStock($client, (string) $this->argument('id')),
                 'tracking' => $this->probeTracking($client),
                 'recent' => $this->probeRecent($client),
-                default => $this->failWith('First argument must be order, stock, tracking or recent.'),
+                'secret' => $this->probeSecret($client),
+                'write-test' => $this->writeTest($client, (string) $this->argument('id')),
+                default => $this->failWith('First argument must be order, stock, tracking, recent, secret or write-test.'),
             };
         } catch (OrdermentumException $e) {
             return $this->failWith($e->getMessage());
@@ -230,6 +235,113 @@ class OrdermentumProbe extends Command
                 Sleep::for($e->retryAfter)->seconds();
             }
         }
+    }
+
+    /**
+     * The webhook signing secret: `sharedSecret` on GET /v1/suppliers/{supplierId}
+     * (confirmed by Ordermentum, 2026-10-27). Prints found/length only; never the value.
+     */
+    private function probeSecret(OrdermentumClient $client): int
+    {
+        $supplierId = (string) config('services.ordermentum.supplier_id');
+        if ($supplierId === '') {
+            return $this->failWith('ORDERMENTUM_SUPPLIER_ID is not set.');
+        }
+        $response = $client->get('/v1/suppliers/'.rawurlencode($supplierId));
+        if (! $response->successful()) {
+            return $this->failWith("GET /v1/suppliers/{id} returned HTTP {$response->status()}."); // body not echoed: it may hold the secret
+        }
+
+        $secret = null;
+        $data = (array) $response->json();
+        array_walk_recursive($data, function ($value, $key) use (&$secret) {
+            if ($key === 'sharedSecret' && is_string($value) && $value !== '') {
+                $secret ??= $value;
+            }
+        });
+        if ($secret === null) {
+            return $this->failWith('sharedSecret: not found. Top-level keys: '.implode(', ', array_keys($data)));
+        }
+        $this->info('sharedSecret: found (length '.strlen($secret).')');
+
+        if ($this->option('write-env')) {
+            $this->writeEnv('ORDERMENTUM_WEBHOOK_SECRET', $secret);
+            $this->info('Wrote ORDERMENTUM_WEBHOOK_SECRET to .env. Run php artisan config:clear (or config:cache) to load it.');
+        }
+
+        return self::SUCCESS;
+    }
+
+    private function writeEnv(string $name, string $value): void
+    {
+        $path = $this->laravel->environmentFilePath();
+        $line = $name.'="'.addcslashes($value, '"\\$').'"';
+        $env = File::exists($path) ? File::get($path) : '';
+        $env = preg_match("/^{$name}=.*$/m", $env)
+            ? preg_replace("/^{$name}=.*$/m", str_replace(['\\', '$'], ['\\\\', '\\$'], $line), $env)
+            : rtrim($env, "\n")."\n{$line}\n";
+        File::put($path, $env);
+    }
+
+    /**
+     * Proves the write paths without changing anything: read the item, PUT the same
+     * value (supplier headers plain, then x-), PATCH UPDATE the same value, reading
+     * after each step. A changed figure is reported (a real order may have landed)
+     * and the original is put back.
+     */
+    private function writeTest(OrdermentumClient $client, string $variantId): int
+    {
+        if (! $this->option('confirm')) {
+            return $this->failWith('write-test writes to Ordermentum. Re-run with --confirm.');
+        }
+        $location = config('services.ordermentum.location_id');
+        $path = '/v1/items/'.rawurlencode($variantId);
+        $read = function () use ($client, $path, $location) {
+            $r = $this->waitingOutLimits(fn () => $client->getStock($path, $location ? ['locationId' => $location] : []));
+
+            return [$r->status(), $r->successful() ? $r->json() : null];
+        };
+
+        [$status, $before] = $read();
+        if ($before === null) {
+            return $this->failWith("Initial read returned HTTP {$status}; nothing was written.");
+        }
+        $value = (int) ($before['available'] ?? 0);
+        $put = array_filter([
+            'available' => $value, 'tracked' => (bool) ($before['tracked'] ?? true), 'allowOversell' => (bool) ($before['allowOversell'] ?? false),
+            'locationId' => $location, 'supplierId' => config('services.ordermentum.supplier_id'),
+        ], fn ($v) => $v !== null && $v !== '');
+        $productId = ChannelListing::where('channel', 'ordermentum')->where('external_variant_id', $variantId)->value('external_product_id');
+        $patch = ['actions' => [array_filter(['id' => $variantId, 'productId' => $productId, 'action' => 'UPDATE', 'quantity' => $value, 'locationId' => $location])]];
+
+        $rows = [['read', $status, $value, 'baseline']];
+        $changed = false;
+        foreach ([
+            'PUT (context-*)' => fn () => $client->putStock($path, $put, 'plain'),
+            'PUT (x-context-*)' => fn () => $client->putStock($path, $put, 'x'),
+            'PATCH UPDATE' => fn () => $client->patchStock('/v1/items', $patch),
+        ] as $label => $write) {
+            $w = $this->waitingOutLimits($write);
+            [$readStatus, $after] = $read();
+            $now = $after === null ? null : (int) ($after['available'] ?? 0);
+            $same = $now === $value;
+            $changed = $changed || ! $same;
+            $rows[] = [$label, $w->status(), $now ?? "read HTTP {$readStatus}", $same ? 'unchanged' : 'CHANGED'];
+            if (! $same) {
+                break; // stop writing; restore below
+            }
+        }
+        $this->table(['Step', 'HTTP', 'available after', 'Value'], $rows);
+
+        if ($changed) {
+            $restore = $this->waitingOutLimits(fn () => $client->putStock($path, $put));
+            $this->warn("The figure changed during the test (a real order may have landed). Put the original {$value} back: HTTP {$restore->status()}.");
+
+            return self::FAILURE;
+        }
+        $this->info("Every write was accepted and available stayed at {$value}.");
+
+        return self::SUCCESS;
     }
 
     /** Recent order IDs with status and dates only, to pick one for `om:probe order`. */

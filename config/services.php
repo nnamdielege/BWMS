@@ -53,16 +53,19 @@ return [
         // client reports plain works; confirm with `om:probe stock {id} --headers=...`.
         'context_headers' => env('ORDERMENTUM_CONTEXT_HEADERS', 'plain'),
         // Client-side budgets per minute, "host:METHOD[:path prefix]" (most specific wins).
-        // Stock PUT 20 and POST 12 are confirmed (2026-10-27); PATCH is unconfirmed (asked),
-        // so it gets the conservative POST figure. Core API figures are from the docs (B3.1).
+        // Stock PUT 20 and POST 12 are confirmed (2026-10-27). Bulk PATCH has no limit (confirmed),
+        // so it is spaced by min_interval instead. Core API figures are from the docs (B3.1).
         'rate_limits' => [
             'stock:PUT' => (int) env('ORDERMENTUM_RPM_STOCK_PUT', 20),
             'stock:POST' => (int) env('ORDERMENTUM_RPM_STOCK_POST', 12),
-            'stock:PATCH' => (int) env('ORDERMENTUM_RPM_STOCK_PATCH', 12),
             'stock:GET' => (int) env('ORDERMENTUM_RPM_STOCK_GET', 40),
             'core:GET:/v1/orders' => 24,
             'core:GET:/v2/orders' => 40,
             'core:GET' => 40,
+        ],
+        // Minimum seconds between calls per endpoint group: bulk PATCH is unlimited but we keep it polite.
+        'min_interval' => [
+            'stock:PATCH' => (int) env('ORDERMENTUM_PATCH_INTERVAL_SECONDS', 5),
         ],
     ],
 

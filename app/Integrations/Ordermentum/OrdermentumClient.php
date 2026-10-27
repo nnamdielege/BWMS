@@ -6,6 +6,7 @@ use GuzzleHttp\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
@@ -21,7 +22,8 @@ use LogicException;
  *
  * Rate limits: a client-side budget per endpoint group (config
  * services.ordermentum.rate_limits; stock PUT 20/min and POST 12/min are
- * confirmed), plus Ordermentum's own 429 + Retry-After. A short wait is slept
+ * confirmed), a minimum spacing for bulk PATCH (unlimited, but kept to one
+ * call per 5s), plus Ordermentum's own 429 + Retry-After. A short wait is slept
  * out; a longer one throws with retryAfter so a queued job can release itself.
  *
  * Only for console commands and queued jobs: it refuses to run during a web
@@ -54,18 +56,18 @@ class OrdermentumClient
     }
 
     /** Absolute stock level for one item: PUT /v1/items/{variantId}. Retries are naturally idempotent. */
-    public function putStock(string $path, array $body): Response
+    public function putStock(string $path, array $body, ?string $contextHeaders = null): Response
     {
         return $this->send('stock', 'PUT', $path, fn () => $this->request()
-            ->withHeaders($this->contextHeaders())
+            ->withHeaders($this->contextHeaders($contextHeaders))
             ->put($this->url('stock_url', $path), $body));
     }
 
     /** Bulk stock actions: PATCH /v1/items {actions: [...]}. */
-    public function patchStock(string $path, array $body): Response
+    public function patchStock(string $path, array $body, ?string $contextHeaders = null): Response
     {
         return $this->send('stock', 'PATCH', $path, fn () => $this->request()
-            ->withHeaders($this->contextHeaders())
+            ->withHeaders($this->contextHeaders($contextHeaders))
             ->patch($this->url('stock_url', $path), $body));
     }
 
@@ -124,6 +126,8 @@ class OrdermentumClient
     /** Client-side per-endpoint budget, so we rarely meet Ordermentum's 429 at all. */
     private function takeBudget(string $host, string $method, string $path): void
     {
+        $this->keepSpacing($host, $method);
+
         [$key, $perMinute] = $this->limitFor($host, $method, $path);
         if ($perMinute <= 0) {
             return;
@@ -137,6 +141,21 @@ class OrdermentumClient
             Sleep::for($wait)->seconds();
         }
         RateLimiter::hit($key, 60);
+    }
+
+    /** Minimum seconds between calls of one group (config min_interval), e.g. bulk PATCH. */
+    private function keepSpacing(string $host, string $method): void
+    {
+        $interval = (float) ($this->config['min_interval']["{$host}:{$method}"] ?? 0);
+        if ($interval <= 0) {
+            return;
+        }
+        $key = "ordermentum:last:{$host}:{$method}";
+        $waitMs = (int) ceil($interval * 1000 - (now()->getTimestampMs() - (int) Cache::get($key, 0)));
+        if ($waitMs > 0) {
+            Sleep::for($waitMs)->milliseconds();
+        }
+        Cache::put($key, now()->getTimestampMs(), now()->addMinutes(5));
     }
 
     /** @return array{0: string, 1: int} limiter key, requests per minute */

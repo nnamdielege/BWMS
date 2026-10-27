@@ -6,12 +6,10 @@ This doc covers how BWMS pushes stock to Ordermentum and takes in Ordermentum or
 
 - **Authentication** is an API token in `x-api-key` (`ORDERMENTUM_API_KEY`). Username/password is not supported in BWMS. The token is never logged.
 - **Stock tracking.** For items with stock tracking on, Ordermentum **decrements its own stock when an order is placed**, and stock can't go negative there (it blocks the order instead). Items with tracking off don't decrement: `om:probe tracking` and the Sync screen list them.
-- **Stock API limits:** PUT 20/min and POST 12/min. The PATCH limit isn't confirmed (asked), so BWMS treats it like POST.
-- **Webhooks are signed** with a header, but the header name and algorithm aren't confirmed yet (asked).
-- **Still open with Ordermentum:**
-  - the signature details
-  - the PATCH limit
-  - whether a cancel or edit restores Ordermentum's stock
+- **Stock API limits:** PUT 20/min and POST 12/min. **Bulk `PATCH /v1/items` has no rate limit**, but BWMS keeps it polite: batches of about 50, at most one call every 5 seconds.
+- **Webhooks are signed:** header `x-ordermentum-signature` = HMAC-SHA256 of the raw body. The secret is `sharedSecret` from `GET /v1/suppliers/{supplierId}`.
+- **An order edit** makes Ordermentum adjust its own stock. **A cancel does not restore Ordermentum's stock.** BWMS's absolute push puts it back.
+- **There are no open questions with Ordermentum.**
 
 ## Switches
 
@@ -38,21 +36,23 @@ With the API token, the stock API ignores the supplier context headers on reads 
 - Stock changes only flag listings (`push_requested_at`) and queue one debounced run of `PushOrdermentumStock`.
 - **Pending orders first.** While any Ordermentum order event is still waiting to be processed, the run waits. Without this, a push of a stale BWMS figure could overwrite a decrement Ordermentum has made but BWMS hasn't seen yet. An event older than `ORDERMENTUM_INGEST_WAIT_MINUTES` (10) counts as stuck: it's logged and no longer blocks.
 - **Held orders.** SKUs on an order held for mapping (`needs_mapping`) aren't pushed until it is mapped. The Sync screen shows them as "Held".
-- **Bulk preferred.** One pending item goes by `PUT /v1/items/{variantId}`. More go by **bulk `PATCH /v1/items`** in chunks of 50. `UPDATE` is assumed to set the quantity (unconfirmed); the nightly check would expose it if not.
+- **Bulk preferred.** One pending item goes by `PUT /v1/items/{variantId}`. More go by **bulk `PATCH /v1/items`** in chunks of 50, spaced 5s apart, with up to 3 calls per run. `om:probe write-test` proves live that `UPDATE` sets the quantity, and the nightly check would catch it if not.
 - **Changes mid-push.** A change that lands during a push stays pending for the next run.
 - **Errors.** An unchanged figure is skipped for up to 24h. 5xx and timeouts retry with the items still pending. 429 honours `Retry-After`. A 4xx is shown on the Sync screen.
-- **Edits and cancellations.** BWMS re-fetches the order and updates the reservation. It then force-pushes the absolute figure for every SKU on the order, because it's unknown whether Ordermentum restored its own stock.
+- **Edits and cancellations.** BWMS re-fetches the order, applies the reservation delta, then force-pushes the absolute figure for every SKU on the order.
+  - **Edit:** Ordermentum has already adjusted its own stock, so the push confirms the figure.
+  - **Cancel:** Ordermentum does not restore stock. BWMS releases the reservation, and the push is what gives Ordermentum the stock back.
 - **Nightly check (03:00).** Compares Ordermentum's figure **and tracking flag** with BWMS, and re-pushes mismatches (D-9).
 
-**Rate limits.** The shared client keeps a budget per endpoint (`services.ordermentum.rate_limits`): PUT 20/min, POST 12/min, and PATCH 12/min (configurable via `ORDERMENTUM_RPM_STOCK_PATCH`, conservative until Ordermentum confirms). A short wait is slept out. A longer one makes the job release itself and retry later.
+**Rate limits.** The shared client keeps a budget per endpoint (`services.ordermentum.rate_limits`): PUT 20/min, POST 12/min. Bulk PATCH has no budget, but there is a minimum gap between calls (`ORDERMENTUM_PATCH_INTERVAL_SECONDS`, default 5). A short wait is slept out. A longer one makes the job release itself and retry later.
 
 **Full push time (about 120 listings):**
-- **Bulk (default):** 3 PATCH calls of up to 50, so under a minute even at 12/min.
+- **Bulk (default):** 3 PATCH calls of up to 50, 5s apart: about 10–15 seconds.
 - **PUT only** (`ORDERMENTUM_BULK_PUSH=false`): 120 ÷ 20/min, about 6 minutes.
 - **Day to day:** a burst of changes becomes one run, normally a single PUT or PATCH.
 
 **Inbound orders**
-1. The webhook arrives at `POST /webhooks/ordermentum/{token}`. BWMS checks the path token, then checks the signature (see below).
+1. The webhook arrives at `POST /webhooks/ordermentum/{token}`, or at `/webhooks/ordermentum` once the token is made optional. BWMS checks the token (if required) and **enforces** the signature (see below).
 2. It logs the headers only (never the body or the token), and stores the raw payload in `integration_inbox`. A redelivery is stored only once (event + order id + updatedAt).
 3. It replies 200 straight away.
 4. A queued job fetches the order from the API (`GET /v1/orders/{id}?includeLines=true`).
@@ -64,11 +64,14 @@ Other inbound behaviour:
 - **Upserts.** Each order is a full-state upsert, versioned by `updatedAt` in ms.
 - **Unmapped variants.** A line with an unmapped variant holds the whole order until it's mapped on the Sync screen.
 
-**Webhook signature** (`ORDERMENTUM_WEBHOOK_SIGNATURE_*`)
-- **What's checked:** an HMAC of the raw body against a configurable header, in hex or base64, with an optional `sha256=` prefix.
-- **Mode `report` (default):** records valid / invalid / missing / unconfigured on the inbox row, and never rejects.
-- **After Ordermentum confirms the scheme:** set the header, secret and algorithm, then switch to `enforce`. Until then, the path token and fetching the order back from the API are the guard.
-- **Finding the header:** the logged headers show which one Ordermentum sends.
+**Webhook signature** (enforced)
+- **Secret:** run `php artisan om:probe secret --write-env`. It writes `ORDERMENTUM_WEBHOOK_SECRET`, and prints found/length only.
+- **Check:** `hash_equals` on HMAC-SHA256 of the raw body against `x-ordermentum-signature`.
+  - Hex or base64 is accepted (optionally `sha256=`-prefixed).
+  - The inbox row records `valid_hex` or `valid_base64`, and the log line says which matched.
+  - A missing or wrong signature, or a missing secret, is **401** and isn't stored.
+- **Path token:** once one real event has verified, `ORDERMENTUM_WEBHOOK_REQUIRE_TOKEN=false` makes it optional. This only applies while enforcement is on. A token that is supplied must still match.
+- **Fetch-back:** every order is still re-fetched from the API before BWMS acts on it.
 
 **Line item fields** (confirmed on a live order, 2026-10-27)
 - `lineItems[].quantity` is an integer.
@@ -80,9 +83,10 @@ Other inbound behaviour:
 1. Legacy migration committed (docs/MIGRATION.md). Listings exist, all off.
 2. Re-run `om:probe tracking` and turn tracking on in Ordermentum for anything it lists. On 2026-10-27 all 120 mapped variants were tracked.
 3. Turn off the portal's own Ordermentum sync (D-6). Switch the portal to token auth before 1 Jan 2027 if it's still running (docs/portal-om-token.md).
-4. Register the webhook in Ordermentum (`order_created`, `order_updated`) at `https://<host>/webhooks/ordermentum/<ORDERMENTUM_WEBHOOK_TOKEN>`.
-5. Set `ORDERMENTUM_INGEST_ENABLED=true`, then watch the Sync screen's inbound events and signature column.
-6. After the stocktake opening balances are posted:
+4. Run `php artisan om:probe secret --write-env`, then `php artisan config:cache`.
+5. Register the webhook in Ordermentum (`order_created`, `order_updated`) at `https://<host>/webhooks/ordermentum/<ORDERMENTUM_WEBHOOK_TOKEN>`.
+6. Set `ORDERMENTUM_INGEST_ENABLED=true`, then watch the Sync screen's inbound events. The signature column should show `valid_hex` or `valid_base64`. Then (optionally) set `ORDERMENTUM_WEBHOOK_REQUIRE_TOKEN=false`.
+7. After the stocktake opening balances are posted:
    1. Set `ORDERMENTUM_PUSH_ENABLED=true`.
    2. Click "Enable all". This queues a forced push of every listing it enables.
    3. Optionally, run `php artisan channels:ordermentum push` to re-send everything.

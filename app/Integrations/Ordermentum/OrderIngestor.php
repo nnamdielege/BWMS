@@ -93,8 +93,10 @@ class OrderIngestor
             return $this->finish($inbox, IntegrationInbox::STATUS_IGNORED, $e->getMessage());
         }
 
-        // An edit or cancellation may or may not have restored Ordermentum's own stock
-        // (unconfirmed, asked 2026-10-27): re-send the absolute figure for every SKU involved.
+        // Confirmed by Ordermentum (2026-10-27): an edit adjusts Ordermentum's own stock, a
+        // cancel does NOT restore it. Either way BWMS has applied the reservation delta
+        // above; re-sending the absolute figure for every SKU involved puts Ordermentum right
+        // (for a cancel, this is what gives the stock back).
         if ($existing) {
             $productIds = $order->lines()->pluck('product_id')->merge($existing->lines()->pluck('product_id'));
             PushOrdermentumStock::request($productIds, force: true);

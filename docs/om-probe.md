@@ -1,6 +1,9 @@
 # Ordermentum probe
 
-`php artisan om:probe` makes **read-only** calls to the live Ordermentum account. It only sends GET requests and never writes anything to Ordermentum. (`tracking` saves what it reads on BWMS's own listings.)
+`php artisan om:probe` makes calls to the live Ordermentum account.
+- **Every mode is read-only (GET)** except `write-test`, which needs `--confirm` and only writes back the value it has just read.
+- `tracking` saves what it reads on BWMS's own listings.
+- `secret --write-env` writes the webhook secret to the local `.env`.
 
 Ordermentum confirmed on 2026-10-27 that it decrements tracked stock at order placement. The decrement test is therefore no longer needed. The probe still answers three questions:
 
@@ -18,7 +21,14 @@ php artisan om:probe order {orderId} --structure --headers=both
 php artisan om:probe order {orderId}                          # full raw JSON (contains customer details: do not share)
 php artisan om:probe stock {variantId} [--headers=plain|x|both] [--location=…]
 php artisan om:probe tracking                                 # every mapped listing; result also shown on the Sync screen
+php artisan om:probe secret [--write-env]                     # webhook sharedSecret: found/length only; --write-env sets ORDERMENTUM_WEBHOOK_SECRET
+php artisan om:probe write-test {variantId} --confirm         # read, PUT same value (context-* then x-context-*), read, PATCH UPDATE same, read
 ```
+
+**`write-test`** proves the write paths without changing stock:
+- It reports the HTTP status of each write, and the figure read back after it.
+- If the figure changes (a real order may have landed at that moment), it stops and puts the original back.
+- Pick a quiet item and time.
 
 **`--structure`** prints each field path and its type. It prints values only for ID and quantity fields inside order lines. Retailer names, addresses, notes and prices are never printed, so its output is safe to share.
 
