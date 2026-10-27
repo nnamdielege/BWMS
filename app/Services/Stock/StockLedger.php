@@ -245,6 +245,9 @@ class StockLedger
         if (trim($d->idempotencyKey) === '' || strlen($d->idempotencyKey) > 191) {
             throw new InvalidMovement('A movement needs an idempotency key of at most 191 characters.');
         }
+        if (! $d->product->is_stock_tracked) {
+            throw new InvalidMovement("{$d->product->sku} is not stock-tracked (e.g. a service); it has no stock movements.");
+        }
         if (! $d->location->isBin() || ! $d->location->is_active) {
             throw new InvalidMovement("Stock can only be held in an active bin ({$d->location->code} is not).");
         }

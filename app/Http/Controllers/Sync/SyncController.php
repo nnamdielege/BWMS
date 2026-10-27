@@ -69,8 +69,9 @@ class SyncController extends Controller
                 'suggestion' => $suggestions[strtoupper((string) $v->external_sku)] ?? null,
             ]),
             'unmappedProducts' => [
-                'total' => Product::where('is_active', true)->whereDoesntHave('channelListings', fn ($q) => $q->where('channel', self::CHANNEL))->count(),
-                'rows' => Product::where('is_active', true)->whereDoesntHave('channelListings', fn ($q) => $q->where('channel', self::CHANNEL))
+                // Only products meant to be sold on Ordermentum; sell channel "none"/"portal" are never unmapped here.
+                'total' => Product::where('is_active', true)->whereIn('sell_channels', Product::channelsIncluding(self::CHANNEL))->whereDoesntHave('channelListings', fn ($q) => $q->where('channel', self::CHANNEL))->count(),
+                'rows' => Product::where('is_active', true)->whereIn('sell_channels', Product::channelsIncluding(self::CHANNEL))->whereDoesntHave('channelListings', fn ($q) => $q->where('channel', self::CHANNEL))
                     ->orderBy('sku')->limit(50)->get(['id', 'sku', 'name']),
             ],
             'listings' => (clone $listings)->with('product:id,sku,name', 'unit:id,name,base_qty')
@@ -169,6 +170,7 @@ class SyncController extends Controller
                 'sync_enabled' => (bool) ($data['sync_enabled'] ?? false),
             ]);
             $variant->forceFill(['resolved_at' => now()])->save();
+            $product->addSellChannel($variant->channel);
         });
 
         // Ordermentum orders that waited for this variant run again (the portal retries its own calls).

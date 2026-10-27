@@ -42,6 +42,17 @@ class LegacyImporter
 {
     public const DEFAULT_PACK_SECTION = 'Stocktake products still on the default single "Unit" pack (check Pack setup)';
 
+    /**
+     * Decided 2026-10-27 for the three products with no Ordermentum mapping. Keys are
+     * the imported (normalised) SKUs. Everything else defaults to sell channel
+     * "ordermentum" (portal is added when a portal product is mapped), stock-tracked.
+     */
+    public const PRODUCT_OVERRIDES = [
+        '25KGSALAMSPICE' => ['sell_channels' => 'none', 'is_stock_tracked' => true],   // purchase-only ingredient
+        'CN440X320X160' => ['sell_channels' => 'none', 'is_stock_tracked' => true],    // packaging carton (internal)
+        'CHAIDWNP' => ['sell_channels' => 'none', 'is_stock_tracked' => false],        // downpacking service
+    ];
+
     private MigrationReport $report;
 
     /** @var array<int, int> legacy id => new id */
@@ -183,7 +194,7 @@ class LegacyImporter
                 'sell_price' => (float) $row->price > 0 ? $row->price : null,
                 'is_active' => (bool) $row->is_active && $row->deleted_at === null,
             ]);
-            $product->forceFill(['avg_cost' => $row->cost, 'legacy_id' => $row->id])->save();
+            $product->forceFill(['avg_cost' => $row->cost, 'legacy_id' => $row->id] + (self::PRODUCT_OVERRIDES[$sku] ?? []))->save();
             if ($row->deleted_at !== null) {
                 $product->delete();
             }
@@ -222,7 +233,10 @@ class LegacyImporter
     private function importListing(object $row, Product $product, ProductUnit $unit, string $sku): void
     {
         if (blank($row->ordermentum_variant_id)) {
-            $this->report->issue('Products without Ordermentum mapping', "{$sku} {$product->name}");
+            // Only a warning when the product is meant to be sold on Ordermentum.
+            if ($product->sellsOn('ordermentum')) {
+                $this->report->issue('Products without Ordermentum mapping', "{$sku} {$product->name}");
+            }
 
             return;
         }
@@ -467,6 +481,11 @@ class LegacyImporter
             $bin = $site ? Location::bins()->whereIn('id', $this->stock->binIdsUnder($site))->where('code', strtoupper($r['bin'] ?: 'STOCK'))->first() : null;
             if (! $bin || ! $bin->is_active) {
                 $errors[] = "{$where}: no active bin ".($r['bin'] ?: 'STOCK').' at '.($r['site'] ?: $this->site->code).'.';
+
+                continue;
+            }
+            if (! $product->is_stock_tracked) {
+                $errors[] = "{$where}: {$product->sku} is not stock-tracked (e.g. a service); remove it from the stocktake file.";
 
                 continue;
             }

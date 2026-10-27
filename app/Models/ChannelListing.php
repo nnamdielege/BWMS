@@ -49,6 +49,7 @@ class ChannelListing extends Model
         }
 
         return static::where('channel', $channel)->where('sync_enabled', true)->whereIn('product_id', $ids)
+            ->whereHas('product', fn ($q) => $q->where('is_stock_tracked', true)->whereIn('sell_channels', Product::channelsIncluding($channel)))
             ->update(array_filter(['push_requested_at' => now()->format('Y-m-d H:i:s.u'), 'push_force' => $force ?: null], fn ($v) => $v !== null));
     }
 

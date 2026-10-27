@@ -88,6 +88,7 @@ class MapPortalProducts extends Command
                 'external_product_id' => $portalId, 'external_variant_id' => $portalId, 'external_sku' => $sku, 'sync_enabled' => false,
             ]);
             ChannelUnmappedVariant::where('channel', 'portal')->where('external_variant_id', $portalId)->update(['resolved_at' => now()]);
+            $product->addSellChannel('portal');
         }
         $counts['created']++;
 

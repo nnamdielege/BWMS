@@ -59,7 +59,7 @@ class PickListService
 
             foreach ($orders as $order) {
                 foreach ($order->lines as $line) {
-                    $need = $line->outstandingBase();
+                    $need = $line->product->is_stock_tracked ? $line->outstandingBase() : 0; // services are not picked
                     if ($need <= 0) {
                         continue;
                     }
@@ -138,8 +138,12 @@ class PickListService
                 $this->ledger->post($drafts, $actor);
             }
 
-            $orders = Order::whereIn('id', $lines->pluck('orderLine.order_id')->unique())->with('lines')->get();
+            $orders = Order::whereIn('id', $lines->pluck('orderLine.order_id')->unique())->with('lines.product')->get();
             foreach ($orders as $order) {
+                // Non-stock-tracked lines (services) go out with the goods: complete them, no movement.
+                foreach ($order->lines->filter(fn ($l) => ! $l->product->is_stock_tracked && $l->outstandingBase() > 0) as $l) {
+                    $l->forceFill(['qty_dispatched_base' => $l->qty_dispatched_base + $l->outstandingBase()])->save();
+                }
                 if ($order->short_ship_policy === 'cancel') {
                     foreach ($order->lines as $l) {
                         $l->forceFill(['qty_cancelled_base' => $l->qty_cancelled_base + $l->outstandingBase()])->save();

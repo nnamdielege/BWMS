@@ -36,6 +36,8 @@ interface ProductData {
     reorder_qty: number | null;
     sell_price: string | null;
     is_active: boolean;
+    sell_channels: string;
+    is_stock_tracked: boolean;
     units: (Omit<UnitInput, 'barcodes'> & { barcodes: { barcode: string }[] })[];
 }
 
@@ -69,6 +71,8 @@ const form = useForm({
     reorder_qty: p?.reorder_qty ?? null,
     sell_price: p?.sell_price ?? null,
     is_active: p?.is_active ?? true,
+    sell_channels: p?.sell_channels ?? 'ordermentum',
+    is_stock_tracked: p?.is_stock_tracked ?? true,
     units: (p?.units.map((u) => ({ ...u, barcodes: u.barcodes.map((b) => b.barcode) })) ?? [
         { name: 'Each', code: null, base_qty: 1, purchasable: true, sellable: true, default_purchase: true, default_sale: true, barcodes: [] },
     ]) as UnitInput[],
@@ -150,6 +154,17 @@ const unitErrors = computed(() =>
                 <div class="flex items-end gap-6">
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_active" /> Active</label>
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_batch_tracked" /> Track batches &amp; best-before</label>
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_stock_tracked" /> Stock-tracked (untick for services: no stock, stocktakes, picking or pushes)</label>
+                    <InputError :message="form.errors.is_stock_tracked" />
+                    <div class="grid gap-1">
+                        <Label for="sell_channels">Sold on</Label>
+                        <select id="sell_channels" v-model="form.sell_channels" class="h-9 rounded-md border bg-background px-2 text-sm">
+                            <option value="none">None (purchase / internal)</option>
+                            <option value="ordermentum">Ordermentum</option>
+                            <option value="portal">Portal</option>
+                            <option value="both">Ordermentum and portal</option>
+                        </select>
+                    </div>
                 </div>
                 <template v-if="form.is_batch_tracked">
                     <div class="grid gap-1">

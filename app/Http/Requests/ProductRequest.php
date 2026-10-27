@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Product;
+use App\Models\Reservation;
+use App\Models\StockBalance;
 use App\Rules\Gtin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -42,6 +45,8 @@ class ProductRequest extends FormRequest
             'reorder_qty' => ['nullable', 'integer', 'min:0'],
             'sell_price' => ['nullable', 'numeric', 'min:0', 'max:9999999'],
             'is_active' => ['boolean'],
+            'sell_channels' => ['sometimes', Rule::in(Product::SELL_CHANNELS)],
+            'is_stock_tracked' => ['sometimes', 'boolean'],
 
             'units' => ['required', 'array', 'min:1', 'max:20'],
             'units.*.id' => ['nullable', 'integer'],
@@ -70,6 +75,13 @@ class ProductRequest extends FormRequest
             }
             if ($units->where('default_sale', true)->count() > 1) {
                 $validator->errors()->add('units', 'Only one pack size can be the default sale unit.');
+            }
+            // A product holding stock or reservations cannot stop being stock-tracked.
+            $product = $this->route('product');
+            if ($product && $this->has('is_stock_tracked') && ! $this->boolean('is_stock_tracked') && $product->is_stock_tracked
+                && (StockBalance::where('product_id', $product->id)->where('on_hand', '!=', 0)->exists()
+                    || Reservation::where('product_id', $product->id)->where('qty_base', '>', 0)->exists())) {
+                $validator->errors()->add('is_stock_tracked', 'This product has stock or reservations; clear them before marking it not stock-tracked.');
             }
             // Barcodes must be unique across all units, including within this request.
             $all = $units->pluck('barcodes')->flatten();

@@ -42,6 +42,7 @@ class StocktakeService
 
             StockBalance::whereIn('location_id', $this->stock->binIdsUnder($scope))
                 ->where('on_hand', '!=', 0)
+                ->whereHas('product', fn ($q) => $q->where('is_stock_tracked', true))
                 ->get()
                 ->each(fn (StockBalance $b) => $stocktake->lines()->create([
                     'product_id' => $b->product_id,
@@ -59,6 +60,9 @@ class StocktakeService
     public function addLine(Stocktake $stocktake, Product $product, Location $bin, ?Batch $batch): StocktakeLine
     {
         $this->assertOpen($stocktake);
+        if (! $product->is_stock_tracked) {
+            throw new InvalidMovement("{$product->sku} is not stock-tracked and is not counted.");
+        }
 
         if (! in_array($bin->id, $this->stock->binIdsUnder($stocktake->scope), true)) {
             throw new InvalidMovement("Bin {$bin->code} is outside this stocktake's scope.");

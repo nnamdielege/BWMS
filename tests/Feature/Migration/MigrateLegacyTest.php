@@ -238,4 +238,25 @@ class MigrateLegacyTest extends TestCase
 
         $this->assertStringContainsString("still on the default single \"Unit\" pack (check Pack setup) (1)\n\n- DASH-VAN", $this->latestReport());
     }
+
+    public function test_decided_overrides_mark_internal_and_service_products()
+    {
+        $this->buildLegacyFixture(fn ($pdo) => $pdo->exec("INSERT INTO products VALUES
+            (5,NULL,NULL,'CHAIDWNP',NULL,NULL,'Chai Downpacking Service',NULL,2,0,50,'unit',NULL,NULL,1,NULL,'2026-06-01','2026-06-01'),
+            (6,NULL,NULL,'CN440X320X160',NULL,NULL,'A3 Low Ctn',NULL,2,0,0,'unit',NULL,NULL,1,NULL,'2026-06-01','2026-06-01')"));
+
+        $this->migrate(['--commit' => true])->assertSuccessful();
+
+        $service = Product::where('sku', 'CHAIDWNP')->sole();
+        $this->assertSame(['none', false], [$service->sell_channels, $service->is_stock_tracked]);
+        $this->assertSame(['none', true], [Product::where('sku', 'CN440X320X160')->value('sell_channels'), (bool) Product::where('sku', 'CN440X320X160')->value('is_stock_tracked')]);
+        $this->assertSame('ordermentum', Product::where('sku', 'DASH-VAN')->value('sell_channels'));
+        $md = $this->latestReport();
+        $this->assertStringContainsString('## Products without Ordermentum mapping (1)', $md, 'Only TONIC-1 (sold on Ordermentum) is warned');
+        $this->assertStringNotContainsString('CHAIDWNP Chai', $md);
+
+        $this->migrate(['--commit' => true, '--opening-balances' => $this->csv(['sku,qty', 'CHAIDWNP,1']), '--cutover' => '2026-11-30'])
+            ->expectsOutputToContain('opening balance row(s) are invalid')->assertFailed();
+        $this->assertStringContainsString('CHAIDWNP is not stock-tracked', $this->latestReport());
+    }
 }

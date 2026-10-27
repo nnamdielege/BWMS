@@ -45,7 +45,7 @@ class PortalIntegrationTest extends TestCase
         $this->app->forgetInstance(PortalClient::class);
 
         // Portal product 501 is sold by the carton of 12.
-        $this->product = Product::factory()->withPack('Carton', 12)->create(['sku' => 'DASH-VAN']);
+        $this->product = Product::factory()->withPack('Carton', 12)->create(['sku' => 'DASH-VAN', 'sell_channels' => 'both']);
         ChannelListing::create(['channel' => 'portal', 'product_id' => $this->product->id, 'product_unit_id' => $this->product->units()->where('base_qty', 12)->value('id'),
             'external_product_id' => '501', 'external_variant_id' => '501']);
         $this->stockIn($this->product, 60);

@@ -22,16 +22,44 @@ class Product extends Model
     protected $fillable = [
         'sku', 'name', 'description', 'category_id', 'range_id', 'base_unit', 'is_batch_tracked',
         'shelf_life_days', 'short_dated_days', 'reorder_point', 'reorder_qty', 'sell_price', 'is_active',
+        'sell_channels', 'is_stock_tracked',
     ];
+
+    public const SELL_CHANNELS = ['none', 'portal', 'ordermentum', 'both'];
+
+    /** Same defaults as the columns, so an unsaved or just-created model reads correctly. */
+    protected $attributes = ['sell_channels' => 'ordermentum', 'is_stock_tracked' => true];
 
     protected function casts(): array
     {
         return [
             'is_batch_tracked' => 'boolean',
             'is_active' => 'boolean',
+            'is_stock_tracked' => 'boolean',
             'avg_cost' => 'decimal:4',
             'sell_price' => 'decimal:2',
         ];
+    }
+
+    /** Whether the product is sold on a channel ('ordermentum' or 'portal'). */
+    public function sellsOn(string $channel): bool
+    {
+        return $this->sell_channels === 'both' || $this->sell_channels === $channel;
+    }
+
+    /** Mapping a channel listing means the product is sold there. */
+    public function addSellChannel(string $channel): void
+    {
+        if ($this->sellsOn($channel)) {
+            return;
+        }
+        $this->update(['sell_channels' => in_array($this->sell_channels, ['none', $channel], true) ? $channel : 'both']);
+    }
+
+    /** sell_channels values that include a channel, for queries. */
+    public static function channelsIncluding(string $channel): array
+    {
+        return [$channel, 'both'];
     }
 
     public function category(): BelongsTo

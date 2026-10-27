@@ -41,7 +41,8 @@ class ReservationService
 
             $deltas = [];
             foreach ($lines as $line) {
-                $target = $order->status->isActive() ? $line->outstandingBase() : 0;
+                // Non-stock-tracked lines (services) never reserve stock.
+                $target = $order->status->isActive() && $line->product->is_stock_tracked ? $line->outstandingBase() : 0;
                 $current = $line->reservation?->qty_base ?? 0;
                 $deltas[$line->id] = ['line' => $line, 'target' => $target, 'delta' => $target - $current];
             }

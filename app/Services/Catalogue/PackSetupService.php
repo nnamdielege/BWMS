@@ -37,7 +37,7 @@ class PackSetupService
     /** Products still on the single default pack created by the legacy migration. */
     public static function defaultPackProducts(): Builder
     {
-        return Product::query()->where('base_unit', 'unit')
+        return Product::query()->where('base_unit', 'unit')->where('is_stock_tracked', true)
             ->whereHas('units', fn ($q) => $q->where('name', 'Unit')->where('base_qty', 1))
             ->has('units', '=', 1);
     }
