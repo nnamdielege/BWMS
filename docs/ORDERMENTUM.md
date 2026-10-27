@@ -28,7 +28,9 @@ Also set `ORDERMENTUM_SUPPLIER_ID` and `ORDERMENTUM_LOCATION_ID`. See `.env.exam
 - At that location, reads return `available: null`, and writes would create stock in the wrong place.
 - Found and fixed on 2026-10-27, before any push.
 
-With the API token, the stock API ignores the supplier context headers on reads (even a wrong supplier ID returns 200): the token scopes access to the supplier. BWMS still sends `context-*` (`ORDERMENTUM_CONTEXT_HEADERS=plain`), as the docs and the portal do. Writes have not been tested against this, because the probe is read-only.
+With the API token, the stock API ignores the supplier context headers on reads (even a wrong supplier ID returns 200): the token scopes access to the supplier. BWMS still sends `context-*` (`ORDERMENTUM_CONTEXT_HEADERS=plain`), as the docs and the portal do.
+
+Writes were tested live on 2026-10-27 (`om:probe write-test`): PUT with both header styles (`context-*` and `x-context-*`) and a bulk PATCH all returned 200, and the figure didn't change. The only untested point is whether a **wrong** supplier ID is also ignored on writes. That's low risk: the token identifies the account.
 
 ## How it works
 

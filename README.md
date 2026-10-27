@@ -82,11 +82,12 @@ Full checklist: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 | 3 | Stock ledger, batches/best-before, FEFO, adjustments, transfers, stocktakes | Done (reviewed) |
 | — | Review changes: ranges, admin 2FA, trigger check + deploy docs, cost back-fill | Done |
 | 4 | Suppliers, POs, receiving with discrepancies, PO PDF (mPDF) + queued mail | Done |
-| 5 | Customers, orders, reservations, pick lists (FEFO), dispatch | Done (review checkpoint) |
-| — | Legacy data migration (dump available) | Next, after step 5 review |
-| 6 | Ordermentum stock push + sync status | Not started |
-| 7 | Portal integration API | Not started |
-| — | Ordermentum order ingestion | Blocked (interfaces/stubs only, step 6) |
+| 5 | Customers, orders, reservations, pick lists (FEFO), dispatch | Done |
+| — | Legacy data migration (`bwms:migrate-legacy`, dry-run + report, opening balances from the stocktake CSV) | Done (`docs/MIGRATION.md`) |
+| 6 | Ordermentum stock push, order ingestion (webhook + poll), sync status | Done (`docs/ORDERMENTUM.md`; live write test passed 2026-10-27) |
+| 7 | Portal integration API | Done (`docs/PORTAL.md`) |
+| — | Pick & pack MVP: delivery runs, guided scanning, pack and dispatch by run | Done (`docs/PICK-PACK.md`; suite passes on MariaDB 10.5.29) |
+| — | Go-live | Runbook in `docs/CUTOVER.md` |
 
 ## Concurrency rules (read before touching stock code)
 
