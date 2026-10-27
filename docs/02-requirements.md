@@ -130,7 +130,7 @@ Doc index: https://docs.ordermentum.io/llms.txt. Status key: **Confirmed** = doc
 | Webhook registration | `POST /v1/webhooks` `{name, url, entityType, entityId, events[]}`. List/get/update/delete exist. | Confirmed | [Create webhook](https://docs.ordermentum.io/reference/post_v1-webhooks.md), [Guide](https://docs.ordermentum.io/docs/registering-webhooks-for-order-events-1.md) |
 | Webhook events | Reference enum: `order_created`, `order_updated`, `invoice_created`, `invoice_updated`, `product_created`, `product_updated`, `purchaser_created`, `purchaser_updated`. The guide also lists `credit_note_created/updated/completed/cancelled` and omits the product events. | Confirmed for the order events. ⚠ credit_note/product events contradictory | Same |
 | Webhook payload | `{event, timestamp, data:{id, createdAt, updatedAt, total, …}}`. | Confirmed (example only, not a schema) | [Guide](https://docs.ordermentum.io/docs/registering-webhooks-for-order-events-1.md) |
-| **Webhook signing** | Webhooks **are signed** with an Ordermentum header. The header name and algorithm have not been confirmed yet (asked). BWMS has a configurable HMAC verifier in report-only mode, logs incoming webhook headers (not bodies), and keeps the path token plus fetching the order back as the guard until then. | Signed: **confirmed** (Ordermentum support (Michael), 2026-10-27). ⚠ Header/algorithm unconfirmed | — |
+| **Webhook signing** | Webhooks **are signed** with an Ordermentum header. The header name and algorithm have not been confirmed yet (asked). BWMS has a configurable HMAC verifier in report-only mode, logs incoming webhook **header names** only (no values or bodies), and keeps the path token plus fetching the order back as the guard until then. | Signed: **confirmed** (Ordermentum support (Michael), 2026-10-27). ⚠ Header/algorithm unconfirmed | — |
 | Webhook event ID | None. Only `data.id` (entity ID). | Confirmed absent | Same |
 | Webhook retries | "exponential backoff… fails after three unsuccessful attempts". 2xx = ack. No timeout figure. No ordering guarantee. | Confirmed | Same |
 | Search orders | `GET /v2/orders?supplierId&retailerId&status&pageNo&pageSize(≤1000 default)&includeLines` returns `{id, number, status, total, deliveryDate, reference, retailerId, externalId, cancelledAt, createdAt, updatedAt}`. | Confirmed | [Search orders](https://docs.ordermentum.io/reference/get_v2-orders.md) |
@@ -139,7 +139,7 @@ Doc index: https://docs.ordermentum.io/llms.txt. Status key: **Confirmed** = doc
 | Order statuses | String, no enum. Examples: "Placed", "Paid", "Delivered". Cancellation via `cancelledAt` and `PATCH /v1/orders/{id}/cancel`. Lock/unlock via `PATCH /v1/orders/{id}/lock` and `/unlock`. | ⚠ Enum unconfirmed | Same, [Cancel](https://docs.ordermentum.io/reference/patch_v1-orders-id-cancel.md) |
 | Pagination | `pageNo`, `pageSize` → `meta{totalResults,totalPages,pageSize,pageNo}`, `links{self,first,prev,next,last}`. Stop when `next` is null. | Confirmed | [List format](https://docs.ordermentum.io/docs/api-response-format-for-list-endpoints.md) |
 | Rate limits (per 60s) | Order fetch 24 · ordersSearchV2 40 · ordersCreate 12 · purchasersRead 40 · purchasersUpdate 20 · productSearch 40 · productRead 40 · productUpdate 20 · productDestroy 20. **429 + `Retry-After`**. Docs advise webhooks over polling. | Confirmed | [Rate limits](https://docs.ordermentum.io/docs/rate-limits-and-api-usage-guidelines.md) |
-| Stock API rate limits | **PUT 20/min, POST 12/min.** PATCH (bulk) limit not given (asked); BWMS treats it as 12/min. Enforced per endpoint in the shared client, plus 429 + `Retry-After`. Bulk `PATCH /v1/items` is preferred when more than one item is pending. | PUT/POST **confirmed** (Ordermentum support (Michael), 2026-10-27). ⚠ PATCH unconfirmed | — |
+| Stock API rate limits | **PUT 20/min, POST 12/min.** PATCH (bulk) limit not given (asked); BWMS treats it as 12/min. Enforced per endpoint in the shared client, plus 429 + `Retry-After`. Bulk `PATCH /v1/items` is preferred when more than one item is pending (PATCH limit configurable, default 12/min). **Full push of ~120 listings:** bulk = 3 PATCH calls (under a minute); PUT-only fallback = 120 ÷ 20/min ≈ 6 minutes (replaces the earlier 40/min ≈ 3 min estimate). | PUT/POST **confirmed** (Ordermentum support (Michael), 2026-10-27). ⚠ PATCH unconfirmed | — |
 | Sandbox | Hosts listed in specs. How to get sandbox access is not documented. | ⚠ Ask api@ordermentum.com | Specs above |
 | API terms | Governed by the Application Developer and API Agreement. | Confirmed | [Agreement](https://www.ordermentum.com/application-developer-api-agreement) |
 
@@ -201,8 +201,10 @@ Doc index: https://docs.ordermentum.io/llms.txt. Status key: **Confirmed** = doc
 3. Payment completion, cancellation and edits are sent as later events against the same reservation (B4.4). Each is an idempotent upsert of the whole order.
 4. BWMS stores every inbound call in `integration_inbox`, dedupes, upserts `channel_orders(channel=portal)`, and creates or adjusts **reservations** (D-2: deduct at dispatch).
 5. The stock change → `PushChannelStock(portal)` and `PushChannelStock(ordermentum)`.
-6. Mapping: `channel_listings(channel=portal, external_product_id = portal products.id, product_unit_id)`. ⚠ Confirm what the portal's `unit_quantity` means (likely units per pack).
-7. The portal's `stock_qty` is unsigned. BWMS pushes `max(0, ATS)`.
+6. Mapping: `channel_listings(channel=portal, external_product_id = portal products.id, product_unit_id)`, bulk via `channels:portal-map` (CSV) or one at a time from the sync screen. ⚠ The portal's `unit_quantity` meaning is unconfirmed: BWMS uses the mapped pack and returns a warning when `unit_quantity` differs.
+7. The portal's `stock_qty` is unsigned. BWMS pushes `max(0, floor(ATS / pack))`.
+
+**Status (2026-10-27):** the BWMS side of B4.3–B4.4 is built and tested: signed API, idempotency store, reservations, full-state updates, reads, stock push and dispatch events (app `docs/PORTAL.md`). The portal side is written up as a standalone task (app `docs/portal-bwms-integration.md`). The portal repo has not been changed.
 
 ### B4.4 Portal ↔ BWMS integration contract (v1)
 
@@ -301,6 +303,11 @@ Platform: `users` (invite-only), spatie `roles/permissions`, `audit_log` (who/wh
 - Idempotent: re-running `--commit` skips rows already imported (legacy ID stored on each new row).
 - **Reconciliation report** (Markdown/CSV): row counts source vs target per entity; products without Ordermentum mapping; SKU conflicts; per-product legacy on-hand vs opening balance vs current Ordermentum `available` (`GET /v1/items`) vs portal `stock_qty`; zero-cost products; negative or blank quantities.
 - Users: migrate name/email only, no passwords; send invites.
+- **Decisions (2026-10-27):**
+  - Legacy draft/pending POs are imported as closed history; none are kept open.
+  - No bins are created from legacy bin labels; they appear in the report only. A new site starts with STOCK + QUARANTINE.
+  - Packs are set up before the stocktake on a **Pack setup** screen/CSV (`sku, base_unit, pack_name, qty_per_pack[, legacy_unit]`). The stocktake import warns about products still on the default single "Unit" pack.
+  - An SKU that is still invalid after uppercasing (one contains a space) is imported unchanged and flagged for a manual rename.
 
 ## B10. Business decisions
 
@@ -321,7 +328,7 @@ Status: **Decided** = you chose it (2026-10-26). **Accepted (default)** = my rec
 | D-11 | Valuation | **Weighted average cost**, updated on each receipt. **Cost back-fill (MVP):** a "Product costs" screen listing products with cost = 0 (CSV export), inline cost editing, and bulk CSV import (`sku, cost, pack`) with a preview before applying. Every change is audited. (113/123 products in production have cost 0.) | Accepted (default); back-fill path **Decided** 2026-10-26 |
 | D-12 | PO numbering & branding | `PO-YYYY-NNNNN` from a DB sequence (no `count()+1`). Company details come from settings, seeded as "Local Selection" with placeholders you fill in. | Accepted (default) |
 | D-13 | Expired stock | At best-before, the batch is excluded from available (it stays on-hand). An expiry job flags it for write-off. Selling past best-before isn't supported in MVP. | Accepted (default) |
-| D-14 | Where received stock lands | **Per-site setting.** Default: the sellable STOCK bin, so received stock is available immediately. RECEIVING plus a put-away step can be chosen per site. Damaged goods still go to quarantine. | **Decided** 2026-10-27 |
+| D-14 | Where received stock lands | **Per-site setting.** Default: the sellable STOCK bin, so received stock is available immediately. RECEIVING plus a put-away step can be chosen per site. A RECEIVING bin is not seeded: a new site starts with STOCK + QUARANTINE only (2026-10-27), and a site that wants put-away adds the bin. Damaged goods still go to quarantine. | **Decided** 2026-10-27 |
 | D-15 | Dispatch below zero | **Never block dispatch.** When dispatch takes a bin negative, BWMS logs it, opens a count task for that bin (one open task per bin), and shows negative bins and open count tasks on the dashboard. Posting a stocktake that covers the bin closes the task. A manager can dismiss it with a note. | **Decided** 2026-10-27 |
 
 ### B10.1 Risks
