@@ -40,16 +40,7 @@ class StockPushService
     /** Flag listings of these products for the next push run. */
     public static function request(iterable $productIds, bool $force = false): int
     {
-        $ids = collect($productIds)->unique()->values();
-        if ($ids->isEmpty()) {
-            return 0;
-        }
-
-        return ChannelListing::where('channel', self::CHANNEL)->where('sync_enabled', true)->whereIn('product_id', $ids)
-            ->update(array_filter([
-                'push_requested_at' => now()->format('Y-m-d H:i:s.u'),
-                'push_force' => $force ?: null,
-            ], fn ($v) => $v !== null));
+        return ChannelListing::requestPush(self::CHANNEL, $productIds, $force);
     }
 
     public function expectedQty(ChannelListing $listing): int
@@ -189,17 +180,9 @@ class StockPushService
         }
     }
 
-    /**
-     * Clears the pending flag only if nothing re-flagged the listing meanwhile
-     * (a change during the push keeps it pending for the next run).
-     */
     private function clear(ChannelListing $listing, array $attributes = []): void
     {
-        ChannelListing::whereKey($listing->id)->where('push_requested_at', $listing->getRawOriginal('push_requested_at'))
-            ->update(['push_requested_at' => null, 'push_force' => false]);
-        if ($attributes !== []) {
-            $listing->forceFill($attributes)->save();
-        }
+        $listing->clearPushRequest($attributes);
     }
 
     /** @return array<string, string> variant id => order ref, for orders held in the mapping queue */

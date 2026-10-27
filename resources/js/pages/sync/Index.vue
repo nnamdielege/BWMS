@@ -35,9 +35,22 @@ const props = defineProps<{
     untracked: Listing[];
     inbox: { id: number; event: string; external_id: string | null; status: string; signature_status: string | null; attempts: number; error: string | null; created_at: string }[];
     inboxCounts: Record<string, number>;
-    unmappedVariants: { id: number; external_variant_id: string; external_sku: string | null; name: string | null; occurrences: number; last_seen_at: string; suggestion: Suggestion | null }[];
+    unmappedVariants: { id: number; channel: string; external_variant_id: string; external_sku: string | null; name: string | null; occurrences: number; last_seen_at: string; suggestion: Suggestion | null }[];
     unmappedProducts: { total: number; rows: { id: number; sku: string; name: string }[] };
     listings: { data: Listing[]; links: { url: string | null; label: string; active: boolean }[] };
+    portal: {
+        api_enabled: boolean;
+        inbound_keys: number;
+        push_enabled: boolean;
+        events_enabled: boolean;
+        outbound_configured: boolean;
+        listings: number;
+        listings_enabled: number;
+        last_push_ok: string | null;
+        failures_24h: number;
+        push_failures: Listing[];
+        refused: { id: number; event: string; external_id: string | null; status: string; error: string | null; created_at: string }[];
+    };
     filters: { status?: string; q?: string };
     canManage: boolean;
 }>();
@@ -145,11 +158,12 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
             </section>
 
             <section v-if="unmappedVariants.length" class="rounded-lg border border-amber-300 p-4">
-                <h2 class="mb-2 font-semibold text-amber-800">Ordermentum variants needing mapping</h2>
-                <p class="mb-2 text-sm text-muted-foreground">Orders containing these are held. Mapping one replays them.</p>
+                <h2 class="mb-2 font-semibold text-amber-800">Channel items needing mapping</h2>
+                <p class="mb-2 text-sm text-muted-foreground">Ordermentum orders containing these are held and replay once mapped. Portal calls with them are refused (422) until mapped; the portal retries.</p>
                 <div v-for="v in unmappedVariants" :key="v.id" class="border-t py-2 text-sm">
                     <div class="flex items-center justify-between gap-2">
                         <div>
+                            <span class="mr-2 rounded bg-muted px-1.5 text-xs capitalize">{{ v.channel }}</span>
                             <span class="font-mono">{{ v.external_variant_id }}</span>
                             <span v-if="v.external_sku" class="ml-2 font-mono text-muted-foreground">{{ v.external_sku }}</span>
                             <span v-if="v.name" class="ml-2">{{ v.name }}</span>
@@ -233,6 +247,58 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                     </tbody>
                 </table>
                 <Pagination :links="listings.links" class="mt-2" />
+            </section>
+
+            <section class="rounded-lg border p-4">
+                <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <h2 class="mr-auto font-semibold">Portal (shop.localselection.com.au)</h2>
+                    <Button
+                        v-if="canManage && portal.listings_enabled < portal.listings"
+                        size="sm"
+                        variant="outline"
+                        @click="router.post(route('sync.listings.enable-all'), { channel: 'portal' }, { preserveScroll: true })"
+                        >Enable all portal listings</Button
+                    >
+                </div>
+                <div class="grid gap-2 text-sm md:grid-cols-4">
+                    <div>
+                        API in: <strong :class="portal.api_enabled ? 'text-green-700' : 'text-amber-700'">{{ portal.api_enabled ? 'on' : 'off' }}</strong>
+                        ({{ portal.inbound_keys }} key(s))
+                    </div>
+                    <div>
+                        Stock push: <strong :class="portal.push_enabled ? 'text-green-700' : 'text-amber-700'">{{ portal.push_enabled ? 'on' : 'off' }}</strong>,
+                        last OK {{ when(portal.last_push_ok) }}
+                    </div>
+                    <div>
+                        Dispatch events: <strong>{{ portal.events_enabled ? 'on' : 'off' }}</strong>
+                        <span v-if="!portal.outbound_configured" class="text-amber-700"> (outbound not configured)</span>
+                    </div>
+                    <div>Listings {{ portal.listings_enabled }} / {{ portal.listings }} · failures 24h {{ portal.failures_24h }}</div>
+                </div>
+                <div v-if="portal.push_failures.length" class="mt-3 text-sm">
+                    <h3 class="font-semibold text-red-700">Push failures</h3>
+                    <div v-for="l in portal.push_failures" :key="l.id">
+                        <span class="font-mono">{{ l.product?.sku }}</span> <span class="text-red-700">{{ l.last_error }}</span>
+                    </div>
+                </div>
+                <div v-if="portal.refused.length" class="mt-3 text-sm">
+                    <h3 class="font-semibold text-red-700">Refused or invalid portal calls</h3>
+                    <p class="text-muted-foreground">
+                        A refused reservation may be for an order the portal already accepted while BWMS was unreachable: decide short-ship, substitute or contact
+                        the café (B4.3).
+                    </p>
+                    <table class="mt-1 w-full text-left">
+                        <tbody>
+                            <tr v-for="r in portal.refused" :key="r.id" class="border-t align-top">
+                                <td class="py-1 font-mono">{{ r.external_id }}</td>
+                                <td>{{ r.event }}</td>
+                                <td>{{ r.status }}</td>
+                                <td class="text-xs text-red-700">{{ r.error }}</td>
+                                <td class="whitespace-nowrap">{{ when(r.created_at) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </section>
 
             <section v-if="unmappedProducts.total" class="rounded-lg border p-4">

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Integrations\Ordermentum\OrderInbox;
 use App\Jobs\ProcessOrdermentumOrder;
 use App\Jobs\PushOrdermentumStock;
+use App\Jobs\PushPortalStock;
 use App\Models\ChannelListing;
 use App\Models\ChannelUnmappedVariant;
 use App\Models\IntegrationInbox;
@@ -29,7 +30,7 @@ class SyncController extends Controller
     {
         $filters = $request->validate(['status' => ['nullable', 'string', 'max:16'], 'q' => ['nullable', 'string', 'max:100']]);
         $listings = ChannelListing::where('channel', self::CHANNEL);
-        $unmappedVariants = ChannelUnmappedVariant::where('channel', self::CHANNEL)->whereNull('resolved_at')->orderByDesc('last_seen_at')->limit(100)->get();
+        $unmappedVariants = ChannelUnmappedVariant::whereNull('resolved_at')->orderByDesc('last_seen_at')->limit(100)->get();
         $suggestions = Product::whereIn('sku', $unmappedVariants->pluck('external_sku')->filter()->map(fn ($s) => strtoupper($s)))
             ->with('units:id,product_id,name,base_qty,sellable')->get(['id', 'sku', 'name'])->keyBy('sku');
 
@@ -63,7 +64,7 @@ class SyncController extends Controller
                 ->latest('id')->limit(50)->get(['id', 'event', 'external_id', 'status', 'signature_status', 'attempts', 'error', 'created_at', 'processed_at']),
             'inboxCounts' => IntegrationInbox::where('channel', self::CHANNEL)->groupBy('status')->selectRaw('status, COUNT(*) AS n')->pluck('n', 'status'),
             'unmappedVariants' => $unmappedVariants->map(fn (ChannelUnmappedVariant $v) => [
-                'id' => $v->id, 'external_variant_id' => $v->external_variant_id, 'external_sku' => $v->external_sku, 'name' => $v->name,
+                'id' => $v->id, 'channel' => $v->channel, 'external_variant_id' => $v->external_variant_id, 'external_sku' => $v->external_sku, 'name' => $v->name,
                 'occurrences' => $v->occurrences, 'last_seen_at' => $v->last_seen_at->toIso8601String(),
                 'suggestion' => $suggestions[strtoupper((string) $v->external_sku)] ?? null,
             ]),
@@ -76,6 +77,7 @@ class SyncController extends Controller
                 ->when($filters['q'] ?? null, fn ($q, $t) => $q->where(fn ($w) => $w->where('external_variant_id', 'like', "%{$t}%")
                     ->orWhereHas('product', fn ($p) => $p->where('sku', 'like', "%{$t}%")->orWhere('name', 'like', "%{$t}%"))))
                 ->orderBy('id')->paginate(50)->withQueryString()->through(fn (ChannelListing $l) => $this->listingRow($l)),
+            'portal' => $this->portalSection(),
             'filters' => $filters,
             'canManage' => $request->user()->can('sync.manage'),
         ]);
@@ -83,10 +85,11 @@ class SyncController extends Controller
 
     public function push(ChannelListing $listing): RedirectResponse
     {
-        if (! config('bwms.ordermentum.push_enabled')) {
-            return back()->with('error', 'Stock push is switched off (ORDERMENTUM_PUSH_ENABLED).');
+        $switch = $listing->channel === 'portal' ? 'portal.push_enabled' : 'ordermentum.push_enabled';
+        if (! config("bwms.{$switch}")) {
+            return back()->with('error', 'Stock push is switched off for this channel.');
         }
-        PushOrdermentumStock::request([$listing->product_id], force: true);
+        $this->requestPush($listing->channel, [$listing->product_id]);
         Audit::record('sync_push_requested', $listing);
 
         return back()->with('success', 'Push queued.');
@@ -94,8 +97,12 @@ class SyncController extends Controller
 
     public function retryFailed(): RedirectResponse
     {
-        $ids = ChannelListing::where('channel', self::CHANNEL)->whereNotNull('last_error')->distinct()->pluck('product_id');
-        PushOrdermentumStock::request($ids, force: true);
+        $ids = collect();
+        foreach (['ordermentum', 'portal'] as $channel) {
+            $channelIds = ChannelListing::where('channel', $channel)->whereNotNull('last_error')->distinct()->pluck('product_id');
+            $this->requestPush($channel, $channelIds);
+            $ids = $ids->merge($channelIds);
+        }
         Audit::record('sync_retry_all', meta: ['products' => $ids->count()]);
 
         return back()->with('success', "{$ids->count()} push(es) queued.");
@@ -105,21 +112,24 @@ class SyncController extends Controller
     {
         $listing->update($request->validate(['sync_enabled' => ['required', 'boolean'], 'safety_buffer' => ['sometimes', 'integer', 'min:0', 'max:100000']]));
         if ($listing->sync_enabled) {
-            PushOrdermentumStock::request([$listing->product_id], force: true);
+            $this->requestPush($listing->channel, [$listing->product_id]);
         }
 
         return back()->with('success', 'Listing saved.');
     }
 
-    public function enableAll(): RedirectResponse
+    public function enableAll(Request $request): RedirectResponse
     {
-        $count = 0;
-        ChannelListing::where('channel', self::CHANNEL)->where('sync_enabled', false)->each(function (ChannelListing $l) use (&$count) {
+        $channel = $request->validate(['channel' => ['nullable', 'in:ordermentum,portal']])['channel'] ?? self::CHANNEL;
+        $productIds = [];
+        ChannelListing::where('channel', $channel)->where('sync_enabled', false)->each(function (ChannelListing $l) use (&$productIds) {
             $l->update(['sync_enabled' => true]); // audited per listing
-            $count++;
+            $productIds[] = $l->product_id;
         });
+        // Queues a forced push of everything just enabled (a no-op while the channel's push switch is off).
+        $this->requestPush($channel, $productIds);
 
-        return back()->with('success', "{$count} listing(s) enabled. Run a full push when the push switch is on.");
+        return back()->with('success', count($productIds).' listing(s) enabled.'.(config("bwms.{$channel}.push_enabled") ? ' A full push is queued.' : ' Push is switched off for this channel.'));
     }
 
     public function replay(IntegrationInbox $inbox): RedirectResponse
@@ -145,24 +155,58 @@ class SyncController extends Controller
         if (! $unit || ! $unit->sellable) {
             throw ValidationException::withMessages(['product_unit_id' => 'Choose a sellable pack size of this product.']);
         }
-        if (ChannelListing::where('channel', self::CHANNEL)->where('product_id', $product->id)->where('product_unit_id', $unit->id)->exists()) {
-            throw ValidationException::withMessages(['product_unit_id' => "{$product->sku} ({$unit->name}) is already mapped to another Ordermentum variant."]);
+        if (ChannelListing::where('channel', $variant->channel)->where('product_id', $product->id)->where('product_unit_id', $unit->id)->exists()) {
+            throw ValidationException::withMessages(['product_unit_id' => "{$product->sku} ({$unit->name}) is already mapped to another {$variant->channel} item."]);
         }
 
         DB::transaction(function () use ($variant, $product, $unit, $data) {
             ChannelListing::create([
-                'channel' => self::CHANNEL, 'product_id' => $product->id, 'product_unit_id' => $unit->id,
+                'channel' => $variant->channel, 'product_id' => $product->id, 'product_unit_id' => $unit->id,
                 'external_variant_id' => $variant->external_variant_id, 'external_sku' => $variant->external_sku,
-                'external_location_id' => config('services.ordermentum.location_id'), 'sync_enabled' => (bool) ($data['sync_enabled'] ?? false),
+                // Portal listings are keyed by the portal product ID; the portal retries its own refused calls.
+                'external_product_id' => $variant->channel === 'portal' ? $variant->external_variant_id : null,
+                'external_location_id' => $variant->channel === 'ordermentum' ? config('services.ordermentum.location_id') : null,
+                'sync_enabled' => (bool) ($data['sync_enabled'] ?? false),
             ]);
             $variant->forceFill(['resolved_at' => now()])->save();
         });
 
-        // Orders that waited for this variant run again.
-        IntegrationInbox::where('channel', self::CHANNEL)->where('status', IntegrationInbox::STATUS_NEEDS_MAPPING)
-            ->where('error', 'like', '%'.$variant->external_variant_id.'%')->get()->each(fn ($i) => $this->requeue($i));
+        // Ordermentum orders that waited for this variant run again (the portal retries its own calls).
+        if ($variant->channel === self::CHANNEL) {
+            IntegrationInbox::where('channel', self::CHANNEL)->where('status', IntegrationInbox::STATUS_NEEDS_MAPPING)
+                ->where('error', 'like', '%'.$variant->external_variant_id.'%')->get()->each(fn ($i) => $this->requeue($i));
+        }
 
         return back()->with('success', "Mapped to {$product->sku}.");
+    }
+
+    private function requestPush(string $channel, iterable $productIds): void
+    {
+        $channel === 'portal'
+            ? PushPortalStock::request($productIds, force: true)
+            : PushOrdermentumStock::request($productIds, force: true);
+    }
+
+    /** @return array<string, mixed> */
+    private function portalSection(): array
+    {
+        $listings = ChannelListing::where('channel', 'portal');
+
+        return [
+            'api_enabled' => (bool) config('bwms.portal.api_enabled'),
+            'inbound_keys' => count(config('bwms.portal.inbound_keys')),
+            'push_enabled' => (bool) config('bwms.portal.push_enabled'),
+            'events_enabled' => (bool) config('bwms.portal.events_enabled'),
+            'outbound_configured' => filled(config('bwms.portal.base_url')) && filled(config('bwms.portal.outbound_secret')),
+            'listings' => (clone $listings)->count(),
+            'listings_enabled' => (clone $listings)->where('sync_enabled', true)->count(),
+            'last_push_ok' => SyncAttempt::where('channel', 'portal')->where('operation', 'push')->where('success', true)->max('created_at'),
+            'failures_24h' => SyncAttempt::where('channel', 'portal')->where('success', false)->where('created_at', '>', now()->subDay())->count(),
+            'push_failures' => (clone $listings)->whereNotNull('last_error')->with('product:id,sku,name')->limit(50)->get()->map(fn (ChannelListing $l) => $this->listingRow($l)),
+            // B4.3: reservations refused for stock (the portal may already have accepted the order offline) or invalid.
+            'refused' => IntegrationInbox::where('channel', 'portal')->whereIn('status', ['rejected', IntegrationInbox::STATUS_FAILED])
+                ->latest('id')->limit(50)->get(['id', 'event', 'external_id', 'status', 'error', 'created_at']),
+        ];
     }
 
     private function requeue(IntegrationInbox $inbox): void

@@ -84,8 +84,8 @@ Other inbound behaviour:
 5. Set `ORDERMENTUM_INGEST_ENABLED=true`, then watch the Sync screen's inbound events and signature column.
 6. After the stocktake opening balances are posted:
    1. Set `ORDERMENTUM_PUSH_ENABLED=true`.
-   2. Click "Enable all".
-   3. Run `php artisan channels:ordermentum push`.
+   2. Click "Enable all". This queues a forced push of every listing it enables.
+   3. Optionally, run `php artisan channels:ordermentum push` to re-send everything.
 
 ## Not done yet
 

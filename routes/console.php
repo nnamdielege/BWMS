@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\SyncAttempt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
 // All schedules run in the business timezone; the app clock itself is UTC.
@@ -18,3 +19,7 @@ Schedule::command('channels:ordermentum reconcile')->dailyAt('03:00')->timezone(
 
 // NFR-12: sync_attempts are kept 90 days.
 Schedule::command('model:prune', ['--model' => [SyncAttempt::class]])->dailyAt('03:30')->timezone($tz);
+
+// Portal API idempotency records: kept 30 days, well beyond the portal's retry window (B4.3).
+Schedule::call(fn () => DB::table('api_idempotency_keys')->where('created_at', '<', now()->subDays(30))->delete())
+    ->name('prune-api-idempotency-keys')->dailyAt('03:40')->timezone($tz);

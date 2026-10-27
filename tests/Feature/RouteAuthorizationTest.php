@@ -64,6 +64,15 @@ class RouteAuthorizationTest extends TestCase
                 continue;
             }
 
+            // Machine API: authenticated by the portal's HMAC signature instead of a session (B4.4).
+            if (str_starts_with($route->uri(), 'api/portal/')) {
+                if (! in_array('portal.signature', $middleware, true)) {
+                    $offenders[] = "{$name}: portal API route without portal.signature";
+                }
+
+                continue;
+            }
+
             if (! in_array('auth', $middleware, true)) {
                 $offenders[] = "{$name}: not authenticated and not in PUBLIC allowlist";
 

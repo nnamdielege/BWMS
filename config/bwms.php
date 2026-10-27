@@ -64,4 +64,33 @@ return [
             'name' => ['name', 'productName', 'product.name'],
         ],
     ],
+
+    /*
+     * Portal integration (spec B4.3-B4.4): shop.localselection.com.au.
+     * Both directions are signed: X-BWMS-Key-Id, X-BWMS-Timestamp and
+     * X-BWMS-Signature = hex HMAC-SHA256(timestamp . "." . raw body).
+     */
+    'portal' => [
+        // Inbound API (/api/portal/v1). Off returns 503.
+        'api_enabled' => (bool) env('PORTAL_API_ENABLED', false),
+        // "keyId:secret,keyId2:secret2": two may be active at once for rotation.
+        'inbound_keys' => collect(explode(',', (string) env('PORTAL_API_KEYS', '')))
+            ->map(fn ($pair) => array_pad(explode(':', trim($pair), 2), 2, ''))
+            ->filter(fn ($kv) => $kv[0] !== '' && $kv[1] !== '')
+            ->mapWithKeys(fn ($kv) => [$kv[0] => $kv[1]])->all(),
+        'timestamp_tolerance' => 300,
+        // Site whose stock the portal sells and where its orders are fulfilled.
+        'site_code' => env('PORTAL_SITE_CODE', env('BWMS_DEFAULT_SITE_CODE', 'CLONTARF')),
+
+        // Outbound: BWMS -> portal stock pushes and dispatch events. Off until cutover.
+        'base_url' => env('PORTAL_BASE_URL'),
+        'outbound_key_id' => env('PORTAL_OUTBOUND_KEY_ID'),
+        'outbound_secret' => env('PORTAL_OUTBOUND_SECRET'),
+        'push_enabled' => (bool) env('PORTAL_PUSH_ENABLED', false),
+        'events_enabled' => (bool) env('PORTAL_EVENTS_ENABLED', false),
+        'connect_timeout' => 5,
+        'timeout' => 15,
+        'push_batch' => 100,
+        'debounce_seconds' => (int) env('PORTAL_DEBOUNCE_SECONDS', 10),
+    ],
 ];
