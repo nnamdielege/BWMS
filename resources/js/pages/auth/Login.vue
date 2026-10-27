@@ -28,7 +28,7 @@ const submit = () => {
 </script>
 
 <template>
-    <AuthBase title="Log in to BWMS" description="Accounts are by invitation. Ask an administrator if you need access.">
+    <AuthBase title="Log in to Local Selection WMS" description="Accounts are by invitation. Ask an administrator if you need access.">
         <Head title="Log in" />
 
         <div v-if="status" class="mb-4 text-center text-sm font-medium text-green-600">

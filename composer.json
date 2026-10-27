@@ -1,13 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/vue-starter-kit",
+    "name": "localselection/wms",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": [
-        "laravel",
-        "framework"
-    ],
-    "license": "MIT",
+    "description": "Local Selection WMS: warehouse management (stock ledger, purchasing, orders, pick and pack, Ordermentum and portal sync).",
+    "license": "proprietary",
     "require": {
         "php": "^8.2",
         "ext-bcmath": "*",

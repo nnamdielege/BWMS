@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\DeliveryAreaController;
 use App\Http\Controllers\Admin\InvitationController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LocationController;
@@ -29,6 +30,9 @@ use App\Http\Controllers\Warehouse\PickPackController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
+
+// Company logo for email clients (public by design; serves only the logo).
+Route::get('branding/logo', [BrandingController::class, 'logo'])->middleware('throttle:60,1')->name('branding.logo');
 
 Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
@@ -161,6 +165,8 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::post('delivery-areas', [DeliveryAreaController::class, 'store'])->middleware('can:settings.manage')->name('delivery-areas.store');
         Route::put('delivery-areas/{area}', [DeliveryAreaController::class, 'update'])->middleware('can:settings.manage')->name('delivery-areas.update');
         Route::put('settings', [SettingsController::class, 'update'])->middleware('can:settings.manage')->name('settings.update');
+        Route::post('settings/logo', [SettingsController::class, 'storeLogo'])->middleware('can:settings.manage')->name('settings.logo.store');
+        Route::delete('settings/logo', [SettingsController::class, 'destroyLogo'])->middleware('can:settings.manage')->name('settings.logo.destroy');
 
         Route::get('users', [UserController::class, 'index'])
             ->middleware('can:viewAny,App\Models\User')->name('users.index');

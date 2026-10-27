@@ -4,6 +4,7 @@ namespace App\Services\Purchasing;
 
 use App\Models\PurchaseOrder;
 use App\Models\Setting;
+use App\Support\Branding;
 use Mpdf\Config\ConfigVariables;
 use Mpdf\Config\FontVariables;
 use Mpdf\Mpdf;
@@ -44,6 +45,7 @@ class PurchaseOrderPdf
         $mpdf->WriteHTML(view('pdf.purchase-order', [
             'po' => $po,
             'company' => Setting::all_(),
+            'logoPath' => Branding::logoPath(),
         ])->render());
 
         return $mpdf->Output('', Destination::STRING_RETURN);

@@ -4,9 +4,11 @@
     .code { font-size: 26pt; font-weight: bold; }
     .path { font-size: 8pt; color: #555; }
     .bc { font-size: 7pt; color: #333; }
+    .logo { float: right; height: 9mm; }
 </style></head><body>
 @foreach ($bins as $bin)
     <div class="label">
+        <img class="logo" src="{{ $logoPath }}" alt="">
         <div class="code">{{ $bin->code }}</div>
         <div class="path">{{ $bin->path() }}{{ $bin->is_quarantine ? ' · QUARANTINE' : '' }}</div>
         <barcode code="{{ $bin->barcode }}" type="C128B" size="1.1" height="1.1" />

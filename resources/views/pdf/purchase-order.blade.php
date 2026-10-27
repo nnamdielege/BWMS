@@ -24,6 +24,7 @@
             @if ($po->expected_date)<div class="muted">Required by: {{ $po->expected_date->format('d/m/Y') }}</div>@endif
         </td>
         <td style="width:45%">
+            <img src="{{ $logoPath }}" style="height:18mm; margin-bottom:2mm" alt=""><br>
             <strong>{{ $company['company.name'] ?? config('app.name') }}</strong><br>
             @if (!empty($company['company.abn']))ABN {{ $company['company.abn'] }}<br>@endif
             {!! nl2br(e($company['company.address'] ?? '')) !!}<br>

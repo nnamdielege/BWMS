@@ -1,0 +1,12 @@
+{
+  "name": "Local Selection WMS",
+  "short_name": "LS WMS",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#E3E7E1",
+  "theme_color": "#15201B",
+  "icons": [
+    { "src": "/images/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/images/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

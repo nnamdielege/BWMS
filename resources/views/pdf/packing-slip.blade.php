@@ -10,7 +10,8 @@
     .chilled { font-size: 8pt; border: 0.6pt solid #06c; color: #06c; padding: 0 3pt; }
 </style></head><body>
 <table style="margin-top:0"><tr>
-    <td style="border:0; width:60%">
+    <td style="border:0; width:14%"><img src="{{ $logoPath }}" style="height:18mm" alt=""></td>
+    <td style="border:0; width:46%">
         <h1>Packing slip {{ $order->number }}</h1>
         <div class="muted">{{ $company['company.name'] ?? config('app.name') }}</div>
     </td>

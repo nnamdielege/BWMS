@@ -16,6 +16,7 @@ class RouteAuthorizationTest extends TestCase
     /** Routes reachable without logging in. Each needs its own justification. */
     private const PUBLIC = [
         'home',                 // redirect only
+        'branding.logo',        // company logo for email clients; serves that one image only
         'login', 'password.request', 'password.email', 'password.reset', 'password.store',
         'invitations.show', 'invitations.accept',
         'two-factor.login', 'two-factor.login.store', // challenge after password; requires session login.id

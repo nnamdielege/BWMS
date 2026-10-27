@@ -2,6 +2,7 @@
 
 namespace App\Services\Documents;
 
+use App\Support\Branding;
 use Mpdf\Config\ConfigVariables;
 use Mpdf\Config\FontVariables;
 use Mpdf\Mpdf;
@@ -31,7 +32,7 @@ class PdfRenderer
         ]);
         $mpdf->SetTitle($title);
         $mpdf->SetCreator(config('app.name'));
-        $mpdf->WriteHTML(view($view, $data)->render());
+        $mpdf->WriteHTML(view($view, $data + ['logoPath' => Branding::logoPath()])->render());
 
         return $mpdf->Output('', Destination::STRING_RETURN);
     }
