@@ -178,10 +178,18 @@ class PortalIntegrationTest extends TestCase
         $this->signed('GET', '/api/portal/v1/stock?product_ids=501,777')->assertOk()->assertExactJson([['portal_product_id' => 501, 'available' => 3]]);
     }
 
-    public function test_unit_quantity_mismatch_is_reported_as_a_warning()
+    public function test_unit_quantity_is_only_checked_when_the_portal_sends_unit()
     {
-        $this->reserve([['line_ref' => 'L1', 'portal_product_id' => 501, 'qty' => 1, 'unit_quantity' => 24]])
-            ->assertCreated()->assertJsonPath('warnings.0', 'line L1: portal unit_quantity 24 differs from the mapped pack (12)');
+        // "1 x carton" with no unit: no check (the pack is fixed at mapping time).
+        $this->reserve([['line_ref' => 'L1', 'portal_product_id' => 501, 'qty' => 1, 'unit_quantity' => 1]], 'P-1')->assertCreated()->assertJsonMissingPath('warnings');
+        // Consistent with the mapped pack (Carton of 12 "each"): no warning either way it is written.
+        $this->reserve([['line_ref' => 'L1', 'portal_product_id' => 501, 'qty' => 1, 'unit_quantity' => 1, 'unit' => 'Carton']], 'P-2')->assertCreated()->assertJsonMissingPath('warnings');
+        $this->reserve([['line_ref' => 'L1', 'portal_product_id' => 501, 'qty' => 1, 'unit_quantity' => 12, 'unit' => 'each']], 'P-3')->assertCreated()->assertJsonMissingPath('warnings');
+
+        $this->reserve([['line_ref' => 'L1', 'portal_product_id' => 501, 'qty' => 1, 'unit_quantity' => 24, 'unit' => 'each']], 'P-4')
+            ->assertCreated()->assertJsonPath('warnings.0', 'line L1: portal "24 x each" differs from the mapped pack (Carton = 12 each)');
+        $this->reserve([['line_ref' => 'L1', 'portal_product_id' => 501, 'qty' => 1, 'unit_quantity' => 6, 'unit' => 'bottle']], 'P-5')
+            ->assertCreated()->assertJsonPath('warnings.0', 'line L1: portal "6 x bottle" matches neither the base unit (each) nor the mapped pack (Carton)');
     }
 
     public function test_stock_changes_push_signed_batches_to_the_portal()

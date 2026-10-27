@@ -97,6 +97,7 @@ class PortalApiController extends Controller
             'lines.*.portal_product_id' => ['required', 'integer', 'min:1'],
             'lines.*.qty' => ['required', 'integer', 'min:0', 'max:1000000'],
             'lines.*.unit_quantity' => ['nullable', 'integer', 'min:1'],
+            'lines.*.unit' => ['nullable', 'string', 'max:64'],
         ]);
 
         return $validator->fails()
@@ -108,7 +109,7 @@ class PortalApiController extends Controller
     {
         $lines = collect($data['lines']);
         $listings = ChannelListing::where('channel', self::CHANNEL)->whereIn('external_product_id', $lines->pluck('portal_product_id')->map(fn ($id) => (string) $id))
-            ->with('unit')->get()->keyBy('external_product_id');
+            ->with(['unit', 'product:id,base_unit'])->get()->keyBy('external_product_id');
 
         $unknown = $lines->reject(fn ($l) => isset($listings[(string) $l['portal_product_id']]));
         if ($unknown->isNotEmpty()) {
@@ -118,8 +119,7 @@ class PortalApiController extends Controller
             return $this->respond($request, $event, $data['order_ref'], IntegrationInbox::STATUS_FAILED, 'Unknown portal product(s); map them on the sync screen.', $body, 422);
         }
 
-        $warnings = $lines->filter(fn ($l) => isset($l['unit_quantity']) && (int) $l['unit_quantity'] !== $listings[(string) $l['portal_product_id']]->unit->base_qty)
-            ->map(fn ($l) => "line {$l['line_ref']}: portal unit_quantity {$l['unit_quantity']} differs from the mapped pack ({$listings[(string) $l['portal_product_id']]->unit->base_qty})")->values()->all();
+        $warnings = $lines->map(fn ($l) => $this->unitWarning($l, $listings[(string) $l['portal_product_id']]))->filter()->values()->all();
 
         $customer = isset($data['customer']['portal_user_id'])
             ? Customer::firstOrCreate(['portal_user_id' => $data['customer']['portal_user_id']], [
@@ -169,6 +169,30 @@ class PortalApiController extends Controller
         }
 
         return $this->respond($request, $event, $data['order_ref'], IntegrationInbox::STATUS_PROCESSED, $warnings ? implode('; ', $warnings) : null, $body, $created);
+    }
+
+    /**
+     * The pack is fixed at mapping time; unit_quantity x unit only describes the
+     * portal's sell unit and can be written "1 x carton" or "12 x bottle". So it is
+     * only checked when the portal also sends `unit` (agreed 2026-10-27):
+     * unit = BWMS base unit -> unit_quantity must equal the pack size;
+     * unit = the pack's name -> unit_quantity must be 1; anything else is flagged.
+     */
+    private function unitWarning(array $line, ChannelListing $listing): ?string
+    {
+        if (blank($line['unit'] ?? null) || ! isset($line['unit_quantity'])) {
+            return null;
+        }
+        $unit = mb_strtolower(trim($line['unit']));
+        $qty = (int) $line['unit_quantity'];
+        $pack = $listing->unit;
+        $prefix = "line {$line['line_ref']}: portal \"{$qty} x {$line['unit']}\"";
+
+        return match (true) {
+            $unit === mb_strtolower($listing->product->base_unit) => $qty === $pack->base_qty ? null : "{$prefix} differs from the mapped pack ({$pack->name} = {$pack->base_qty} {$listing->product->base_unit})",
+            $unit === mb_strtolower($pack->name) => $qty === 1 ? null : "{$prefix} differs from the mapped pack (1 {$pack->name})",
+            default => "{$prefix} matches neither the base unit ({$listing->product->base_unit}) nor the mapped pack ({$pack->name})",
+        };
     }
 
     /** Stores the call in the inbox (B4.3 step 4) and answers. */

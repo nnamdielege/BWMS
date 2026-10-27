@@ -39,7 +39,13 @@ Every mutating call is also stored in `integration_inbox` (channel `portal`).
 | `GET /orders/{ref}` | Returns `status`, `reservation_status`, and per line `reserved_qty` / `dispatched_qty`. |
 | `GET /stock?product_ids=…` | Returns available packs per mapped product, never below zero. |
 
-**Quantities on the wire are portal packs.** A portal product maps to one BWMS product and pack (`channel_listings`, channel `portal`), and BWMS converts to and from base units. If the portal sends a `unit_quantity` that differs from the mapped pack, the call still succeeds, with a `warnings` entry on the response and the inbox row. What the portal means by `unit_quantity` is still unconfirmed (B4.3).
+**Quantities on the wire are portal packs.** A portal product maps to one BWMS product and pack (`channel_listings`, channel `portal`), and BWMS converts to and from base units.
+- The pack is chosen at mapping time. `unit_quantity` × `unit` only describes the portal's sell unit, and the same unit can be written "1 × carton" or "12 × bottle".
+- **The check only runs when the portal sends `unit`:**
+  - `unit` = the BWMS base unit → `unit_quantity` must equal the pack size
+  - `unit` = the pack's name → `unit_quantity` must be 1
+  - anything else, or a mismatch, adds a `warnings` entry on the response and the inbox row
+  The call still succeeds.
 
 Portal customers are matched by `portal_user_id`. One is created as `P-{id}` on first sight.
 

@@ -28,9 +28,10 @@ When verifying, reject with 401 if the key is unknown, the timestamp is more tha
    POST {BWMS}/api/portal/v1/reservations
    Idempotency-Key: portal:order:{reference}
    {order_ref, customer: {portal_user_id, business_name}, requested_delivery_date,
-    lines: [{line_ref, portal_product_id, qty, unit_quantity}]}
+    lines: [{line_ref, portal_product_id, qty, unit_quantity, unit}]}
    ```
    - `qty` is in the portal's own units: the pack the product is sold in.
+   - **Send `unit` as well as `unit_quantity`** (both from `products`, as snapshotted on the order item). BWMS uses the pair only for a consistency check (see "What `unit_quantity` means"). The pack is still fixed at mapping time.
    - `line_ref` must be stable for the line, for example the cart item ID.
 2. Timeouts: **1s connect, 3s total**.
 3. Act on the response:
@@ -102,8 +103,9 @@ The portal **invoices shipped quantities only**. `lines[].qty` in the event is w
   - `ImportRealProducts` created every real product as `unit = carton, unit_quantity = 1`.
   - The admin form and CSV import let staff enter anything (`unit_quantity` min 1, `unit` free text).
 - **Mapping rule:** one portal product = one BWMS pack equal to **one portal sell unit**. `qty` and stock are exchanged in sell units, which BWMS already does. The BWMS pack is chosen explicitly at mapping time (`pack_qty`); `unit_quantity` is not used to derive it.
-- **Consistency check (proposed):** BWMS compares `unit_quantity` only when the portal also sends `unit`:
+- **Consistency check (agreed 2026-10-27, built on the BWMS side):** BWMS compares `unit_quantity` only when the portal also sends `unit`:
   - if `unit` names the BWMS base unit ("bottle"), `unit_quantity` must equal the pack size
   - if `unit` names the pack ("carton"), `unit_quantity` must be 1
-  - anything else is a warning for a person to check
-  This would mean adding `unit` to the reservation lines.
+  - anything else is returned as a `warnings` entry for a person to check
+  The order is never refused for this.
+- **Portal task:** add `unit` to every line of `POST /reservations` and `PUT /orders/{ref}` (step 3 and step 5).
