@@ -1,6 +1,7 @@
 # Deploy checklist
 
-Target: VPS, **MariaDB 10.5.29**, PHP 8.2+, Nginx + PHP-FPM, Supervisor.
+Target: VPS, **MariaDB 10.5.29**, PHP 8.2+ (incl. `bcmath`, `gd`, `intl`), Apache + PHP-FPM, Supervisor.
+The go-live sequence (stages, checks, rollback) is in `CUTOVER.md`.
 Run every step on the first deploy; steps marked **(every deploy)** each time.
 
 ## 1. Database (first deploy, needs a DB admin)
@@ -69,5 +70,5 @@ and binary logging is enabled`).
 ## 4. Smoke test
 
 - [ ] Log in as admin (2FA challenge appears).
-- [ ] Locations shows Clontarf Warehouse with RECEIVING / STOCK / QUARANTINE.
+- [ ] Locations shows Clontarf Warehouse with STOCK / QUARANTINE (add RECEIVING only if put-away is wanted, D-14).
 - [ ] `php artisan bwms:check-triggers` and `php artisan stock:verify` both OK.

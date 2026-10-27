@@ -20,7 +20,9 @@ use Illuminate\Support\Facades\Cache;
  */
 class PollOrdermentumOrders extends Command
 {
-    protected $signature = 'channels:poll-ordermentum {--pages=10}';
+    protected $signature = 'channels:poll-ordermentum
+        {--pages=10}
+        {--since= : Catch-up from this date-time (business time zone), e.g. at cutover; default: last poll - 15 min}';
 
     protected $description = 'Queue Ordermentum orders that are new or changed since they were last applied';
 
@@ -35,7 +37,9 @@ class PollOrdermentumOrders extends Command
         }
 
         $startedAt = now();
-        $since = Carbon::parse(Cache::get(self::LAST_POLL_KEY, now()->subDay()->toIso8601String()))->subMinutes(15);
+        $since = $this->option('since')
+            ? Carbon::parse($this->option('since'), config('bwms.business_timezone'))
+            : Carbon::parse(Cache::get(self::LAST_POLL_KEY, now()->subDay()->toIso8601String()))->subMinutes(15);
         $queued = 0;
 
         $complete = false;

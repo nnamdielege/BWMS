@@ -74,9 +74,19 @@ Both endpoints verify the signature (step 2). Make them stateless: no session, n
   - Record it against the order, for example set status `dispatched`, or flag a short shipment for staff and the buyer.
   - Return 200.
 
+### Short shipments (decided 2026-10-27)
+
+The portal **invoices shipped quantities only**. `lines[].qty` in the event is what actually left, in the portal's sell units.
+- **Not yet charged** (invoice, COD, wallet not yet captured): invoice and charge the shipped quantities only.
+- **Already charged** (Stripe captured, or a Xero invoice already raised for the ordered quantities):
+  - issue a **Xero credit note**, and/or a **Stripe partial refund**, for the difference (ordered − shipped) × unit price, including GST
+  - **email the customer** what was short and what was credited or refunded
+- Make it idempotent on the event (`order_ref + event + at`), so a redelivered event never credits twice.
+- Record the credit note or refund reference on the order, for staff.
+
 ## 7. Go-live
 
-- **Product mapping:** export `portal_product_id, sku, pack_qty` for BWMS's `channels:portal-map`. `pack_qty` is the number of BWMS base units in the portal's sell unit.
+- **Product mapping:** export `portal_product_id, sku, pack_qty` for BWMS's `channels:portal-map`. `pack_qty` is the number of **BWMS base units** in one portal sell unit, so choose it from what the sell unit physically is, **not** from `unit_quantity` (see below).
 - **Disable the portal's own Ordermentum sync (D-6):**
   - set `ORDERMENTUM_SYNC_MODE=off`
   - stop `PushProductStockToOrdermentum`
@@ -84,7 +94,16 @@ Both endpoints verify the signature (step 2). Make them stateless: no session, n
   BWMS is then the only stock writer.
 - **Ordermentum token:** if any Ordermentum code is still running in the portal past 1 Jan 2027, do the token switch in `docs/portal-om-token.md`.
 
-## Open questions
+## What `unit_quantity` means (read from the portal code, 2026-10-27)
 
-- **`products.unit_quantity`:** what does it mean? BWMS assumes it's base units per sell pack, and reports a warning when it differs from the mapped pack.
-- **Short shipments:** what should the portal do on `short_shipped` (refund, credit, notify)? That's a business decision.
+- **The portal sells sell units.** `order_items.qty`, `price` ("each"), `stock_qty` and the checkout stock check (`CheckoutService::snapshotLines`, `stock_qty < qty`) are all counted in sell units.
+- **`unit_quantity` × `unit` only describes one sell unit.** Every screen, run sheet and docket renders it as `{qty} × {unit_quantity} {unit}`. It is never used in a calculation.
+- **⚠ The encoding is ambiguous.** The same sell unit can be written as `1 × carton` or as `12 × bottle`:
+  - `ImportRealProducts` created every real product as `unit = carton, unit_quantity = 1`.
+  - The admin form and CSV import let staff enter anything (`unit_quantity` min 1, `unit` free text).
+- **Mapping rule:** one portal product = one BWMS pack equal to **one portal sell unit**. `qty` and stock are exchanged in sell units, which BWMS already does. The BWMS pack is chosen explicitly at mapping time (`pack_qty`); `unit_quantity` is not used to derive it.
+- **Consistency check (proposed):** BWMS compares `unit_quantity` only when the portal also sends `unit`:
+  - if `unit` names the BWMS base unit ("bottle"), `unit_quantity` must equal the pack size
+  - if `unit` names the pack ("carton"), `unit_quantity` must be 1
+  - anything else is a warning for a person to check
+  This would mean adding `unit` to the reservation lines.

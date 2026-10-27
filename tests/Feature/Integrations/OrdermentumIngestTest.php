@@ -390,4 +390,14 @@ class OrdermentumIngestTest extends TestCase
         $this->assertSame('2026-11-01T00:00:00Z', Cache::get('ordermentum:last_poll'));
         Http::assertSent(fn (Request $r) => str_contains(urldecode($r->url()), 'updatedAt[gte]=2026-10-31T23:45:00'));
     }
+
+    public function test_poll_can_catch_up_from_a_given_cutover_time()
+    {
+        Queue::fake();
+        Http::fake(['api.om.test/v2/orders*' => Http::response(['data' => [], 'links' => ['next' => null]])]);
+
+        $this->artisan('channels:poll-ordermentum', ['--since' => '2026-11-30 18:00'])->assertSuccessful();
+
+        Http::assertSent(fn (Request $r) => str_contains(urldecode($r->url()), 'updatedAt[gte]=2026-11-30T18:00:00+10:00'));
+    }
 }
