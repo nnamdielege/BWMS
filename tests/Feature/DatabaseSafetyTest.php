@@ -53,18 +53,18 @@ class DatabaseSafetyTest extends TestCase
 
     public function test_refresh_database_refuses_outside_a_test_database()
     {
-        config(['database.connections.'.config('database.default').'.database' => 'bwms_next']);
+        config(['database.connections.'.config('database.default').'.database' => 'bwms']);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Refusing RefreshDatabase: database "bwms_next" does not end in "_test"');
+        $this->expectExceptionMessage('Refusing RefreshDatabase: database "bwms" does not end in "_test"');
         DatabaseSafety::assertDestructiveAllowed('RefreshDatabase');
     }
 
     public function test_name_rule()
     {
-        config(['database.connections.mysql.database' => 'bwms_next_testing']);
+        config(['database.connections.mysql.database' => 'bwms_testing']);
         $this->assertFalse(DatabaseSafety::destructiveAllowed('mysql'), '"_testing" is not "_test"');
-        config(['database.connections.mysql.database' => 'bwms_next_test']);
+        config(['database.connections.mysql.database' => 'bwms_test']);
         $this->assertTrue(DatabaseSafety::destructiveAllowed('mysql'));
     }
 }

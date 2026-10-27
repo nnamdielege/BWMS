@@ -6,13 +6,22 @@ Spec: `docs/02-requirements.md` on the `rebuild/docs` branch of this repo.
 
 Laravel 12 · Inertia · Vue 3 (TypeScript) · MySQL/MariaDB.
 
+## Local layout (Windows / XAMPP)
+
+| Path | What | Branch |
+|---|---|---|
+| `C:\xampp\htdocs\bwms` | **This app** (git worktree) | `rebuild/app` (becomes `main` at cutover) |
+| `C:\xampp\htdocs\bwms-legacy` | Retired legacy app, kept for reference (its `.env` too). **Holds the repository's `.git`**: do not delete it while the worktree above depends on it. | `rebuild/docs` (spec, audit) |
+
+Both are working trees of one repository (`origin` = github.com/nnamdielege/BWMS). Run the app with `php artisan serve --port=8001` (port 8000 is used by another local project).
+
 ## Setup (local)
 
 ```bash
 composer install && npm ci
 cp .env.example .env && php artisan key:generate
 cp .env.testing.example .env.testing   # then set APP_KEY (php artisan key:generate --show)
-# create databases bwms_next and bwms_next_test (utf8mb4)
+# create databases bwms_next (dev) and bwms_test (tests) (utf8mb4)
 php artisan migrate --seed          # roles, default site + bins, reason codes
 php artisan bwms:invite-admin you@example.com "Your Name"   # prints a one-time link
 npm run dev && php artisan serve --port=8001
@@ -20,7 +29,7 @@ npm run dev && php artisan serve --port=8001
 
 There is no registration and no default password: every user is invited.
 
-**Database safety.** `migrate:fresh/refresh/reset/rollback`, `db:wipe`, `RefreshDatabase` and `DatabaseTruncation` refuse unless the database name ends in `_test` (`App\Support\DatabaseSafety`). Tests run on `bwms_next_test` (forced in `phpunit.xml`, also in `.env.testing`). On any other database, restore a backup instead of rolling back.
+**Database safety.** `migrate:fresh/refresh/reset/rollback`, `db:wipe`, `RefreshDatabase` and `DatabaseTruncation` refuse unless the database name ends in `_test` (`App\Support\DatabaseSafety`). Tests run on `bwms_test` (forced in `phpunit.xml`, also in `.env.testing`). On any other database, restore a backup instead of rolling back.
 
 ## Quality gates
 

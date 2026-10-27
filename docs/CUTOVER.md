@@ -17,6 +17,55 @@ Detail lives in the linked docs:
 - All sync switches stay **off** until their stage.
 - Keep the old app's files, vhost (disabled) and database **untouched**. They're only for reference.
 
+## Paths and branches
+
+**VPS paths**
+
+| Path | What |
+|---|---|
+| `/var/www/bwms` | **New BWMS** (this repo, deployed from git) |
+| `/var/www/BWMS-legacy` | **Old BWMS**, kept as it is (files, `.env`, disabled vhost) until the cutover is done and signed off. Its database stays untouched, and the legacy migration reads a restored copy of it. |
+
+Before §2, move the old app from wherever it lives now to `/var/www/BWMS-legacy`, with its vhost still disabled. Linux paths are case-sensitive: `/var/www/bwms` and `/var/www/BWMS-legacy` are distinct.
+
+**Repository and branches** (one repository, `origin` = github.com/nnamdielege/BWMS)
+
+| Branch | Contents |
+|---|---|
+| `main` | The old app, until the switch below |
+| `rebuild/app` | The new app |
+| `rebuild/docs` | Spec and audit (`docs/01-audit.md`, `docs/02-requirements.md`) on top of the old app's tree |
+
+- **Until cutover:** the VPS checks out `rebuild/app` in `/var/www/bwms`.
+- **At cutover**, after §11 passes and **only with the owner's approval**, switch `main`. Run this from a local clone, never on the VPS:
+
+  ```bash
+  git fetch origin
+  # 1. Freeze the old app's history
+  git tag -a legacy-final origin/main -m "Old BWMS, last state before the rebuild went live"
+  git branch legacy legacy-final
+  git push origin legacy-final legacy
+
+  # 2. Bring the spec and audit into the new app (docs only: rebuild/docs also carries the old app's files)
+  git checkout rebuild/app
+  git checkout origin/rebuild/docs -- docs/01-audit.md docs/02-requirements.md
+  git commit -m "Docs: audit and requirements from rebuild/docs"
+  git push origin rebuild/app
+
+  # 3. Make the new app the new main. rebuild/app is an orphan branch (no shared history with main),
+  #    so main is moved to it rather than merged. The old history stays on legacy / legacy-final.
+  git push --force-with-lease=main:origin/main origin rebuild/app:main
+  ```
+
+  Afterwards, the GitHub default branch stays `main`; check that branch protection allows this one-off move, or lift it briefly. Then on the VPS:
+
+  ```bash
+  cd /var/www/bwms && git fetch origin && git checkout -B main origin/main && git branch --set-upstream-to=origin/main
+  ```
+
+  From then on the VPS tracks `main`. `rebuild/app` and `rebuild/docs` can be deleted once `main` is confirmed.
+- **Why not a plain merge:** `rebuild/app` started as an orphan branch, so merging it into the old `main` would mix both apps' files in one tree. The old app is preserved completely on `legacy` and the `legacy-final` tag.
+
 ## Timeline
 
 | When | Stages |
@@ -83,7 +132,7 @@ mysqldump --single-transaction --routines --triggers bwms | gzip > /var/backups/
 
 ## 2. Deploy
 
-1. Deploy the approved release to `/var/www/bwms`.
+1. Deploy the approved release to `/var/www/bwms`: `git clone -b rebuild/app https://github.com/nnamdielege/BWMS.git /var/www/bwms` (after the switch: `main`). The old app stays in `/var/www/BWMS-legacy`.
 2. Write `.env` from `.env.example`:
    - `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL`, DB credentials, `MAIL_*`, `SESSION_SECURE_COOKIE=true`.
    - `ORDERMENTUM_API_KEY`, `ORDERMENTUM_SUPPLIER_ID`, `ORDERMENTUM_LINE_VARIANT_FIELDS=variantId`.
@@ -255,4 +304,4 @@ Decide at each stage's check. **Pausing never loses data:**
 |---|---|---|
 | **1. Pause** | A sync misbehaves (wrong figures, errors) | Set the affected switches to false (`ORDERMENTUM_PUSH_ENABLED`, `ORDERMENTUM_INGEST_ENABLED`, `PORTAL_*`), then `config:cache` and `queue:restart`. Fix it, then resume from that stage. |
 | **2. Restore** | BWMS data is wrong (bad import, bad pack setup, bad opening balances) | Pause (level 1). Restore the backup taken at the start of the stage. Fix the input file and redo the stage. Never `migrate:rollback`. |
-| **3. Abandon the cutover** | Go-live can't continue today | All switches off. Portal: switch its BWMS integration off, so it uses its own `stock_qty` as before. Ordermentum: its figures stay as they are (if pushes had started, re-set the stocktake figures by hand in the supplier platform, or leave BWMS's last push). Remove the webhook in Ordermentum. The **old BWMS is not brought back**: it overwrote stock with Ordermentum figures (audit C-3). Reschedule T and repeat from §6 after restoring the pre-§6 backup. |
+| **3. Abandon the cutover** | Go-live can't continue today | All switches off. Portal: switch its BWMS integration off, so it uses its own `stock_qty` as before. Ordermentum: its figures stay as they are (if pushes had started, re-set the stocktake figures by hand in the supplier platform, or leave BWMS's last push). Remove the webhook in Ordermentum. The **old BWMS is not brought back**: it overwrote stock with Ordermentum figures (audit C-3). Reschedule T and repeat from §6 after restoring the pre-§6 backup. Don't switch `main` (branch plan above) until a cutover has succeeded. `/var/www/BWMS-legacy` stays as it is. |
