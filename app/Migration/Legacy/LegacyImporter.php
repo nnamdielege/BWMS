@@ -239,7 +239,8 @@ class LegacyImporter
             'external_product_id' => $row->ordermentum_product_id,
             'external_variant_id' => $row->ordermentum_variant_id,
             'external_sku' => $row->ordermentum_sku,
-            'external_location_id' => config('services.ordermentum.location_id'),
+            // Per-listing override only; pushes use ORDERMENTUM_LOCATION_ID (the stock location, e.g. Clontarf Warehouse).
+            'external_location_id' => null,
             'sync_enabled' => false,
         ]);
     }

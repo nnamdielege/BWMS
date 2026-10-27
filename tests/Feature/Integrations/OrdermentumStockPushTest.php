@@ -101,10 +101,10 @@ class OrdermentumStockPushTest extends TestCase
         config(['bwms.ordermentum.bulk_chunk' => 2]);
         Http::fake(['stock.om.test/*' => Http::response(['ok' => true])]);
         $listings = collect(range(1, 3))->map(function ($i) {
-            $p = Product::factory()->create();
+            $p = Product::factory()->create(['name' => "Tea {$i}"]);
             $this->stockIn($p, $i * 10);
 
-            return $this->listing($p, "var-{$i}");
+            return tap($this->listing($p, "var-{$i}"))->update(['external_product_id' => "prod-{$i}"]);
         });
         StockPushService::request($listings->pluck('product_id'));
 
@@ -112,7 +112,7 @@ class OrdermentumStockPushTest extends TestCase
 
         Http::assertSentCount(2); // 2 + 1
         Http::assertSent(fn (Request $r) => $r->method() === 'PATCH' && $r->url() === 'https://stock.om.test/v1/items'
-            && $r['actions'][0] === ['id' => 'var-1', 'action' => 'UPDATE', 'quantity' => 10, 'locationId' => 'loc-1']
+            && $r['actions'][0] === ['id' => 'var-1', 'productId' => 'prod-1', 'name' => 'Tea 1', 'action' => 'UPDATE', 'quantity' => 10, 'locationId' => 'loc-1']
             && $r['actions'][1]['quantity'] === 20);
         $this->assertSame([10, 20, 30], $listings->map(fn ($l) => $l->fresh()->last_pushed_qty)->all());
         $this->assertSame(3, SyncAttempt::where('operation', 'push_bulk')->where('success', true)->count());

@@ -104,16 +104,26 @@ class StockPushService
             $toPush[] = [$listing, $qty];
         }
 
-        if (count($toPush) === 1 || ! config('bwms.ordermentum.bulk_push')) {
-            foreach (array_slice($toPush, 0, $maxCalls) as [$listing, $qty]) {
-                $this->putOne($listing, $qty);
-                $stats['pushed']++;
+        // Bulk PATCH needs the Ordermentum productId on every action; listings without one go by PUT.
+        $bulkable = array_values(array_filter($toPush, fn ($p) => filled($p[0]->external_product_id)));
+        $single = array_values(array_filter($toPush, fn ($p) => blank($p[0]->external_product_id)));
+        if (count($bulkable) < 2 || ! config('bwms.ordermentum.bulk_push')) {
+            [$single, $bulkable] = [$toPush, []];
+        }
+        $calls = 0;
+        foreach (array_chunk($bulkable, $chunk) as $batch) {
+            if ($calls++ >= $maxCalls) {
+                break;
             }
-        } else {
-            foreach (array_slice(array_chunk($toPush, $chunk), 0, $maxCalls) as $batch) {
-                $this->patchMany($batch);
-                $stats['pushed'] += count($batch);
+            $this->patchMany($batch);
+            $stats['pushed'] += count($batch);
+        }
+        foreach ($single as [$listing, $qty]) {
+            if ($calls++ >= $maxCalls) {
+                break;
             }
+            $this->putOne($listing, $qty);
+            $stats['pushed']++;
         }
 
         $stats['remaining'] = ChannelListing::where('channel', self::CHANNEL)->where('sync_enabled', true)->whereNotNull('push_requested_at')->count();
@@ -144,10 +154,12 @@ class StockPushService
     /** @param  list<array{0: ChannelListing, 1: int}>  $batch */
     private function patchMany(array $batch): void
     {
-        // UPDATE sets the quantity (to be shown live by `om:probe write-test`); the nightly check would expose otherwise.
+        // PATCH schema (Ordermentum reference): id, action, name and productId are required on every action.
+        // UPDATE sets the quantity (verified live with `om:probe write-test`).
         $items = collect($batch)->map(fn ($pair) => [$pair[0], $pair[1], array_filter([
             'id' => $pair[0]->external_variant_id,
             'productId' => $pair[0]->external_product_id,
+            'name' => mb_substr($pair[0]->product->name ?? $pair[0]->product->sku, 0, 200),
             'action' => 'UPDATE',
             'quantity' => $pair[1],
             'locationId' => $this->locationId($pair[0]),

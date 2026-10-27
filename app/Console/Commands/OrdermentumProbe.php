@@ -22,7 +22,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class OrdermentumProbe extends Command
 {
     protected $signature = 'om:probe
-        {what : order, stock, tracking, recent, secret or write-test}
+        {what : order, stock, tracking, recent, locations, secret or write-test}
         {id? : Ordermentum order ID (order) or variant ID (stock, write-test)}
         {--json : Print only the raw response body}
         {--structure : order: print field names and types only, plus line item ID/quantity values (no customer details)}
@@ -55,8 +55,9 @@ class OrdermentumProbe extends Command
                 'tracking' => $this->probeTracking($client),
                 'recent' => $this->probeRecent($client),
                 'secret' => $this->probeSecret($client),
+                'locations' => $this->probeLocations($client),
                 'write-test' => $this->writeTest($client, (string) $this->argument('id')),
-                default => $this->failWith('First argument must be order, stock, tracking, recent, secret or write-test.'),
+                default => $this->failWith('First argument must be order, stock, tracking, recent, locations, secret or write-test.'),
             };
         } catch (OrdermentumException $e) {
             return $this->failWith($e->getMessage());
@@ -306,16 +307,26 @@ class OrdermentumProbe extends Command
         if ($before === null) {
             return $this->failWith("Initial read returned HTTP {$status}; nothing was written.");
         }
-        $value = (int) ($before['available'] ?? 0);
+        if (! is_numeric($before['available'] ?? null)) {
+            // No stock row at this location (e.g. a wrong ORDERMENTUM_LOCATION_ID): writing would create one.
+            return $this->failWith('No available figure at location '.($location ?: '(default)').'; nothing was written. Check ORDERMENTUM_LOCATION_ID with om:probe locations.');
+        }
+        $value = (int) $before['available'];
         $put = array_filter([
             'available' => $value, 'tracked' => (bool) ($before['tracked'] ?? true), 'allowOversell' => (bool) ($before['allowOversell'] ?? false),
             'locationId' => $location, 'supplierId' => config('services.ordermentum.supplier_id'),
         ], fn ($v) => $v !== null && $v !== '');
         $productId = ChannelListing::where('channel', 'ordermentum')->where('external_variant_id', $variantId)->value('external_product_id');
-        $patch = ['actions' => [array_filter(['id' => $variantId, 'productId' => $productId, 'action' => 'UPDATE', 'quantity' => $value, 'locationId' => $location])]];
+        $listing = ChannelListing::where('channel', 'ordermentum')->where('external_variant_id', $variantId)->with('product:id,sku,name')->first();
+        if (blank($productId)) {
+            return $this->failWith('This variant has no mapped Ordermentum productId (required by PATCH); nothing was written.');
+        }
+        $patch = ['actions' => [array_filter(['id' => $variantId, 'productId' => $productId, 'name' => $listing?->product?->name ?? $variantId,
+            'action' => 'UPDATE', 'quantity' => $value, 'locationId' => $location], fn ($v) => $v !== null && $v !== '')]];
 
         $rows = [['read', $status, $value, 'baseline']];
         $changed = false;
+        $failed = [];
         foreach ([
             'PUT (context-*)' => fn () => $client->putStock($path, $put, 'plain'),
             'PUT (x-context-*)' => fn () => $client->putStock($path, $put, 'x'),
@@ -327,6 +338,10 @@ class OrdermentumProbe extends Command
             $same = $now === $value;
             $changed = $changed || ! $same;
             $rows[] = [$label, $w->status(), $now ?? "read HTTP {$readStatus}", $same ? 'unchanged' : 'CHANGED'];
+            if (! $w->successful()) {
+                // Error bodies describe the request shape; they hold no stock or customer data.
+                $failed[] = "{$label}: HTTP {$w->status()} ".mb_strimwidth($w->body(), 0, 600, '...');
+            }
             if (! $same) {
                 break; // stop writing; restore below
             }
@@ -339,7 +354,31 @@ class OrdermentumProbe extends Command
 
             return self::FAILURE;
         }
+        foreach ($failed as $line) {
+            $this->error(OutputFormatter::escape($line));
+        }
+        if ($failed !== []) {
+            $this->warn("available stayed at {$value}, but ".count($failed).' write(s) were rejected.');
+
+            return self::FAILURE;
+        }
         $this->info("Every write was accepted and available stayed at {$value}.");
+
+        return self::SUCCESS;
+    }
+
+    /** Ordermentum stock locations, marking the configured one: ORDERMENTUM_LOCATION_ID must be where stock lives. */
+    private function probeLocations(OrdermentumClient $client): int
+    {
+        $response = $client->getStock('/v1/locations');
+        if (! $response->successful()) {
+            return $this->printRawOrFail($response, 'GET stock /v1/locations');
+        }
+        $configured = (string) config('services.ordermentum.location_id');
+        $data = $response->json();
+        $this->table(['id', 'name', 'default', 'configured'], array_map(fn ($l) => [
+            $l['id'] ?? '', $l['name'] ?? '', ! empty($l['default']) ? 'yes' : '', ($l['id'] ?? null) === $configured ? '<- ORDERMENTUM_LOCATION_ID' : '',
+        ], (array) ($data['data'] ?? $data)));
 
         return self::SUCCESS;
     }

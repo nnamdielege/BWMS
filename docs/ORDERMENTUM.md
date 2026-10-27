@@ -23,6 +23,11 @@ All three are **off** by default. Turn them on only at cutover.
 
 Also set `ORDERMENTUM_SUPPLIER_ID` and `ORDERMENTUM_LOCATION_ID`. See `.env.example`.
 
+**`ORDERMENTUM_LOCATION_ID` must be the location where stock is kept:** **Clontarf Warehouse** (`fbdbaf1b-…`, Ordermentum's default location). Check it with `php artisan om:probe locations`.
+- The old app's `.env` pointed at an unused location called "Default" (`32a47b5c-…`).
+- At that location, reads return `available: null`, and writes would create stock in the wrong place.
+- Found and fixed on 2026-10-27, before any push.
+
 With the API token, the stock API ignores the supplier context headers on reads (even a wrong supplier ID returns 200): the token scopes access to the supplier. BWMS still sends `context-*` (`ORDERMENTUM_CONTEXT_HEADERS=plain`), as the docs and the portal do. Writes have not been tested against this, because the probe is read-only.
 
 ## How it works
@@ -36,7 +41,9 @@ With the API token, the stock API ignores the supplier context headers on reads 
 - Stock changes only flag listings (`push_requested_at`) and queue one debounced run of `PushOrdermentumStock`.
 - **Pending orders first.** While any Ordermentum order event is still waiting to be processed, the run waits. Without this, a push of a stale BWMS figure could overwrite a decrement Ordermentum has made but BWMS hasn't seen yet. An event older than `ORDERMENTUM_INGEST_WAIT_MINUTES` (10) counts as stuck: it's logged and no longer blocks.
 - **Held orders.** SKUs on an order held for mapping (`needs_mapping`) aren't pushed until it is mapped. The Sync screen shows them as "Held".
-- **Bulk preferred.** One pending item goes by `PUT /v1/items/{variantId}`. More go by **bulk `PATCH /v1/items`** in chunks of 50, spaced 5s apart, with up to 3 calls per run. `om:probe write-test` proves live that `UPDATE` sets the quantity, and the nightly check would catch it if not.
+- **Bulk preferred.** One pending item goes by `PUT /v1/items/{variantId}`. More go by **bulk `PATCH /v1/items`** in chunks of 50, spaced 5s apart, with up to 3 calls per run.
+  - Every PATCH action carries `id`, `productId`, `name` and `action` (all required by Ordermentum's schema). A listing without a `productId` goes by PUT.
+  - `UPDATE` **sets** the quantity. This was verified live on 2026-10-27 with `om:probe write-test`: the figure stayed at 29 through two PUTs and a PATCH.
 - **Changes mid-push.** A change that lands during a push stays pending for the next run.
 - **Errors.** An unchanged figure is skipped for up to 24h. 5xx and timeouts retry with the items still pending. 429 honours `Retry-After`. A 4xx is shown on the Sync screen.
 - **Edits and cancellations.** BWMS re-fetches the order, applies the reservation delta, then force-pushes the absolute figure for every SKU on the order.

@@ -86,7 +86,8 @@ mysqldump --single-transaction --routines --triggers bwms | gzip > /var/backups/
 1. Deploy the approved release to `/var/www/bwms`.
 2. Write `.env` from `.env.example`:
    - `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL`, DB credentials, `MAIL_*`, `SESSION_SECURE_COOKIE=true`.
-   - `ORDERMENTUM_API_KEY`, `ORDERMENTUM_SUPPLIER_ID`, `ORDERMENTUM_LOCATION_ID`, `ORDERMENTUM_LINE_VARIANT_FIELDS=variantId`.
+   - `ORDERMENTUM_API_KEY`, `ORDERMENTUM_SUPPLIER_ID`, `ORDERMENTUM_LINE_VARIANT_FIELDS=variantId`.
+   - `ORDERMENTUM_LOCATION_ID` = **Clontarf Warehouse** (`fbdbaf1b-3777-462b-8a40-07ff16c9ef5b`). Don't copy the old app's value, which is an unused "Default" location.
    - `ORDERMENTUM_WEBHOOK_TOKEN`: a long random string, e.g. `openssl rand -hex 32`.
    - `LEGACY_DB_*`: the read-only user.
    - **All switches false:** `ORDERMENTUM_PUSH_ENABLED`, `ORDERMENTUM_INGEST_ENABLED`, `PORTAL_API_ENABLED`, `PORTAL_PUSH_ENABLED`, `PORTAL_EVENTS_ENABLED`.
@@ -132,6 +133,7 @@ mysqldump --single-transaction --routines --triggers bwms | gzip > /var/backups/
 
 **5.1 (T−7 days)**
 - **Ordermentum:**
+  - Run `php artisan om:probe locations`: `ORDERMENTUM_LOCATION_ID` should be marked against **Clontarf Warehouse**.
   - Run `php artisan om:probe tracking`: every mapped item should be tracked.
   - Run `php artisan om:probe write-test <quiet variantId> --confirm`: every step should be `unchanged`.
   - Run `php artisan om:probe secret --write-env`, then `php artisan config:cache`.

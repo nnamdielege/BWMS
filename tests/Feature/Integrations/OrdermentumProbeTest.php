@@ -262,8 +262,27 @@ class OrdermentumProbeTest extends TestCase
         Http::assertNothingSent();
     }
 
+    private function mappedVariant(string $variant = 'v-1'): void
+    {
+        $p = Product::factory()->create(['name' => 'Quiet Tea']);
+        ChannelListing::create(['channel' => 'ordermentum', 'product_id' => $p->id, 'product_unit_id' => $p->units()->value('id'),
+            'external_variant_id' => $variant, 'external_product_id' => 'prod-1']);
+    }
+
+    public function test_write_test_refuses_when_there_is_no_stock_figure_at_the_location()
+    {
+        $this->mappedVariant();
+        Http::fake(['stock.om.test/*' => Http::response(['available' => null, 'tracked' => true, 'stock' => []])]);
+
+        $this->artisan('om:probe', ['what' => 'write-test', 'id' => 'v-1', '--confirm' => true])
+            ->expectsOutputToContain('nothing was written')->assertFailed();
+
+        Http::assertNotSent(fn (Request $r) => $r->method() !== 'GET');
+    }
+
     public function test_write_test_rewrites_the_same_value_through_put_and_patch()
     {
+        $this->mappedVariant();
         Http::fake(['stock.om.test/*' => fn (Request $r) => $r->method() === 'GET'
             ? Http::response(['available' => 7, 'tracked' => true, 'allowOversell' => false])
             : Http::response(['ok' => true])]);
@@ -280,11 +299,13 @@ class OrdermentumProbeTest extends TestCase
 
         Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r['available'] === 7 && $r['tracked'] === true && $r->hasHeader('context-id') && ! $r->hasHeader('x-context-id'));
         Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r->hasHeader('x-context-id') && ! $r->hasHeader('context-id'));
-        Http::assertSent(fn (Request $r) => $r->method() === 'PATCH' && $r['actions'][0]['action'] === 'UPDATE' && $r['actions'][0]['quantity'] === 7);
+        Http::assertSent(fn (Request $r) => $r->method() === 'PATCH' && $r['actions'][0]['action'] === 'UPDATE' && $r['actions'][0]['quantity'] === 7
+            && $r['actions'][0]['productId'] === 'prod-1' && $r['actions'][0]['name'] === 'Quiet Tea');
     }
 
     public function test_write_test_stops_and_restores_if_the_figure_changes()
     {
+        $this->mappedVariant();
         $reads = 0;
         Http::fake(['stock.om.test/*' => function (Request $r) use (&$reads) {
             if ($r->method() !== 'GET') {
