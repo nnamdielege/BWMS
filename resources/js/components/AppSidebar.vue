@@ -9,6 +9,7 @@ import {
     ClipboardList,
     DollarSign,
     FileText,
+    Layers,
     LayoutGrid,
     ListChecks,
     Package,
@@ -55,6 +56,7 @@ const navGroups: NavGroup[] = [
         items: [
             { title: 'Products', href: '/products', icon: Package, permission: 'products.view' },
             { title: 'Product costs', href: '/product-costs', icon: DollarSign, permission: 'reports.view' },
+            { title: 'Pack setup', href: '/product-packs', icon: Layers, permission: 'products.view' },
             { title: 'Locations', href: '/locations', icon: Warehouse, permission: 'locations.view' },
         ],
     },

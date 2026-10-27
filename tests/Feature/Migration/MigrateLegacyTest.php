@@ -229,4 +229,13 @@ class MigrateLegacyTest extends TestCase
         $this->assertStringContainsString('"Tonic 200" (legacy #3): not a valid SKU', $this->latestReport());
         $this->assertStringNotContainsString('imported as TONIC 200', $this->latestReport());
     }
+
+    public function test_stocktake_import_warns_about_products_still_on_the_default_pack()
+    {
+        $this->migrate(['--commit' => true, '--opening-balances' => $this->csv(['sku,qty', 'DASH-VAN,30', 'TONIC-1,0']), '--cutover' => '2026-11-30 18:00'])
+            ->expectsOutputToContain('1 product(s) in the stocktake file are still on the default single "Unit" pack')
+            ->assertSuccessful();
+
+        $this->assertStringContainsString("still on the default single \"Unit\" pack (check Pack setup) (1)\n\n- DASH-VAN", $this->latestReport());
+    }
 }

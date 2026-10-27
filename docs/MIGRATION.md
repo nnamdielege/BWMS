@@ -15,7 +15,12 @@
 | cutover stocktake CSV | `opening_balance` movements | The only source of stock (D-7). |
 | `users` | nothing | Listed in the report. Invite them from Admin > Users. |
 
-**Base unit.** Each product starts with base unit "unit" (= the Ordermentum sell unit, D-1). Pack quantities cannot be changed once saved. If a product should be counted in singles but is sold in cartons, fix its packs **before** the stocktake import.
+**Base unit and packs.** Each product starts with base unit "unit" and one pack, "Unit" (= the Ordermentum sell unit, D-1). Pack quantities cannot be changed once stock exists, so set up real packs on **Products → Pack setup** (CSV: `sku, base_unit, pack_name, qty_per_pack, legacy_unit`) **before** the stocktake import. The stocktake import warns about products in the file that are still on the default pack.
+
+**Decisions (2026-10-27)**
+- All legacy POs are imported as closed history (the default). None are kept open; `--open-legacy-pos` exists but is not used.
+- **No bins are created from legacy bin labels** (A-1-1 …). They are only in the report CSV (`legacy_bin`) to guide the count. A new site starts with STOCK and QUARANTINE only.
+- An SKU that is still invalid after uppercasing (one contains a space) is imported **unchanged** and listed under "SKUs to fix by hand". Rename it in BWMS.
 
 ## Setup
 
@@ -74,8 +79,9 @@ SYRUP-X,48,STOCK,,L123,2027-03-31
 
 ## Cutover order
 
-1. `--dry-run` and review the report (conflicts, SKUs to fix, pending POs).
-2. `--commit` without opening balances. Fix packs and SKUs flagged in the report.
-3. Count the warehouse. Fill in the stocktake CSV (the report CSV's `legacy_bin` column can guide the count).
-4. `--commit --opening-balances=… --cutover=…`
-5. Run `php artisan stock:verify`, then switch on the Ordermentum listings (step 6).
+1. `--dry-run` and review the report (conflicts, SKUs to fix).
+2. `--commit` without opening balances. Rename the flagged SKU by hand.
+3. **Pack setup:** download the template from Products → Pack setup, set base units and packs, then preview and apply. Do this before any stock exists.
+4. Count the warehouse. Fill in the stocktake CSV in base units (the report CSV's `legacy_bin` column can guide the count).
+5. `--commit --opening-balances=… --cutover=…` and check the default-pack warning.
+6. Run `php artisan stock:verify`, then switch on the Ordermentum listings (docs/ORDERMENTUM.md).

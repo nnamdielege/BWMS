@@ -17,6 +17,7 @@ use App\Models\PurchaseOrder;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Rules\Gtin;
+use App\Services\Catalogue\PackSetupService;
 use App\Services\Stock\MovementDraft;
 use App\Services\Stock\StockLedger;
 use App\Services\Stock\StockQuery;
@@ -39,6 +40,8 @@ use RuntimeException;
  */
 class LegacyImporter
 {
+    public const DEFAULT_PACK_SECTION = 'Stocktake products still on the default single "Unit" pack (check Pack setup)';
+
     private MigrationReport $report;
 
     /** @var array<int, int> legacy id => new id */
@@ -443,6 +446,11 @@ class LegacyImporter
             return;
         }
         $cutover = $this->options['cutover'] ?? throw new RuntimeException('--cutover is required with --opening-balances.');
+
+        // Pack sizes are fixed once stock exists: warn about products still on the migration's single "Unit" pack.
+        $skus = array_map(fn ($r) => strtoupper($r['sku']), array_filter($rows, fn ($r) => $r['qty'] > 0));
+        PackSetupService::defaultPackProducts()->whereIn('sku', $skus)->orderBy('sku')->get(['sku', 'name'])
+            ->each(fn ($p) => $this->report->issue(self::DEFAULT_PACK_SECTION, "{$p->sku} {$p->name}"));
 
         $drafts = [];
         $errors = [];

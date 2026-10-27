@@ -146,6 +146,9 @@ class MigrateLegacy extends Command
         foreach ($report->issues as $section => $lines) {
             $this->line(sprintf('  %-70s %d', $section, count($lines)));
         }
+        if ($n = count($report->issues[LegacyImporter::DEFAULT_PACK_SECTION] ?? [])) {
+            $this->warn("{$n} product(s) in the stocktake file are still on the default single \"Unit\" pack. Fine if they really are one unit; otherwise use Pack setup before importing the stocktake.");
+        }
         $mode === 'commit'
             ? $this->info('Committed.')
             : $this->warn('Dry run: everything above was rolled back.');

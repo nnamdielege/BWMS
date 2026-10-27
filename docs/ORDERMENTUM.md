@@ -44,7 +44,12 @@ With the API token, the stock API ignores the supplier context headers on reads 
 - **Edits and cancellations.** BWMS re-fetches the order and updates the reservation. It then force-pushes the absolute figure for every SKU on the order, because it's unknown whether Ordermentum restored its own stock.
 - **Nightly check (03:00).** Compares Ordermentum's figure **and tracking flag** with BWMS, and re-pushes mismatches (D-9).
 
-**Rate limits.** The shared client keeps a budget per endpoint (`services.ordermentum.rate_limits`). A short wait is slept out. A longer one makes the job release itself and retry later.
+**Rate limits.** The shared client keeps a budget per endpoint (`services.ordermentum.rate_limits`): PUT 20/min, POST 12/min, and PATCH 12/min (configurable via `ORDERMENTUM_RPM_STOCK_PATCH`, conservative until Ordermentum confirms). A short wait is slept out. A longer one makes the job release itself and retry later.
+
+**Full push time (about 120 listings):**
+- **Bulk (default):** 3 PATCH calls of up to 50, so under a minute even at 12/min.
+- **PUT only** (`ORDERMENTUM_BULK_PUSH=false`): 120 ÷ 20/min, about 6 minutes.
+- **Day to day:** a burst of changes becomes one run, normally a single PUT or PATCH.
 
 **Inbound orders**
 1. The webhook arrives at `POST /webhooks/ordermentum/{token}`. BWMS checks the path token, then checks the signature (see below).
