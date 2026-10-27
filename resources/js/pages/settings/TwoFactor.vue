@@ -7,7 +7,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { onMounted, ref } from 'vue';
+import { ref, watch } from 'vue';
 
 const props = defineProps<{
     enabled: boolean;
@@ -48,10 +48,16 @@ const loadRecoveryCodes = async () => {
     recoveryCodes.value = (await getJson<string[]>(route('two-factor.recovery-codes'))) ?? [];
 };
 
-onMounted(async () => {
-    if (props.enabled && !props.confirmed) await loadSetup();
-    if (props.confirmed && props.status === 'two-factor-authentication-confirmed') await loadRecoveryCodes();
-});
+// Watch, not onMounted: enabling and confirming post back to this same page, which
+// Inertia re-renders with new props without remounting it.
+watch(
+    () => [props.enabled, props.confirmed, props.status] as const,
+    async ([enabled, confirmed, status]) => {
+        if (enabled && !confirmed && !qrSvg.value) await loadSetup();
+        if (confirmed && status === 'two-factor-authentication-confirmed' && !recoveryCodes.value.length) await loadRecoveryCodes();
+    },
+    { immediate: true },
+);
 
 const enable = () => router.post(route('two-factor.enable'), {}, { preserveScroll: true });
 const confirmForm = useForm({ code: '' });
@@ -76,7 +82,9 @@ const confirm_ = (msg: string) => window.confirm(msg);
 
                 <!-- Not enabled -->
                 <div v-if="!enabled" class="space-y-3">
-                    <p class="text-sm">Use an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…). You'll be asked for your password first.</p>
+                    <p class="text-sm">
+                        Use an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…). You'll be asked for your password first.
+                    </p>
                     <Button @click="enable">Set up two-factor</Button>
                 </div>
 
@@ -84,10 +92,19 @@ const confirm_ = (msg: string) => window.confirm(msg);
                 <div v-else-if="!confirmed" class="space-y-4">
                     <p class="text-sm">Scan this QR code with your authenticator app, then enter the 6-digit code it shows.</p>
                     <div v-if="qrSvg" class="inline-block rounded bg-white p-3" v-html="qrSvg" />
-                    <p v-if="secret" class="text-sm">Or enter this key manually: <code class="font-mono">{{ secret }}</code></p>
+                    <p v-if="secret" class="text-sm">
+                        Or enter this key manually: <code class="font-mono">{{ secret }}</code>
+                    </p>
                     <form class="flex items-start gap-2" @submit.prevent="confirm">
                         <div>
-                            <Input v-model="confirmForm.code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" class="w-36" autofocus />
+                            <Input
+                                v-model="confirmForm.code"
+                                inputmode="numeric"
+                                autocomplete="one-time-code"
+                                placeholder="123456"
+                                class="w-36"
+                                autofocus
+                            />
                             <InputError :message="confirmForm.errors.code" />
                         </div>
                         <Button type="submit" :disabled="confirmForm.processing">Confirm</Button>
@@ -108,7 +125,9 @@ const confirm_ = (msg: string) => window.confirm(msg);
                         <Button variant="outline" @click="regenerate">Regenerate recovery codes</Button>
                         <Button v-if="!required" variant="ghost" @click="disable">Turn off</Button>
                     </div>
-                    <p v-if="required" class="text-xs text-muted-foreground">Administrators can't turn this off. If you lose your device, use a recovery code or ask another admin to reset it.</p>
+                    <p v-if="required" class="text-xs text-muted-foreground">
+                        Administrators can't turn this off. If you lose your device, use a recovery code or ask another admin to reset it.
+                    </p>
                 </div>
             </div>
         </SettingsLayout>
