@@ -400,4 +400,21 @@ class OrdermentumIngestTest extends TestCase
 
         Http::assertSent(fn (Request $r) => str_contains(urldecode($r->url()), 'updatedAt[gte]=2026-11-30T18:00:00+10:00'));
     }
+
+    public function test_ordermentum_delivery_address_is_kept_on_the_order_for_its_run()
+    {
+        $p = Product::factory()->create();
+        $this->stockIn($p, 5);
+        $this->listing($p, 'var-1');
+        $this->fakeOrder($this->omOrder('o-7', [['variantId' => 'var-1', 'quantity' => 1]], extra: [
+            'address' => ['number' => '12', 'street1' => 'Oxley Ave', 'suburb' => 'Woody Point', 'postcode' => '4019', 'latitude' => -27.26, 'longitude' => 153.1],
+            'deliveryInstructions' => 'Rear door',
+        ]));
+
+        app(OrderIngestor::class)->ingest('o-7');
+
+        $order = Order::sole();
+        $this->assertSame(['12 Oxley Ave', 'Woody Point', '4019', 'Rear door'], [$order->delivery_street, $order->delivery_suburb, $order->delivery_postcode, $order->delivery_instructions]);
+        $this->assertSame('-27.2600000', (string) $order->delivery_lat);
+    }
 }

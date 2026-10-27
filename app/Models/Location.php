@@ -24,7 +24,25 @@ class Location extends Model
 
     public const TYPES = [self::TYPE_SITE, self::TYPE_ZONE, self::TYPE_BIN];
 
-    protected $fillable = ['parent_id', 'receive_location_id', 'type', 'code', 'name', 'is_sellable', 'is_quarantine', 'is_receiving', 'is_active', 'sort_order'];
+    protected $fillable = ['parent_id', 'receive_location_id', 'type', 'code', 'name', 'is_sellable', 'is_quarantine', 'is_receiving', 'is_active', 'sort_order', 'walk_seq'];
+
+    /** Same defaults as the columns, so a just-created model reads correctly. */
+    protected $attributes = ['is_sellable' => true, 'is_quarantine' => false, 'is_receiving' => false, 'is_active' => true, 'sort_order' => 0, 'walk_seq' => 0];
+
+    /** Every bin gets a scannable label code (Code 128), e.g. B000042, assigned on creation. */
+    protected static function booted(): void
+    {
+        static::created(function (self $location) {
+            if ($location->type === self::TYPE_BIN && ! $location->barcode) {
+                $location->forceFill(['barcode' => self::barcodeFor($location->id)])->saveQuietly();
+            }
+        });
+    }
+
+    public static function barcodeFor(int $id): string
+    {
+        return sprintf('B%06d', $id);
+    }
 
     protected function casts(): array
     {

@@ -19,6 +19,8 @@ class CountTask extends Model
 
     public const REASON_NEGATIVE_AFTER_DISPATCH = 'negative_after_dispatch';
 
+    public const REASON_SHORT_PICK = 'short_pick';
+
     protected $guarded = ['id', 'open_location_id'];
 
     protected function casts(): array

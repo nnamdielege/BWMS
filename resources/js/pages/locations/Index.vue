@@ -19,6 +19,8 @@ interface LocationRow {
     is_receiving: boolean;
     is_active: boolean;
     sort_order: number;
+    walk_seq: number;
+    barcode: string | null;
 }
 
 const props = defineProps<{ locations: LocationRow[]; canManage: boolean }>();
@@ -39,7 +41,7 @@ const rows = computed(() => {
 });
 const parents = computed(() => props.locations.filter((l) => l.type !== 'bin'));
 
-const blank = { type: 'bin', parent_id: null as number | null, receive_location_id: null as number | null, code: '', name: '', is_sellable: true, is_quarantine: false, is_receiving: false, is_active: true, sort_order: 0 };
+const blank = { type: 'bin', parent_id: null as number | null, receive_location_id: null as number | null, code: '', name: '', is_sellable: true, is_quarantine: false, is_receiving: false, is_active: true, sort_order: 0, walk_seq: 0 };
 const form = useForm({ ...blank });
 const editingId = ref<number | null>(null);
 
@@ -86,10 +88,14 @@ const flags = (l: LocationRow) =>
                 </thead>
                 <tbody>
                     <tr v-for="l in rows" :key="l.id" class="border-b">
-                        <td class="py-2 font-mono" :style="{ paddingLeft: `${l.depth * 1.25}rem` }">{{ l.code }}</td>
+                        <td class="py-2 font-mono" :style="{ paddingLeft: `${l.depth * 1.25}rem` }">
+                            {{ l.code }}
+                            <a v-if="l.type === 'site'" :href="route('locations.labels', { site: l.id })" target="_blank" class="ml-2 font-sans text-xs underline">Bin labels</a>
+                        </td>
                         <td>{{ l.name }}</td>
                         <td class="capitalize">{{ l.type }}</td>
                         <td class="text-muted-foreground">
+                            <span v-if="l.type === 'bin'" class="mr-2 font-mono text-xs">#{{ l.walk_seq }}</span>
                             {{ l.type === 'bin' ? flags(l) : l.type === 'site' && l.receive_location_id ? `receives into ${binCode(l.receive_location_id)}` : '' }}
                         </td>
                         <td class="text-right"><Button v-if="canManage" size="sm" variant="ghost" @click="edit(l)">Edit</Button></td>
@@ -116,6 +122,8 @@ const flags = (l: LocationRow) =>
                     <label class="flex items-center gap-2"><input type="checkbox" v-model="form.is_sellable" :disabled="form.is_quarantine" /> Stock here is sellable</label>
                     <label class="flex items-center gap-2"><input type="checkbox" v-model="form.is_receiving" /> Receiving bin</label>
                     <label class="flex items-center gap-2"><input type="checkbox" v-model="form.is_quarantine" /> Quarantine (never sellable)</label>
+                    <label class="flex items-center gap-2">Walk order <input type="number" min="0" v-model.number="form.walk_seq" class="h-8 w-24 rounded-md border bg-background px-2" /></label>
+                    <p class="text-xs text-muted-foreground">Pickers visit bins in walk order (chilled lines always last).</p>
                 </div>
                 <div v-if="form.type === 'site' && editingId" class="space-y-1 text-sm">
                     <label for="receive_location_id" class="text-muted-foreground">Received stock goes into</label>

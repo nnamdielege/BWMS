@@ -6,14 +6,18 @@ use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\DeliveryArea;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\OrderLine;
+use App\Services\Delivery\DeliveryScheduler;
 use App\Services\Orders\OrderService;
 use App\Services\Stock\Exceptions\StockException;
+use App\Support\Audit;
 use App\Support\BusinessDate;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -96,7 +100,7 @@ class OrderController extends Controller
 
     public function show(Request $request, Order $order): Response
     {
-        $order->load(['customer', 'site', 'lines.product:id,sku,name,base_unit', 'lines.unit:id,name,base_qty', 'lines.reservation', 'lines.pickLines.pickList:id,number,status', 'creator:id,name']);
+        $order->load(['deliveryRun.area', 'customer', 'site', 'lines.product:id,sku,name,base_unit', 'lines.unit:id,name,base_qty', 'lines.reservation', 'lines.pickLines.pickList:id,number,status', 'creator:id,name']);
 
         return Inertia::render('orders/Show', [
             'order' => [
@@ -107,6 +111,9 @@ class OrderController extends Controller
                 'customer' => $order->customer?->only(['id', 'name', 'code']),
                 'site' => $order->site->name,
                 'requested_delivery_date' => $order->requested_delivery_date?->toDateString(),
+                'run' => $order->deliveryRun ? ['id' => $order->deliveryRun->id, 'label' => $order->deliveryRun->label(), 'area_id' => $order->deliveryRun->delivery_area_id, 'date' => $order->deliveryRun->run_date->toDateString()] : null,
+                'run_assignment' => $order->run_assignment,
+                'delivery_address' => trim(implode(' ', array_filter([$order->delivery_street ?? $order->customer?->delivery_street, $order->delivery_suburb ?? $order->customer?->delivery_suburb, $order->delivery_postcode ?? $order->customer?->delivery_postcode]))),
                 'oversold_at' => $order->oversold_at?->toIso8601String(),
                 'created_at' => $order->created_at->toIso8601String(),
                 'created_by' => $order->creator?->name,
@@ -126,7 +133,24 @@ class OrderController extends Controller
                 ]),
             ],
             'can' => ['manage' => $request->user()->can('orders.manage') && $order->status->isActive()],
+            'deliveryAreas' => DeliveryArea::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
         ]);
+    }
+
+    /** Staff choose the run (area + date) by hand; it sticks across later channel updates. */
+    public function assignRun(Request $request, Order $order, DeliveryScheduler $scheduler): RedirectResponse
+    {
+        $data = $request->validate([
+            'delivery_area_id' => ['required', 'integer', Rule::exists('delivery_areas', 'id')],
+            'run_date' => ['required', 'date_format:Y-m-d'],
+        ]);
+        if (! $order->status->isActive()) {
+            throw ValidationException::withMessages(['run' => "{$order->number} is {$order->status->label()}."]);
+        }
+        $scheduler->assignManually($order, DeliveryArea::findOrFail($data['delivery_area_id']), Carbon::parse($data['run_date'], config('bwms.business_timezone')));
+        Audit::record('order_run_assigned', $order, meta: $data);
+
+        return back()->with('success', 'Run set.');
     }
 
     public function cancel(Request $request, Order $order): RedirectResponse

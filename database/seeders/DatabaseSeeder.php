@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             DefaultSiteSeeder::class,
             ReasonCodeSeeder::class,
             CompanySettingsSeeder::class,
+            DeliveryAreaSeeder::class,
         ]);
     }
 }

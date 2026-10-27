@@ -23,5 +23,7 @@ final class ChannelOrderData
         public readonly ?int $customerId = null,
         public readonly ?string $requestedDeliveryDate = null,
         public readonly ?string $notes = null,
+        /** Delivery address for run assignment: street, suburb, postcode, lat, lng, instructions (all optional). */
+        public readonly array $delivery = [],
     ) {}
 }

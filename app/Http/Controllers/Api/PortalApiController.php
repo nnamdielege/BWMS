@@ -92,6 +92,10 @@ class PortalApiController extends Controller
             'customer.portal_user_id' => ['nullable', 'integer', 'min:1'],
             'customer.business_name' => ['nullable', 'string', 'max:255'],
             'requested_delivery_date' => ['nullable', 'date_format:Y-m-d'],
+            'delivery.street' => ['nullable', 'string', 'max:255'],
+            'delivery.suburb' => ['nullable', 'string', 'max:100'],
+            'delivery.postcode' => ['nullable', 'regex:/^\d{4}$/'],
+            'delivery.instructions' => ['nullable', 'string', 'max:1000'],
             'lines' => [$withVersion ? 'present' : 'required', 'array', 'max:500'],
             'lines.*.line_ref' => ['required', 'string', 'max:64', 'distinct'],
             'lines.*.portal_product_id' => ['required', 'integer', 'min:1'],
@@ -144,6 +148,7 @@ class PortalApiController extends Controller
                 ])->values()->all(),
                 customerId: $customer?->id,
                 requestedDeliveryDate: $data['requested_delivery_date'] ?? null,
+                delivery: array_filter((array) ($data['delivery'] ?? []), fn ($v) => $v !== null && $v !== ''),
             ));
         } catch (InsufficientAvailability $e) {
             $byRef = $lines->keyBy('line_ref');

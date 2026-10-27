@@ -3,8 +3,8 @@ import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 interface Line {
     id: number;
@@ -39,12 +39,19 @@ const props = defineProps<{
         customer: { id: number; name: string; code: string } | null;
         site: string;
         requested_delivery_date: string | null;
+        run: { id: number; label: string; area_id: number; date: string } | null;
+        run_assignment: string;
+        delivery_address: string;
         created_at: string;
         created_by: string | null;
         lines: Line[];
     };
     can: { manage: boolean };
+    deliveryAreas: { id: number; name: string }[];
 }>();
+const runForm = useForm({ delivery_area_id: props.order.run?.area_id ?? null, run_date: props.order.run?.date ?? '' });
+const editRun = ref(false);
+const saveRun = () => runForm.put(route('orders.run', props.order.id), { preserveScroll: true, onSuccess: () => (editRun.value = false) });
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Orders', href: '/orders' },
@@ -88,6 +95,22 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
                 <div><div class="text-muted-foreground">Delivery date</div>{{ order.requested_delivery_date ?? '—' }}</div>
                 <div><div class="text-muted-foreground">If short</div>{{ order.short_ship_policy === 'cancel' ? 'Cancel the rest' : 'Backorder' }}</div>
                 <div v-if="order.cancel_reason" class="sm:col-span-4"><span class="text-muted-foreground">Cancelled:</span> {{ order.cancel_reason }}</div>
+                <div class="sm:col-span-4">
+                    <span class="text-muted-foreground">Run:</span>
+                    <span :class="{ 'text-amber-700': !order.run }">{{ order.run?.label ?? 'Unassigned (address matches no delivery area)' }}</span>
+                    <span v-if="order.run_assignment === 'manual'" class="ml-1 text-xs text-muted-foreground">(set by hand)</span>
+                    <span class="ml-2 text-muted-foreground">{{ order.delivery_address }}</span>
+                    <button v-if="can.manage" class="ml-2 text-xs underline" @click="editRun = !editRun">Change</button>
+                    <form v-if="editRun" class="mt-2 flex flex-wrap items-center gap-2" @submit.prevent="saveRun">
+                        <select v-model="runForm.delivery_area_id" class="h-9 rounded-md border bg-background px-2">
+                            <option :value="null" disabled>Area…</option>
+                            <option v-for="a in deliveryAreas" :key="a.id" :value="a.id">{{ a.name }}</option>
+                        </select>
+                        <input v-model="runForm.run_date" type="date" class="h-9 rounded-md border bg-background px-2" />
+                        <button type="submit" class="h-9 rounded-md border px-3" :disabled="runForm.processing || !runForm.delivery_area_id || !runForm.run_date">Save</button>
+                        <span class="text-xs text-red-700">{{ errors.run || runForm.errors.run_date }}</span>
+                    </form>
+                </div>
             </div>
 
             <table class="w-full text-left text-sm">

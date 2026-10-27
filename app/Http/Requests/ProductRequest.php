@@ -47,6 +47,7 @@ class ProductRequest extends FormRequest
             'is_active' => ['boolean'],
             'sell_channels' => ['sometimes', Rule::in(Product::SELL_CHANNELS)],
             'is_stock_tracked' => ['sometimes', 'boolean'],
+            'is_chilled' => ['sometimes', 'boolean'],
 
             'units' => ['required', 'array', 'min:1', 'max:20'],
             'units.*.id' => ['nullable', 'integer'],

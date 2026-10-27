@@ -323,6 +323,10 @@ class LegacyImporter
                 'phone' => $row->phone ?: ($row->mobile ?: null),
                 'address' => $this->address($row),
                 'notes' => $this->notes($row, $row->phone && $row->mobile ? $row->mobile : null, $row->payment_terms),
+                // Structured delivery address for run assignment (delivery areas match on postcode/suburb).
+                'delivery_street' => trim((string) $row->address) ?: null,
+                'delivery_suburb' => trim((string) $row->city) ?: null,
+                'delivery_postcode' => preg_match('/^\d{4}$/', trim((string) $row->postal_code)) ? trim((string) $row->postal_code) : null,
                 'is_active' => (bool) $row->is_active && $row->deleted_at === null,
             ]);
             $customer->forceFill(['legacy_id' => $row->id])->save();

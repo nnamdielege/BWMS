@@ -28,6 +28,7 @@ When verifying, reject with 401 if the key is unknown, the timestamp is more tha
    POST {BWMS}/api/portal/v1/reservations
    Idempotency-Key: portal:order:{reference}
    {order_ref, customer: {portal_user_id, business_name}, requested_delivery_date,
+    delivery: {street, suburb, postcode, instructions},
     lines: [{line_ref, portal_product_id, qty, unit_quantity, unit}]}
    ```
    - `qty` is in the portal's own units: the pack the product is sold in.
@@ -40,6 +41,8 @@ When verifying, reject with 401 if the key is unknown, the timestamp is more tha
    - **422:** don't place it. This is a mapping or data problem. Log it and alert staff. A shopper-facing message like "this item can't be ordered right now" is enough.
    - **Timeout, connection error, 5xx or 429:** place the order anyway, set `reservation_status = 'unconfirmed'`, and write the request to an outbox (step 4).
 4. Keep the local `stock_qty` decrement. It's only a display cache; BWMS's stock push overwrites it with the real figure.
+
+**Send the delivery address** (`delivery`) on reservations and updates. It's the order's delivery address: the customer's, or the one chosen at checkout. BWMS assigns each order to a delivery run (date + area) from the postcode and suburb (`docs/PICK-PACK.md`). Without it, BWMS falls back to the customer's address on file, and if that matches no area the order waits for manual assignment. Leave `requested_delivery_date` empty unless the shopper picked a date; BWMS then chooses the next run after the 1 pm cutoff.
 
 ## 4. Outbox and retries
 

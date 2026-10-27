@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers\Orders;
 
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\DeliveryArea;
+use App\Models\Order;
+use App\Services\Delivery\DeliveryScheduler;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -27,7 +31,7 @@ class CustomerController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('customers/Form', ['customer' => null]);
+        return Inertia::render('customers/Form', ['customer' => null, 'deliveryAreas' => $this->areas()]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -39,14 +43,23 @@ class CustomerController extends Controller
 
     public function edit(Customer $customer): Response
     {
-        return Inertia::render('customers/Form', ['customer' => $customer]);
+        return Inertia::render('customers/Form', ['customer' => $customer, 'deliveryAreas' => $this->areas()]);
     }
 
-    public function update(Request $request, Customer $customer): RedirectResponse
+    public function update(Request $request, Customer $customer, DeliveryScheduler $scheduler): RedirectResponse
     {
         $customer->update($this->validated($request, $customer));
+        // A new address or area moves the customer's waiting orders to the right run.
+        if ($customer->wasChanged(['delivery_postcode', 'delivery_suburb', 'delivery_area_id'])) {
+            $customer->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::PartiallyDispatched])->get()->each(fn (Order $o) => $scheduler->assign($o));
+        }
 
         return back()->with('success', "Customer {$customer->name} saved.");
+    }
+
+    private function areas()
+    {
+        return DeliveryArea::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']);
     }
 
     /** @return array<string, mixed> */
@@ -61,6 +74,10 @@ class CustomerController extends Controller
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string', 'max:2000'],
+            'delivery_street' => ['nullable', 'string', 'max:255'],
+            'delivery_suburb' => ['nullable', 'string', 'max:100'],
+            'delivery_postcode' => ['nullable', 'regex:/^\d{4}$/'],
+            'delivery_area_id' => ['nullable', 'integer', Rule::exists('delivery_areas', 'id')],
             'ordermentum_retailer_id' => ['nullable', 'string', 'max:64', Rule::unique('customers')->ignore($customer?->id)],
             'portal_user_id' => ['nullable', 'integer', Rule::unique('customers')->ignore($customer?->id)],
             'notes' => ['nullable', 'string', 'max:5000'],

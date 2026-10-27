@@ -129,6 +129,17 @@ mysqldump --single-transaction --routines --triggers bwms | gzip > /var/backups/
 
 **Check:** the "still on the default single Unit pack" list contains only products that really are a single unit.
 
+## 4b. Warehouse setup for pick & pack (before T)
+
+See `PICK-PACK.md`.
+1. **Delivery areas:** in Settings → Delivery areas, review the starter postcode lists against your real suburbs.
+2. **Customers:** check every customer's delivery postcode and suburb. Any order without a matching area shows as "Orders without a run" in the pick queue.
+3. **Bins:** set **Walk order** on each bin. Print **bin labels** (Locations → site → Bin labels) and stick them on.
+4. **Products:** tick **Chilled** on milks, juices and kombucha. Add the pack barcodes.
+5. **Handhelds:** set the scanners to keyboard-wedge mode with an Enter suffix, and open BWMS over HTTPS. Do a test pick of one line per handheld.
+
+**Check:** a test order for a known customer lands on the expected run (date + area).
+
 ## 5. Preparation for Ordermentum and the portal
 
 **5.1 (T−7 days)**
@@ -219,7 +230,7 @@ php artisan stock:verify
 - [ ] Test pick and dispatch of one real order: stock goes down, the reservation is released, the Ordermentum and portal figures update, and the portal gets a `dispatched` event.
 - [ ] `supervisorctl status` shows the worker running, the `jobs` table drains, and the scheduler has run (`schedule:list`).
 
-**Then resume picking and receiving in BWMS.**
+**Then resume picking (Pick & pack, by run) and receiving in BWMS.**
 
 ## 12. After go-live
 

@@ -12,8 +12,10 @@ import {
     Layers,
     LayoutGrid,
     ListChecks,
+    MapPin,
     Package,
     RefreshCw,
+    ScanLine,
     ScrollText,
     Settings,
     ShoppingCart,
@@ -33,6 +35,7 @@ const navGroups: NavGroup[] = [
         label: 'Orders',
         items: [
             { title: 'Orders', href: '/orders', icon: ShoppingCart, permission: 'orders.view' },
+            { title: 'Pick & pack', href: '/pick', icon: ScanLine, permission: 'picking.perform' },
             { title: 'Pick lists', href: '/pick-lists', icon: ListChecks, permission: 'picking.perform' },
             { title: 'Customers', href: '/customers', icon: Store, permission: 'orders.view' },
         ],
@@ -70,6 +73,7 @@ const navGroups: NavGroup[] = [
             { title: 'Users', href: '/admin/users', icon: Users, permission: 'users.view' },
             { title: 'Audit log', href: '/admin/audit-log', icon: ScrollText, permission: 'audit.view' },
             { title: 'Company settings', href: '/admin/settings', icon: Settings, permission: 'settings.manage' },
+            { title: 'Delivery areas', href: '/admin/delivery-areas', icon: MapPin, permission: 'settings.manage' },
         ],
     },
 ];

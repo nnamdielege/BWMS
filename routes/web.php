@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AuditLogController;
+use App\Http\Controllers\Admin\DeliveryAreaController;
 use App\Http\Controllers\Admin\InvitationController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\Stock\StockController;
 use App\Http\Controllers\Stock\StocktakeController;
 use App\Http\Controllers\Stock\TransferController;
 use App\Http\Controllers\Sync\SyncController;
+use App\Http\Controllers\Warehouse\PickPackController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
@@ -129,6 +131,22 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::post('pick-lists/{pickList}/dispatch', [PickListController::class, 'dispatch'])->middleware('can:picking.perform')->name('pick-lists.dispatch');
     Route::post('pick-lists/{pickList}/cancel', [PickListController::class, 'cancel'])->middleware('can:picking.perform')->name('pick-lists.cancel');
 
+    // Mobile pick & pack by delivery run.
+    Route::middleware('can:picking.perform')->prefix('pick')->name('pick.')->group(function () {
+        Route::get('/', [PickPackController::class, 'queue'])->name('queue');
+        Route::post('runs/{run}/start', [PickPackController::class, 'start'])->name('start');
+        Route::get('runs/{run}', [PickPackController::class, 'manifest'])->name('manifest');
+        Route::post('runs/{run}/dispatch', [PickPackController::class, 'dispatchRun'])->name('dispatch');
+        Route::post('lists/{pickList}/claim', [PickPackController::class, 'claim'])->name('claim');
+        Route::get('lists/{pickList}', [PickPackController::class, 'work'])->name('work');
+        Route::put('lists/{pickList}/lines/{line}', [PickPackController::class, 'record'])->name('record');
+        Route::get('lists/{pickList}/pack', [PickPackController::class, 'packPage'])->name('pack');
+        Route::post('lists/{pickList}/orders/{order}/pack', [PickPackController::class, 'pack'])->name('pack.store');
+        Route::get('lists/{pickList}/orders/{order}/slip', [PickPackController::class, 'slip'])->name('slip');
+    });
+    Route::put('orders/{order}/run', [OrderController::class, 'assignRun'])->middleware('can:orders.manage')->name('orders.run');
+    Route::get('locations/labels', [LocationController::class, 'labels'])->middleware('can:locations.view')->name('locations.labels');
+
     Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');
     Route::post('sync/listings/{listing}/push', [SyncController::class, 'push'])->middleware('can:sync.manage')->name('sync.push');
     Route::put('sync/listings/{listing}', [SyncController::class, 'toggle'])->middleware('can:sync.manage')->name('sync.listings.update');
@@ -139,6 +157,9 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('settings', [SettingsController::class, 'edit'])->middleware('can:settings.manage')->name('settings.edit');
+        Route::get('delivery-areas', [DeliveryAreaController::class, 'index'])->middleware('can:settings.manage')->name('delivery-areas.index');
+        Route::post('delivery-areas', [DeliveryAreaController::class, 'store'])->middleware('can:settings.manage')->name('delivery-areas.store');
+        Route::put('delivery-areas/{area}', [DeliveryAreaController::class, 'update'])->middleware('can:settings.manage')->name('delivery-areas.update');
         Route::put('settings', [SettingsController::class, 'update'])->middleware('can:settings.manage')->name('settings.update');
 
         Route::get('users', [UserController::class, 'index'])

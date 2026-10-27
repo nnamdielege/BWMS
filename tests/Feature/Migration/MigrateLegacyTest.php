@@ -107,7 +107,8 @@ class MigrateLegacyTest extends TestCase
         $supplier = Supplier::where('legacy_id', 1)->sole();
         $this->assertSame("1 Lane\nBrisbane QLD 4000\nAustralia", $supplier->address);
         $this->assertStringContainsString('Mobile: 0400 000 000', $supplier->notes);
-        $this->assertSame('Cafe One', Customer::where('legacy_id', 1)->sole()->name);
+        $cafe = Customer::where('legacy_id', 1)->sole();
+        $this->assertSame(['Cafe One', '3 St', 'Redcliffe', '4020'], [$cafe->name, $cafe->delivery_street, $cafe->delivery_suburb, $cafe->delivery_postcode]);
 
         $received = PurchaseOrder::where('legacy_id', 1)->sole();
         $this->assertSame([PurchaseOrderStatus::Closed, 'received', '99.00'], [$received->status, $received->legacy_status, (string) $received->total]);

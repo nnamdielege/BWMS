@@ -14,6 +14,9 @@ class PickListLine extends Model
         return [
             'qty_to_pick_base' => 'integer',
             'qty_picked_base' => 'integer',
+            'bin_scanned_at' => 'datetime',
+            'product_scanned_at' => 'datetime',
+            'picked_at' => 'datetime',
         ];
     }
 

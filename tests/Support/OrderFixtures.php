@@ -12,10 +12,10 @@ use App\Services\Orders\OrderService;
 
 trait OrderFixtures
 {
-    protected function manualOrder(User $actor, Product $product, int $qtyEach, bool $allowBackorder = false, string $policy = 'backorder', ?int $siteId = null): Order
+    protected function manualOrder(User $actor, Product $product, int $qtyEach, bool $allowBackorder = false, string $policy = 'backorder', ?int $siteId = null, ?Customer $customer = null): Order
     {
         return app(OrderService::class)->createManual($actor, [
-            'customer_id' => Customer::factory()->create()->id,
+            'customer_id' => ($customer ?? Customer::factory()->create())->id,
             'site_id' => $siteId ?? $this->site()->id,
             'short_ship_policy' => $policy,
             'lines' => [['product_id' => $product->id, 'product_unit_id' => $product->units()->where('base_qty', 1)->value('id'), 'qty' => $qtyEach]],
@@ -23,7 +23,7 @@ trait OrderFixtures
     }
 
     /** @param  list<array{0: Product, 1: int, 2?: string}>  $lines  [product, qty each, line_ref] */
-    protected function channelOrder(OrderChannel $channel, string $ref, int $version, array $lines, string $status = 'confirmed'): Order
+    protected function channelOrder(OrderChannel $channel, string $ref, int $version, array $lines, string $status = 'confirmed', array $delivery = [], ?string $date = null): Order
     {
         return app(OrderService::class)->upsertFromChannel(new ChannelOrderData(
             channel: $channel,
@@ -37,6 +37,8 @@ trait OrderFixtures
                 'product_unit_id' => $l[0]->units()->where('base_qty', 1)->value('id'),
                 'qty' => $l[1],
             ], $lines, array_keys($lines)),
+            requestedDeliveryDate: $date,
+            delivery: $delivery,
         ));
     }
 }

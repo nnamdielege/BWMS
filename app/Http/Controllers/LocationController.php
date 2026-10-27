@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Location;
+use App\Services\Documents\PdfRenderer;
 use App\Services\Stock\StockQuery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -58,6 +60,7 @@ class LocationController extends Controller
             'is_receiving' => ['boolean'],
             'is_active' => ['boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'walk_seq' => ['nullable', 'integer', 'min:0', 'max:999999'],
             'receive_location_id' => ['nullable', 'integer', 'exists:locations,id'],
         ]);
 
@@ -76,6 +79,7 @@ class LocationController extends Controller
             $data['is_sellable'] = false; // quarantined stock is never available to sell
         }
         $data['sort_order'] ??= 0;
+        $data['walk_seq'] ??= 0;
 
         // Receipts landing bin: sites only, and it must be an active non-quarantine bin of that site.
         if ($data['type'] !== Location::TYPE_SITE) {
@@ -89,6 +93,19 @@ class LocationController extends Controller
         }
 
         return $data;
+    }
+
+    /** Printable bin labels (Code 128) for one site, in walk order. */
+    public function labels(Request $request, StockQuery $stock, PdfRenderer $pdf): HttpResponse
+    {
+        $site = Location::where('type', Location::TYPE_SITE)->findOrFail((int) $request->query('site'));
+        $bins = Location::bins()->whereIn('id', $stock->binIdsUnder($site))->where('is_active', true)->with('parent.parent')
+            ->orderBy('walk_seq')->orderBy('code')->get();
+        $bins->whereNull('barcode')->each(fn (Location $b) => $b->forceFill(['barcode' => Location::barcodeFor($b->id)])->saveQuietly());
+
+        return response($pdf->render('pdf.bin-labels', ['bins' => $bins], "Bin labels {$site->code}"), 200, [
+            'Content-Type' => 'application/pdf', 'Content-Disposition' => 'inline; filename="bin-labels-'.$site->code.'.pdf"',
+        ]);
     }
 
     private function isDescendant(Location $candidate, Location $ancestor): bool

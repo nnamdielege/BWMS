@@ -26,7 +26,7 @@ class OrdermentumOrderMapper
 
     /**
      * @return array{external_ref: string, version: int, cancelled: bool, retailer_id: ?string, retailer_name: ?string,
-     *               delivery_date: ?string, lines: list<array{line_ref: string, variant_id: string, quantity: int, unit_price: ?string, sku: ?string, name: ?string}>}
+     *               delivery_date: ?string, delivery: array<string, mixed>, lines: list<array{line_ref: string, variant_id: string, quantity: int, unit_price: ?string, sku: ?string, name: ?string}>}
      *
      * @throws UnmappableOrder when the shape does not match the configured mapping
      */
@@ -79,6 +79,14 @@ class OrdermentumOrderMapper
             'retailer_id' => $this->stringOrNull($order['retailerId'] ?? data_get($order, 'retailer.id')),
             'retailer_name' => $this->stringOrNull(data_get($order, 'retailer.name') ?? data_get($order, 'retailerName')),
             'delivery_date' => $this->date($order['deliveryDate'] ?? null),
+            'delivery' => array_filter([
+                'street' => trim(implode(' ', array_filter([data_get($order, 'address.number'), data_get($order, 'address.street1'), data_get($order, 'address.street2')]))) ?: null,
+                'suburb' => $this->stringOrNull(data_get($order, 'address.suburb')),
+                'postcode' => $this->stringOrNull(data_get($order, 'address.postcode')),
+                'lat' => is_numeric(data_get($order, 'address.latitude')) ? (float) data_get($order, 'address.latitude') : null,
+                'lng' => is_numeric(data_get($order, 'address.longitude')) ? (float) data_get($order, 'address.longitude') : null,
+                'instructions' => $this->stringOrNull($order['deliveryInstructions'] ?? null),
+            ], fn ($v) => $v !== null),
             'lines' => $lines,
         ];
     }

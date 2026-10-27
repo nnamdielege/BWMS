@@ -29,6 +29,16 @@ class Order extends Model
         ];
     }
 
+    public function deliveryRun(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryRun::class);
+    }
+
+    public function packs(): HasMany
+    {
+        return $this->hasMany(OrderPack::class);
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);

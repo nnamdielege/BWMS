@@ -83,6 +83,7 @@ class OrderIngestor
             ], array_values(array_filter($mapped['lines'], fn ($l) => isset($listings[$l['variant_id']])))),
             customerId: $this->customer($mapped['retailer_id'], $mapped['retailer_name'])?->id,
             requestedDeliveryDate: $mapped['delivery_date'],
+            delivery: $mapped['delivery'],
         );
 
         $existing = Order::where('channel', OrderChannel::Ordermentum)->where('external_ref', $mapped['external_ref'])->first();

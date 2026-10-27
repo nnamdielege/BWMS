@@ -22,13 +22,13 @@ class Product extends Model
     protected $fillable = [
         'sku', 'name', 'description', 'category_id', 'range_id', 'base_unit', 'is_batch_tracked',
         'shelf_life_days', 'short_dated_days', 'reorder_point', 'reorder_qty', 'sell_price', 'is_active',
-        'sell_channels', 'is_stock_tracked',
+        'sell_channels', 'is_stock_tracked', 'is_chilled',
     ];
 
     public const SELL_CHANNELS = ['none', 'portal', 'ordermentum', 'both'];
 
     /** Same defaults as the columns, so an unsaved or just-created model reads correctly. */
-    protected $attributes = ['sell_channels' => 'ordermentum', 'is_stock_tracked' => true];
+    protected $attributes = ['sell_channels' => 'ordermentum', 'is_stock_tracked' => true, 'is_chilled' => false];
 
     protected function casts(): array
     {
@@ -36,6 +36,7 @@ class Product extends Model
             'is_batch_tracked' => 'boolean',
             'is_active' => 'boolean',
             'is_stock_tracked' => 'boolean',
+            'is_chilled' => 'boolean',
             'avg_cost' => 'decimal:4',
             'sell_price' => 'decimal:2',
         ];

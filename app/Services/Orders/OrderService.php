@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\PickListLine;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\Delivery\DeliveryScheduler;
 use App\Services\Stock\Exceptions\InvalidMovement;
 use App\Support\Audit;
 use App\Support\NumberSequence;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 
 class OrderService
 {
-    public function __construct(private ReservationService $reservations) {}
+    public function __construct(private ReservationService $reservations, private DeliveryScheduler $scheduler) {}
 
     /**
      * Manual order. Blocked when stock is short unless $allowBackorder
@@ -34,6 +35,7 @@ class OrderService
             $this->writeLines($order, array_map(fn ($l, $i) => $l + ['line_ref' => (string) ($i + 1)], $data['lines'], array_keys($data['lines'])));
 
             $this->reservations->syncOrder($order, $allowBackorder);
+            $this->scheduler->assign($order->refresh());
 
             return $order->refresh();
         });
@@ -84,6 +86,10 @@ class OrderService
         }
 
         $order->fill(['customer_id' => $data->customerId, 'requested_delivery_date' => $data->requestedDeliveryDate, 'notes' => $data->notes]);
+        if ($data->delivery !== []) {
+            $order->forceFill(collect(['street', 'suburb', 'postcode', 'lat', 'lng', 'instructions'])
+                ->mapWithKeys(fn ($k) => ["delivery_{$k}" => $data->delivery[$k] ?? null])->all());
+        }
         $order->forceFill(['external_version' => $data->version])->save();
 
         if ($data->status === 'cancelled') {
@@ -100,6 +106,7 @@ class OrderService
         }
 
         $this->reservations->syncOrder($order->refresh(), $data->channel->alwaysAccept());
+        $this->scheduler->assign($order->refresh());
 
         return $order->refresh();
     }

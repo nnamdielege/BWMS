@@ -24,6 +24,16 @@ class PickList extends Model
         return ['dispatched_at' => 'datetime'];
     }
 
+    public function deliveryRun(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryRun::class);
+    }
+
+    public function claimer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'claimed_by');
+    }
+
     public function site(): BelongsTo
     {
         return $this->belongsTo(Location::class, 'site_id');

@@ -11,6 +11,11 @@ return [
         'name' => env('BWMS_DEFAULT_SITE_NAME', 'Clontarf Warehouse'),
     ],
 
+    // Delivery runs: orders must be in by this time (business time zone) on the business day before delivery.
+    'delivery' => [
+        'cutoff_time' => env('BWMS_DELIVERY_CUTOFF', '13:00'),
+    ],
+
     // Create DB triggers that reject UPDATE/DELETE on stock_movements (NFR-9).
     'ledger_db_triggers' => (bool) env('BWMS_LEDGER_DB_TRIGGERS', true),
 
