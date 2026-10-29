@@ -66,6 +66,9 @@ return [
             'lines' => ['lineItems', 'lines'],
             'quantity' => 'quantity',
             'variant' => array_values(array_filter(explode(',', (string) (env('ORDERMENTUM_LINE_VARIANT_FIELDS') ?: 'variantId,variant.id')))),
+            // Paths seen holding the stock item ID on that live order. The Sync screen shows the
+            // variant field as confirmed when the first configured path is one of these.
+            'variant_confirmed' => ['variantId', 'variant.id'],
             'line_ref' => ['id', 'lineItemId'],
             'unit_price' => 'price',
             'sku' => ['sku', 'variant.sku', 'SKU'],

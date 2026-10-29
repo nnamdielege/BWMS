@@ -28,7 +28,7 @@ type Listing = {
 type Suggestion = { id: number; sku: string; name: string; units: { id: number; name: string; base_qty: number; sellable: boolean }[] };
 
 const props = defineProps<{
-    switches: { push_enabled: boolean; ingest_enabled: boolean; webhook_configured: boolean; api_key_set: boolean; signature_mode: string; variant_fields: string[] };
+    switches: { push_enabled: boolean; ingest_enabled: boolean; webhook_configured: boolean; api_key_set: boolean; signature_mode: string; variant_fields: string[]; variant_confirmed: boolean };
     health: { last_push_ok: string | null; last_order_ok: string | null; failures_24h: number; queue_depth: number; listings: number; listings_enabled: number };
     failures: Listing[];
     mismatches: Listing[];
@@ -107,7 +107,9 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                 <div class="rounded-lg border p-3">
                     <div class="text-sm text-muted-foreground">Listings enabled</div>
                     <div class="font-semibold tabular-nums">{{ health.listings_enabled }} / {{ health.listings }}</div>
-                    <div class="text-xs text-muted-foreground" :title="switches.variant_fields.join(', ')">Variant field: {{ switches.variant_fields[0] ?? '—' }} (unconfirmed)</div>
+                    <div class="text-xs text-muted-foreground" :title="switches.variant_fields.join(', ')">Variant field: {{ switches.variant_fields[0] ?? '—' }}
+                        <span :class="{ 'text-amber-700': !switches.variant_confirmed }">({{ switches.variant_confirmed ? 'confirmed' : 'unconfirmed' }})</span>
+                    </div>
                 </div>
             </section>
 

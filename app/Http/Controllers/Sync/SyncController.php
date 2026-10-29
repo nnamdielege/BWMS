@@ -42,6 +42,7 @@ class SyncController extends Controller
                 'api_key_set' => filled(config('services.ordermentum.api_key')),
                 'signature_mode' => config('bwms.ordermentum.webhook_signature.mode'),
                 'variant_fields' => config('bwms.ordermentum.order_mapping.variant'),
+                'variant_confirmed' => in_array(config('bwms.ordermentum.order_mapping.variant')[0] ?? null, config('bwms.ordermentum.order_mapping.variant_confirmed'), true),
             ],
             'health' => [
                 'last_push_ok' => SyncAttempt::where('channel', self::CHANNEL)->where('operation', 'push')->where('success', true)->max('created_at'),

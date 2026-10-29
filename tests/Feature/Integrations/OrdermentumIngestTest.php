@@ -417,4 +417,15 @@ class OrdermentumIngestTest extends TestCase
         $this->assertSame(['12 Oxley Ave', 'Woody Point', '4019', 'Rear door'], [$order->delivery_street, $order->delivery_suburb, $order->delivery_postcode, $order->delivery_instructions]);
         $this->assertSame('-27.2600000', (string) $order->delivery_lat);
     }
+
+    public function test_sync_screen_shows_whether_the_variant_field_is_the_confirmed_one()
+    {
+        $manager = $this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER);
+        $this->actingAs($manager)->get(route('sync.index'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('switches.variant_fields.0', 'variantId')->where('switches.variant_confirmed', true));
+
+        config(['bwms.ordermentum.order_mapping.variant' => ['product.variantCode']]);
+        $this->actingAs($manager)->get(route('sync.index'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('switches.variant_confirmed', false));
+    }
 }
