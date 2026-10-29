@@ -186,9 +186,23 @@ async function login(page, email, { secret, shootChallenge } = {}) {
 
     await page.goto(`${BASE}/sync`);
     await shot(page, '95-sync', { fullPage: true });
+    // Every write/retry/replay asks first. Native dialogs can't be screenshotted: print and dismiss them.
+    page.on('dialog', async (d) => {
+        console.log(`   dialog: ${d.message().replace(/\n+/g, ' | ')}`);
+        await d.dismiss();
+    });
+    for (const label of ['Retry all', 'Push now', 'Replay', 'Enable all', 'Enable all portal listings']) {
+        await page.getByRole('button', { name: label, exact: true }).first().click();
+        await page.waitForTimeout(300);
+    }
+    await page.locator('tr:has-text("HCB-ORIG-250") button:has-text("on")').first().click();
+    await page.waitForTimeout(300);
 
     await page.goto(`${BASE}/admin/users`);
     await shot(page, '96-users', { fullPage: true });
+    await page.click('tr:has-text("sam.picker@example.com") >> text=Change');
+    await page.locator('tr:has-text("Sam Picker") input[type=email]').fill('sam.p@example.com');
+    await shot(page, '96b-user-email');
     await page.goto(`${BASE}/admin/settings`);
     await shot(page, '97-company-settings', { fullPage: true });
     await page.goto(`${BASE}/admin/audit-log`);

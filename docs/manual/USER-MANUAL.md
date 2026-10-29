@@ -84,7 +84,7 @@ You can also enter counts in a stocktake a manager has started ([8.2](#82-count)
 | Task | Where | Section |
 |---|---|---|
 | Invite a user | **Users** → **Invite a user** | [13.1](#131-invite-a-user) |
-| Change someone's roles, or deactivate them | **Users** | [13.2](#132-change-roles-or-deactivate) |
+| Change someone's roles or email, or deactivate them | **Users** | [13.2](#132-change-roles-email-or-deactivate) |
 | Reset someone's two-factor | **Users** → **Reset 2FA** | [13.3](#133-reset-someones-two-factor) |
 | Edit company details and logo | **Company settings** | [13.4](#134-company-settings) |
 | Edit delivery areas | **Delivery areas** | [11.3](#113-edit-delivery-areas) |
@@ -179,7 +179,7 @@ Lost your phone? Click **Use a recovery code** and enter one of your saved codes
 
 Open your name (bottom left) → **Settings**.
 
-- **Profile:** change your display name. You can't change your email address yourself, and no screen lets an administrator change it either.
+- **Profile:** change your display name. To change your email address, ask an administrator ([13.2](#132-change-roles-email-or-deactivate)).
 - **Password:** change your password. You need your current one.
 - **Two-factor:** see [1.3](#13-set-up-two-factor-authentication).
 - **Appearance:** Light, Dark or System.
@@ -208,7 +208,7 @@ Each user has one or more roles. The menu on the left only shows what your roles
 | Pick & pack, pick lists, dispatch | ✓ | ✓ | ✓ | | |
 | Sync actions (push, retry, replay, map, enable) | ✓ | ✓ | | | |
 | See users and the audit log | ✓ | ✓ | | | |
-| Invite users, change roles, deactivate, reset 2FA | ✓ | | | | |
+| Invite users, change roles or email, deactivate, reset 2FA | ✓ | | | | |
 | Company settings, delivery areas | ✓ | | | | |
 
 ¹ Purchasing may accept over-receipts but can't open the receive screen. In practice, someone who can receive enters the delivery and a manager or admin ticks the box.
@@ -231,6 +231,7 @@ The dashboard is the first page after you log in. Each tile shows only if your r
 |---|---|---|
 | **Orders awaiting pick** | Orders that are open or partly dispatched. | Click it to open **Orders**. Pick them from **Pick & pack**. |
 | **Overdue purchase orders** | POs sent (or partly received) whose "Required by" date has passed. Red when above 0. | Chase the supplier, receive what arrived, or close the PO short ([6.5](#65-close-short-or-cancel)). |
+| **Sync failures (last 24 h)** | Ordermentum and portal stock pushes or order fetches that failed in the last 24 hours. Red when above 0. Shown if you can see the Sync screen. | Click it to open **Sync** and check **Push failures** and **Inbound events** ([12](#12-sync-screen-ordermentum-and-portal)). |
 | **Stock lines awaiting put-away** | Stock sitting in a receiving bin that isn't sellable. Only shows if your site receives into such a bin. | Move it to a sellable bin ([7.4](#74-move-stock-between-bins)). |
 | **Orders needing attention** | **Oversold:** accepted beyond available stock. **Review:** the channel changed the order while it was being picked. | Open the order and decide ([9.5](#95-oversold-and-review-flags)). |
 | **Bins to count** | Count tasks: a bin went below zero at dispatch, or a picker reported a short pick. "Times" counts how often it was raised. | Managers: **Start count** or **Dismiss** ([8.4](#84-count-tasks)). |
@@ -240,7 +241,7 @@ Warehouse staff see fewer tiles:
 
 ![Dashboard for warehouse staff](img/11-dashboard-staff.png)
 
-**Sync failures are not on the dashboard.** Check the **Sync** screen ([12](#12-sync-screen-ordermentum-and-portal)).
+Warehouse staff can't see the Sync screen, so they don't get the sync-failures tile.
 
 ---
 
@@ -467,19 +468,20 @@ Clicking **Post receipt** twice doesn't book the stock twice.
 |---|---|---|
 | **On hand** | Everything in every bin, including quarantine and expired batches. | Stock on hand, product stock page |
 | **Sellable** | On hand in sellable bins, not quarantine, not past best-before. | Stock on hand, product stock page |
-| **Reserved** | Promised to open orders, not yet dispatched. | Each order's lines |
-| **Available** | Sellable minus reserved. This is what Ordermentum and the portal are told. | Not shown on the stock screens |
+| **Reserved** | Promised to open orders, not yet dispatched. | Stock on hand, product stock page, each order's lines |
+| **Available** | Sellable minus reserved. This is what Ordermentum and the portal see. Can be negative after an oversold order. | Stock on hand, product stock page |
 
 Stock leaves the system at dispatch. Until then it's reserved.
 
 ### 7.2 Stock on hand
 
-**Stock → Stock on hand** lists every product with **On hand** and **Sellable** in base units.
+**Stock → Stock on hand** lists every product with **On hand**, **Sellable**, **Reserved** and **Available**, in base units. Hover over **Available** to see "What Ordermentum and the portal see".
 
 ![Stock on hand](img/50-stock-on-hand.png)
 
 - A **red** on-hand figure is below zero.
 - An **amber** sellable figure is at or below the product's reorder point.
+- A **red** available figure is below zero: more is promised to orders than you have to sell.
 
 Click **Detail** for one product:
 
@@ -774,7 +776,7 @@ When every line is picked, "All lines picked" shows. Tap **Go to packing**.
 
 For each order:
 
-1. Tick each line as it goes into the carton(s). You can't pack an order until all its lines are picked.
+1. Tick each line as it goes into the carton(s). You can't pack an order until all its lines are picked. Once an order is packed, its lines stay ticked and can't be changed.
 2. Enter the number of **Cartons**.
 3. Tap **Packed**. Who and when are recorded.
 4. Tap **Packing slip** to open an A5 PDF. Print it and put it in the carton.
@@ -851,7 +853,7 @@ For admins: **Admin → Delivery areas**.
 
 ![Sync screen](img/95-sync.png)
 
-> **⚠ Take care.** Buttons on this screen change what cafés see and can order on Ordermentum and the portal. They act straight away, without asking for confirmation. If you're not sure, ask an administrator first.
+> **⚠ Take care.** Buttons on this screen change what cafés see and can order on Ordermentum and the portal. Each one first asks you to confirm, and the message says what will happen and how many items it affects. Read it before clicking **OK**. If you're not sure, click **Cancel** and ask an administrator.
 
 ### 12.1 The switches
 
@@ -861,6 +863,7 @@ The four boxes at the top show:
 - **Order ingestion:** On or Off, and the last order applied.
 - **Failures (24h) / queue.**
 - **Listings enabled.**
+- **Variant field:** which field of an Ordermentum order line holds the product. It shows **(confirmed)** when it's the field checked on a live order. **(unconfirmed)** in amber means the server setting was changed: tell an administrator.
 
 The switches are set on the server by an administrator, not on this screen. While **Stock push** is Off, nothing is sent to Ordermentum, whatever the buttons below say.
 
@@ -888,11 +891,18 @@ A refused portal call may be for an order the portal already accepted while Loca
 
 ### 12.3 Risky actions (admins and managers)
 
+Every button below asks you to confirm first. The confirmation says what will happen and how many items it affects, and warns you if the server switch for that channel is off. For example, **Enable all** asks:
+
+> Switch on stock sync for every Ordermentum listing that is off?
+>
+> Affects 1 listing(s). Their current available figures are sent to Ordermentum straight away, and cafés see them.
+
 | Button | What it does | Risk |
 |---|---|---|
 | **Enable all** / **Enable all portal listings** | Switches stock sync on for every listing and queues a full push. | Every café sees new stock figures at once. |
 | Listing **on/off** | Starts or stops pushing stock for one product. | Off: the channel keeps its last figure and can oversell. |
-| **Push** / **Push now** / **Retry** / **Retry all** | Sends the current available figure. | Low if the figure is right; check stock first. |
+| **Push** / **Push now** / **Retry** | Sends the current available figure for one product. | Low if the figure is right; check stock first. |
+| **Retry all** | Sends the current available figure for every product with a push error, on Ordermentum and the portal. | As above, for all of them at once. |
 | **Replay** | Re-processes an Ordermentum order event. | Creates or changes that order and its reservation. |
 | **Map** | Links a channel item to a product and pack. Tick **push stock** to start pushing for it. | A wrong product or pack means wrong orders and wrong stock figures. |
 
@@ -902,7 +912,7 @@ A refused portal call may be for an order the portal already accepted while Loca
 2. Search for the product.
 3. Choose the pack the channel sells.
 4. Tick **push stock** only if its stock should be pushed now.
-5. Click **Confirm**.
+5. Click **Confirm**, check the message, and click **OK**.
 
 Held Ordermentum orders containing the item are processed again. The product's **Sold on** setting gains that channel.
 
@@ -925,11 +935,16 @@ The invitation is listed under **Pending invitations** until it's accepted. It e
 - **Resend** sends a new link.
 - **Revoke** cancels it.
 
-### 13.2 Change roles or deactivate
+### 13.2 Change roles, email or deactivate
 
 On the user's row:
 
 - **Edit roles:** tick the roles and click **Save**.
+- **Change** (next to the email): type the new address, click **Save**, and confirm. The person logs in with the new address straight away, and password resets go there. The change is recorded in the audit log as `email_changed` with the old and new address. No confirmation email is sent to the new address, so check it carefully.
+
+![Change a user's email](img/96b-user-email.png)
+
+You can't change your own email. Ask another admin.
 - **Deactivate:** the person is signed out at once and can't log in.
 - **Activate:** lets them back in.
 
@@ -1028,4 +1043,4 @@ Check the **Sync** screen ([12](#12-sync-screen-ordermentum-and-portal)) for pus
 No. Stock movements can't be edited or deleted. Post a correcting adjustment with the reason **Data-entry correction** ([7.3](#73-adjust-or-write-off-stock)).
 
 **How do I change my email address?**
-There's no screen for it. Ask an administrator.
+Ask an administrator. They change it on **Admin → Users** ([13.2](#132-change-roles-email-or-deactivate)).

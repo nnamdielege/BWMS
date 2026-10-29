@@ -29,6 +29,7 @@ use App\Models\Range;
 use App\Models\ReasonCode;
 use App\Models\Setting;
 use App\Models\Supplier;
+use App\Models\SyncAttempt;
 use App\Models\User;
 use App\Models\UserInvitation;
 use App\Services\Orders\ChannelOrderData;
@@ -323,6 +324,11 @@ $listing('ordermentum', $P['oj'], 0, ['enabled' => false, 'last_pushed_at' => nu
 $listing('portal', $P['tea'], 22);
 $listing('portal', $P['cup'], 74);
 $listing('portal', $P['kgin'], 2, ['enabled' => false]);
+// The two failed pushes behind the BFC-FULL-2L push failure (dashboard "Sync failures" tile)
+foreach ([2, 1] as $retry) {
+    SyncAttempt::create(['channel' => 'ordermentum', 'operation' => 'push', 'product_id' => $P['full']->id, 'response_code' => 422,
+        'success' => false, 'error' => 'quantity must be an integer (demo)', 'created_at' => now()->subHours($retry)]);
+}
 ChannelUnmappedVariant::create(['channel' => 'ordermentum', 'external_variant_id' => (string) Str::uuid(), 'external_sku' => 'HCB-MOCHA-250',
     'name' => 'Harbour Cold Brew Mocha 250 ml', 'occurrences' => 2]);
 $inbox = function (string $event, string $ext, string $status, ?string $error = null, ?string $sig = 'valid_hex', int $attempts = 1) {
