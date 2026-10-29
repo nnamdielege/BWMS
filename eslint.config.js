@@ -15,5 +15,10 @@ export default defineConfigWithVueTs(
             '@typescript-eslint/no-explicit-any': 'off',
         },
     },
+    {
+        // Node CommonJS tool scripts (docs/manual/tools).
+        files: ['**/*.cjs'],
+        rules: { '@typescript-eslint/no-require-imports': 'off' },
+    },
     prettier,
 );

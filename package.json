@@ -7,7 +7,8 @@
         "dev": "vite",
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
-        "lint": "eslint . --fix"
+        "lint": "eslint . --fix",
+        "manual:pdf": "node docs/manual/tools/build-pdf.cjs"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",
@@ -15,6 +16,9 @@
         "eslint": "^9.17.0",
         "eslint-config-prettier": "^10.0.1",
         "eslint-plugin-vue": "^9.32.0",
+        "marked": "15.0.12",
+        "pdf-lib": "1.17.1",
+        "playwright": "1.48.2",
         "prettier": "^3.4.2",
         "prettier-plugin-organize-imports": "^4.1.0",
         "prettier-plugin-tailwindcss": "^0.6.9",
