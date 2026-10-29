@@ -27,7 +27,7 @@ type Listing = {
 };
 type Suggestion = { id: number; sku: string; name: string; units: { id: number; name: string; base_qty: number; sellable: boolean }[] };
 
-const props = defineProps<{
+type Props = {
     switches: { push_enabled: boolean; ingest_enabled: boolean; webhook_configured: boolean; api_key_set: boolean; signature_mode: string; variant_fields: string[]; variant_confirmed: boolean };
     health: { last_push_ok: string | null; last_order_ok: string | null; failures_24h: number; queue_depth: number; listings: number; listings_enabled: number };
     failures: Listing[];
@@ -53,15 +53,57 @@ const props = defineProps<{
     };
     filters: { status?: string; q?: string };
     canManage: boolean;
-}>();
+};
+const props = defineProps<Props>();
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Sync', href: '/sync' }];
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'never');
 const q = ref(props.filters.q ?? '');
 const search = () => router.get(route('sync.index'), { ...props.filters, q: q.value || undefined }, { preserveState: true, preserveScroll: true });
 const filterInbox = (status?: string) => router.get(route('sync.index'), { ...props.filters, status }, { preserveState: true, preserveScroll: true });
-const post = (url: string) => router.post(url, {}, { preserveScroll: true });
-const toggle = (l: Listing) => router.put(route('sync.listings.update', l.id), { sync_enabled: !l.sync_enabled }, { preserveScroll: true });
+// Every action that writes to Ordermentum or the portal, retries or replays asks first,
+// saying what happens and how many items it affects.
+const sku = (l: Listing) => l.product?.sku ?? `listing ${l.id}`;
+const offNote = (on: boolean, what: string) => (on ? '' : `\n\n${what} is switched off on the server, so nothing is sent until it is switched on.`);
+const pushOne = (l: Listing) =>
+    confirm(
+        `Push the current available stock for ${sku(l)} to Ordermentum now?\n\nAffects 1 product.` +
+            (props.switches.push_enabled ? '' : '\n\nStock push is switched off on the server, so this will be refused.'),
+    ) && router.post(route('sync.push', l.id), {}, { preserveScroll: true });
+const retryAll = () => {
+    const om = props.failures.length;
+    const portal = props.portal.push_failures.length;
+    if (
+        confirm(
+            `Retry the stock push for every product with an error?\n\nAffects ${om + portal} product(s): ${om} on Ordermentum, ${portal} on the portal. Their current available figures are sent now.` +
+                offNote(props.switches.push_enabled || props.portal.push_enabled, 'Stock push'),
+        )
+    )
+        router.post(route('sync.retry-failed'), {}, { preserveScroll: true });
+};
+const enableAll = (channel: 'ordermentum' | 'portal') => {
+    const name = channel === 'portal' ? 'the portal' : 'Ordermentum';
+    const off = channel === 'portal' ? props.portal.listings - props.portal.listings_enabled : props.health.listings - props.health.listings_enabled;
+    const on = channel === 'portal' ? props.portal.push_enabled : props.switches.push_enabled;
+    if (
+        confirm(
+            `Switch on stock sync for every ${channel === 'portal' ? 'portal' : 'Ordermentum'} listing that is off?\n\nAffects ${off} listing(s). Their current available figures are sent to ${name} straight away, and cafés see them.` +
+                offNote(on, 'Stock push'),
+        )
+    )
+        router.post(route('sync.listings.enable-all'), channel === 'portal' ? { channel } : {}, { preserveScroll: true });
+};
+const toggle = (l: Listing) => {
+    const message = l.sync_enabled
+        ? `Stop pushing stock for ${sku(l)}?\n\nAffects 1 listing. Ordermentum keeps the last figure sent (${l.last_pushed_qty ?? 'none'}) and can oversell until sync is switched back on.`
+        : `Start pushing stock for ${sku(l)} to Ordermentum?\n\nAffects 1 listing. Its current available figure is sent now.` + offNote(props.switches.push_enabled, 'Stock push');
+    if (confirm(message)) router.put(route('sync.listings.update', l.id), { sync_enabled: !l.sync_enabled }, { preserveScroll: true });
+};
+const replay = (i: Props['inbox'][number]) =>
+    confirm(
+        `Process Ordermentum event #${i.id}${i.external_id ? ` (order ${i.external_id})` : ''} again?\n\nAffects 1 event. The order is fetched from Ordermentum and created or updated here, with its reserved stock.` +
+            (props.switches.ingest_enabled ? '' : '\n\nOrder ingestion is switched off on the server, so it is stored as held again.'),
+    ) && router.post(route('sync.inbox.replay', i.id), {}, { preserveScroll: true });
 
 // Mapping an unmapped Ordermentum variant to a product + pack.
 const mapping = ref<number | null>(null);
@@ -78,7 +120,15 @@ const pick = (p: PickedProduct) => {
     mapForm.product_id = p.id;
     mapForm.product_unit_id = p.units.find((u) => u.sellable)?.id ?? null;
 };
-const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!), { preserveScroll: true, onSuccess: () => (mapping.value = null) });
+const submitMap = () => {
+    const v = props.unmappedVariants.find((x) => x.id === mapping.value);
+    const unit = picked.value?.units.find((u) => u.id === mapForm.product_unit_id);
+    const message =
+        `Map ${v?.external_sku ?? v?.external_variant_id} to ${picked.value?.sku} (${unit?.name ?? 'pack'})?\n\nAffects 1 ${v?.channel} item.` +
+        (v?.channel === 'ordermentum' ? ' Ordermentum orders held for it are processed now.' : ' Portal calls with it are accepted from now on.') +
+        (mapForm.sync_enabled ? ' Its stock is pushed to the channel.' : '');
+    if (confirm(message)) mapForm.post(route('sync.unmapped.map', mapping.value!), { preserveScroll: true, onSuccess: () => (mapping.value = null) });
+};
 </script>
 
 <template>
@@ -116,14 +166,14 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
             <section v-if="failures.length" class="rounded-lg border border-red-300 p-4">
                 <div class="mb-2 flex items-center justify-between">
                     <h2 class="font-semibold text-red-700">Push failures</h2>
-                    <Button v-if="canManage" size="sm" variant="outline" @click="post(route('sync.retry-failed'))">Retry all</Button>
+                    <Button v-if="canManage" size="sm" variant="outline" @click="retryAll">Retry all</Button>
                 </div>
                 <table class="w-full text-left text-sm">
                     <tbody>
                         <tr v-for="l in failures" :key="l.id" class="border-t">
                             <td class="py-1 font-mono">{{ l.product?.sku }}</td>
                             <td class="text-red-700">{{ l.last_error }}</td>
-                            <td class="text-right"><Button v-if="canManage" size="sm" variant="ghost" @click="post(route('sync.push', l.id))">Retry</Button></td>
+                            <td class="text-right"><Button v-if="canManage" size="sm" variant="ghost" @click="pushOne(l)">Retry</Button></td>
                         </tr>
                     </tbody>
                 </table>
@@ -139,7 +189,7 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                             <td class="text-right tabular-nums">{{ l.last_remote_qty }}</td>
                             <td class="text-right tabular-nums">{{ l.last_pushed_qty }}</td>
                             <td>{{ when(l.last_checked_at) }}</td>
-                            <td class="text-right"><Button v-if="canManage" size="sm" variant="ghost" @click="post(route('sync.push', l.id))">Push now</Button></td>
+                            <td class="text-right"><Button v-if="canManage" size="sm" variant="ghost" @click="pushOne(l)">Push now</Button></td>
                         </tr>
                     </tbody>
                 </table>
@@ -209,7 +259,7 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                             <td class="max-w-md text-xs text-red-700">{{ i.error }}</td>
                             <td class="whitespace-nowrap">{{ when(i.created_at) }}</td>
                             <td class="text-right">
-                                <Button v-if="canManage && i.external_id && i.status !== 'ignored'" size="sm" variant="ghost" @click="post(route('sync.inbox.replay', i.id))">Replay</Button>
+                                <Button v-if="canManage && i.external_id && i.status !== 'ignored'" size="sm" variant="ghost" @click="replay(i)">Replay</Button>
                             </td>
                         </tr>
                         <tr v-if="!inbox.length"><td colspan="9" class="py-2 text-muted-foreground">Nothing received yet.</td></tr>
@@ -221,7 +271,7 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                 <div class="mb-2 flex flex-wrap items-center gap-2">
                     <h2 class="mr-auto font-semibold">Listings</h2>
                     <form class="flex gap-2" @submit.prevent="search"><Input v-model="q" placeholder="SKU, name or variant" class="h-8 w-56" /></form>
-                    <Button v-if="canManage && health.listings_enabled < health.listings" size="sm" variant="outline" @click="post(route('sync.listings.enable-all'))">Enable all</Button>
+                    <Button v-if="canManage && health.listings_enabled < health.listings" size="sm" variant="outline" @click="enableAll('ordermentum')">Enable all</Button>
                 </div>
                 <table class="w-full text-left text-sm">
                     <thead class="text-muted-foreground">
@@ -244,7 +294,7 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                                 {{ l.pending ? 'pending' : l.last_error ? 'error' : (l.last_response_code ?? '') }}
                                 <span v-if="l.remote_status === 'untracked'" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-900">untracked</span>
                             </td>
-                            <td class="text-right"><Button v-if="canManage && l.sync_enabled" size="sm" variant="ghost" @click="post(route('sync.push', l.id))">Push</Button></td>
+                            <td class="text-right"><Button v-if="canManage && l.sync_enabled" size="sm" variant="ghost" @click="pushOne(l)">Push</Button></td>
                         </tr>
                     </tbody>
                 </table>
@@ -258,7 +308,7 @@ const submitMap = () => mapForm.post(route('sync.unmapped.map', mapping.value!),
                         v-if="canManage && portal.listings_enabled < portal.listings"
                         size="sm"
                         variant="outline"
-                        @click="router.post(route('sync.listings.enable-all'), { channel: 'portal' }, { preserveScroll: true })"
+                        @click="enableAll('portal')"
                         >Enable all portal listings</Button
                     >
                 </div>

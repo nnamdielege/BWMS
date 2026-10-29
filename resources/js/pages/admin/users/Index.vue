@@ -53,6 +53,17 @@ const startEdit = (u: UserRow) => {
 };
 const saveRoles = (u: UserRow) =>
     router.put(route('admin.users.roles', u.id), { roles: editRoles.value }, { preserveScroll: true, onSuccess: () => (editing.value = null) });
+const emailFor = ref<number | null>(null);
+const emailForm = useForm({ email: '' });
+const startEmail = (u: UserRow) => {
+    emailFor.value = u.id;
+    emailForm.clearErrors();
+    emailForm.email = u.email;
+};
+const saveEmail = (u: UserRow) => {
+    if (!confirm(`Change ${u.name}'s email to ${emailForm.email}? They will log in with the new address, and password resets go there.`)) return;
+    emailForm.put(route('admin.users.email', u.id), { preserveScroll: true, onSuccess: () => (emailFor.value = null) });
+};
 const toggleActive = (u: UserRow) => {
     if (u.is_active && !confirm(`Deactivate ${u.name}? They will be signed out immediately.`)) return;
     router.put(route('admin.users.active', u.id), { is_active: !u.is_active }, { preserveScroll: true });
@@ -124,7 +135,18 @@ const revoke = (i: InvitationRow) => confirm(`Revoke invitation for ${i.email}?`
                     <tbody>
                         <tr v-for="u in users" :key="u.id" class="border-b align-top">
                             <td class="py-2">{{ u.name }}</td>
-                            <td>{{ u.email }}</td>
+                            <td>
+                                <form v-if="emailFor === u.id" class="flex flex-wrap items-center gap-1" @submit.prevent="saveEmail(u)">
+                                    <Input v-model="emailForm.email" type="email" class="h-8 w-56" required />
+                                    <Button size="sm" type="submit" :disabled="emailForm.processing">Save</Button>
+                                    <Button size="sm" type="button" variant="ghost" @click="emailFor = null">Cancel</Button>
+                                    <InputError :message="emailForm.errors.email" class="w-full" />
+                                </form>
+                                <template v-else>
+                                    {{ u.email }}
+                                    <button v-if="u.can_manage" type="button" class="ml-1 text-xs underline" @click="startEmail(u)">Change</button>
+                                </template>
+                            </td>
                             <td>
                                 <div v-if="editing === u.id" class="flex flex-wrap gap-3">
                                     <label v-for="r in grantableRoles" :key="r" class="flex items-center gap-1 capitalize">

@@ -26,6 +26,8 @@ const props = defineProps<{
     product: { id: number; sku: string; name: string; base_unit: string; is_batch_tracked: boolean; units: { id: number; name: string; base_qty: number }[] };
     onHand: number;
     sellable: number;
+    reserved: number;
+    available: number;
     balances: {
         location_id: number;
         location: string;
@@ -107,7 +109,11 @@ const packs = computed(() => props.product.units.filter((u) => u.base_qty > 1));
                 <h1 class="text-xl font-semibold">{{ product.sku }} — {{ product.name }}</h1>
                 <span class="text-sm">On hand <strong class="tabular-nums">{{ onHand }}</strong> {{ product.base_unit }}</span>
                 <span class="text-sm">Sellable <strong class="tabular-nums">{{ sellable }}</strong></span>
-                <span v-for="u in packs" :key="u.id" class="text-sm text-muted-foreground">= {{ Math.floor(sellable / u.base_qty) }} × {{ u.name }}</span>
+                <span class="text-sm" title="On open orders, not yet dispatched">Reserved <strong class="tabular-nums">{{ reserved }}</strong></span>
+                <span class="text-sm" title="What Ordermentum and the portal see">
+                    Available <strong class="tabular-nums" :class="{ 'text-red-600': available < 0 }">{{ available }}</strong>
+                </span>
+                <span v-for="u in packs" :key="u.id" class="text-sm text-muted-foreground">= {{ Math.floor(Math.max(0, available) / u.base_qty) }} × {{ u.name }}</span>
                 <Link :href="route('products.edit', product.id)" class="ml-auto text-sm underline">Product details</Link>
             </header>
 

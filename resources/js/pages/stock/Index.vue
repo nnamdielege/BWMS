@@ -16,6 +16,8 @@ interface Row {
     reorder_point: number | null;
     on_hand: number;
     sellable: number;
+    reserved: number;
+    available: number;
 }
 
 const props = defineProps<{ products: Paginated<Row>; filters: { q?: string } }>();
@@ -42,7 +44,9 @@ const low = (r: Row) => r.reorder_point !== null && r.sellable <= r.reorder_poin
                 <thead class="border-b text-muted-foreground">
                     <tr>
                         <th class="py-2">SKU</th><th>Name</th><th class="text-right">On hand</th>
-                        <th class="text-right" title="Sellable bins, excluding expired batches and quarantine">Sellable</th><th>Unit</th><th></th>
+                        <th class="text-right" title="Sellable bins, excluding expired batches and quarantine">Sellable</th>
+                        <th class="text-right" title="On open orders, not yet dispatched">Reserved</th>
+                        <th class="text-right" title="What Ordermentum and the portal see">Available</th><th class="pl-3">Unit</th><th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -51,10 +55,12 @@ const low = (r: Row) => r.reorder_point !== null && r.sellable <= r.reorder_poin
                         <td>{{ r.name }}</td>
                         <td class="text-right tabular-nums" :class="{ 'text-red-600': r.on_hand < 0 }">{{ r.on_hand }}</td>
                         <td class="text-right tabular-nums" :class="{ 'font-semibold text-amber-600': low(r) }">{{ r.sellable }}</td>
-                        <td>{{ r.base_unit }}</td>
+                        <td class="text-right tabular-nums">{{ r.reserved }}</td>
+                        <td class="text-right tabular-nums font-semibold" :class="{ 'text-red-600': r.available < 0 }" title="What Ordermentum and the portal see">{{ r.available }}</td>
+                        <td class="pl-3">{{ r.base_unit }}</td>
                         <td class="text-right"><Link :href="route('stock.show', r.id)" class="underline">Detail</Link></td>
                     </tr>
-                    <tr v-if="!products.data.length"><td colspan="6" class="py-6 text-center text-muted-foreground">No products found.</td></tr>
+                    <tr v-if="!products.data.length"><td colspan="8" class="py-6 text-center text-muted-foreground">No products found.</td></tr>
                 </tbody>
             </table>
 

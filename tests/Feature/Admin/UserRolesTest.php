@@ -3,6 +3,7 @@
 namespace Tests\Feature\Admin;
 
 use App\Authorization\Permissions;
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -87,5 +88,34 @@ class UserRolesTest extends TestCase
         $this->assertNotSame('evil@example.com', $staff->email);
         $this->assertTrue($staff->is_active);
         $this->assertFalse($staff->hasRole('admin'));
+    }
+
+    public function test_admin_can_change_a_users_email_and_it_is_audited()
+    {
+        $admin = $this->userWithRole(Permissions::ROLE_ADMIN);
+        $staff = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
+        $old = $staff->email;
+
+        $this->actingAs($admin)->put(route('admin.users.email', $staff), ['email' => 'new.address@example.com'])->assertSessionHasNoErrors();
+
+        $this->assertSame('new.address@example.com', $staff->fresh()->email);
+        $log = AuditLog::where('event', 'email_changed')->sole();
+        $this->assertSame([$staff->id, $admin->id], [(int) $log->auditable_id, $log->user_id]);
+        $this->assertSame(['email' => $old], $log->old_values);
+        $this->assertSame(['email' => 'new.address@example.com'], $log->new_values);
+        $this->assertSame(0, AuditLog::where('event', 'updated')->where('auditable_id', $staff->id)->count(), 'One email_changed entry, no generic update');
+    }
+
+    public function test_email_change_is_admin_only_unique_and_not_for_yourself()
+    {
+        $admin = $this->userWithRole(Permissions::ROLE_ADMIN);
+        $staff = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
+        $other = $this->userWithRole(Permissions::ROLE_READ_ONLY);
+
+        $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER))
+            ->put(route('admin.users.email', $staff), ['email' => 'x@example.com'])->assertForbidden();
+        $this->actingAs($admin)->put(route('admin.users.email', $admin), ['email' => 'me@example.com'])->assertForbidden();
+        $this->actingAs($admin)->put(route('admin.users.email', $staff), ['email' => $other->email])->assertSessionHasErrors('email');
+        $this->actingAs($admin)->put(route('admin.users.email', $staff), ['email' => 'not-an-email'])->assertSessionHasErrors('email');
     }
 }

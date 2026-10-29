@@ -172,6 +172,8 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
             ->middleware('can:viewAny,App\Models\User')->name('users.index');
         Route::put('users/{user}/roles', [UserController::class, 'updateRoles'])
             ->middleware('can:updateRoles,user')->name('users.roles');
+        Route::put('users/{user}/email', [UserController::class, 'updateEmail'])
+            ->middleware('can:updateRoles,user')->name('users.email');
         Route::put('users/{user}/active', [UserController::class, 'setActive'])
             ->middleware('can:setActive,user')->name('users.active');
         Route::delete('users/{user}/two-factor', [UserController::class, 'resetTwoFactor'])

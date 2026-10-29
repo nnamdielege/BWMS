@@ -82,4 +82,25 @@ class UserController extends Controller
 
         return back()->with('success', $data['is_active'] ? "{$user->name} re-activated." : "{$user->name} deactivated.");
     }
+
+    /**
+     * Admin-only email change (users can't change their own). Saved quietly and
+     * audited as email_changed. No re-verification: the app has no email
+     * verification step; an address is proven once, by accepting the invitation.
+     */
+    public function updateEmail(Request $request, User $user): RedirectResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
+        ]);
+        $old = $user->email;
+        if ($data['email'] === $old) {
+            return back();
+        }
+
+        $user->forceFill(['email' => $data['email']])->saveQuietly();
+        Audit::record('email_changed', $user, ['email' => $old], ['email' => $data['email']]);
+
+        return back()->with('success', "Email for {$user->name} changed to {$data['email']}. They log in with the new address from now on.");
+    }
 }

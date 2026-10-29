@@ -19,6 +19,7 @@ use App\Services\Stock\Exceptions\InvalidMovement;
 use Database\Seeders\DefaultSiteSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Inertia\Testing\AssertableInertia;
 use Tests\Support\OrderFixtures;
 use Tests\Support\StockFixtures;
 use Tests\TestCase;
@@ -206,5 +207,18 @@ class ReservationTest extends TestCase
 
         $this->assertSame(0, Order::count());
         $this->assertInstanceOf(OrderService::class, app(OrderService::class));
+    }
+
+    public function test_stock_screens_show_reserved_and_available()
+    {
+        $p = Product::factory()->create();
+        $this->stockIn($p, 10, $this->bin('STOCK'));
+        $this->manualOrder($this->manager, $p, 4);
+        $viewer = $this->userWithRole(Permissions::ROLE_READ_ONLY);
+
+        $this->actingAs($viewer)->get(route('stock.index', ['q' => $p->sku]))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('products.data.0.on_hand', 10)->where('products.data.0.reserved', 4)->where('products.data.0.available', 6));
+        $this->actingAs($viewer)->get(route('stock.show', $p))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('onHand', 10)->where('sellable', 10)->where('reserved', 4)->where('available', 6));
     }
 }

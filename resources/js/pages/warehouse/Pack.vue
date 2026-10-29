@@ -55,7 +55,7 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
             <ul class="mt-2 divide-y">
                 <li v-for="l in o.lines" :key="l.id">
                     <label class="flex min-h-12 items-center gap-3 py-2">
-                        <input type="checkbox" class="size-6" :checked="s(o).checked.includes(l.id)" :disabled="!!o.pack" @change="toggle(o, l.id)" />
+                        <input type="checkbox" class="size-6" :checked="!!o.pack || s(o).checked.includes(l.id)" :disabled="!!o.pack" @change="toggle(o, l.id)" />
                         <span class="flex-1">
                             {{ l.product.name }}
                             <span v-if="l.product.chilled" class="ml-1 rounded bg-sky-100 px-1.5 text-xs text-sky-800">CHILLED</span>

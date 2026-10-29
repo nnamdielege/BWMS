@@ -7,6 +7,7 @@ use App\Models\Location;
 use App\Models\Order;
 use App\Models\PurchaseOrder;
 use App\Models\StockBalance;
+use App\Models\SyncAttempt;
 use App\Support\BusinessDate;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -59,6 +60,11 @@ class DashboardController extends Controller
             // Only non-zero when a site receives into a non-sellable bin (RECEIVING + put-away).
             $widgets['awaiting_putaway'] = StockBalance::where('on_hand', '>', 0)
                 ->whereIn('location_id', Location::bins()->where('is_receiving', true)->where('is_sellable', false)->select('id'))->count();
+        }
+
+        if ($user->can('sync.view')) {
+            // Same source as the Sync screen's "Failures (24h)", both channels.
+            $widgets['sync_failures_24h'] = SyncAttempt::where('success', false)->where('created_at', '>', now()->subDay())->count();
         }
 
         return Inertia::render('Dashboard', ['widgets' => $widgets]);

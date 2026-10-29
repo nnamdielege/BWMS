@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ReasonCode;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
+use App\Services\Orders\AvailabilityService;
 use App\Services\Stock\StockQuery;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -15,7 +16,7 @@ use Inertia\Response;
 
 class StockController extends Controller
 {
-    public function __construct(private StockQuery $stock) {}
+    public function __construct(private StockQuery $stock, private AvailabilityService $availability) {}
 
     /** Stock on hand by product. */
     public function index(Request $request): Response
@@ -33,11 +34,14 @@ class StockController extends Controller
         $onHand = StockBalance::whereIn('product_id', $ids)->groupBy('product_id')
             ->selectRaw('product_id, SUM(on_hand) as qty')->pluck('qty', 'product_id');
         $sellable = $this->stock->sellableOnHandMany($ids);
+        $available = $this->availability->availableMany($ids);
 
         $products->getCollection()->transform(fn (Product $p) => [
             ...$p->only(['id', 'sku', 'name', 'base_unit', 'is_batch_tracked', 'reorder_point']),
             'on_hand' => (int) ($onHand[$p->id] ?? 0),
             'sellable' => $sellable[$p->id] ?? 0,
+            'reserved' => ($sellable[$p->id] ?? 0) - $available[$p->id],
+            'available' => $available[$p->id],
         ]);
 
         return Inertia::render('stock/Index', ['products' => $products, 'filters' => $filters]);
@@ -52,6 +56,8 @@ class StockController extends Controller
             'product' => $product->only(['id', 'sku', 'name', 'base_unit', 'is_batch_tracked']) + ['units' => $product->units],
             'onHand' => $this->stock->onHand($product),
             'sellable' => $this->stock->sellableOnHand($product),
+            'reserved' => $this->availability->reserved($product),
+            'available' => $this->availability->available($product),
             'balances' => $this->stock->balancesFor($product)->map(fn (StockBalance $b) => [
                 'location_id' => $b->location_id,
                 'location' => $b->location->path(),

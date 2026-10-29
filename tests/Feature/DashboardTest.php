@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Authorization\Permissions;
+use App\Models\SyncAttempt;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase
@@ -29,5 +31,19 @@ class DashboardTest extends TestCase
 
         $this->actingAs($user)->get('/dashboard')->assertRedirect('/login');
         $this->assertGuest();
+    }
+
+    public function test_sync_failures_tile_counts_the_last_24_hours_for_sync_viewers_only()
+    {
+        $row = ['channel' => 'ordermentum', 'operation' => 'push', 'success' => false];
+        SyncAttempt::create($row);
+        SyncAttempt::create(['channel' => 'portal'] + $row);
+        SyncAttempt::create(['success' => true] + $row);
+        SyncAttempt::create($row)->forceFill(['created_at' => now()->subDays(2)])->save();
+
+        $this->actingAs($this->userWithRole(Permissions::ROLE_READ_ONLY))->get('/dashboard')
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('widgets.sync_failures_24h', 2));
+        $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF))->get('/dashboard')
+            ->assertInertia(fn (AssertableInertia $page) => $page->missing('widgets.sync_failures_24h'));
     }
 }

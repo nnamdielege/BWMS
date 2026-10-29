@@ -10,6 +10,7 @@ defineProps<{
         awaiting_pick?: number;
         overdue_pos?: number;
         awaiting_putaway?: number;
+        sync_failures_24h?: number;
         negative_bins?: { total: number; rows: { product_id: number; sku: string; name: string; on_hand: number; bin: string }[] };
         count_tasks?: {
             total: number;
@@ -53,6 +54,10 @@ const dismiss = (id: number) => {
                 <Link v-if="widgets.overdue_pos !== undefined" :href="route('purchase-orders.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Overdue purchase orders</div>
                     <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.overdue_pos }">{{ widgets.overdue_pos }}</div>
+                </Link>
+                <Link v-if="widgets.sync_failures_24h !== undefined" :href="route('sync.index')" class="rounded-lg border p-4 hover:bg-muted">
+                    <div class="text-sm text-muted-foreground">Sync failures (last 24 h)</div>
+                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.sync_failures_24h }">{{ widgets.sync_failures_24h }}</div>
                 </Link>
                 <Link v-if="widgets.awaiting_putaway" :href="route('stock.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Stock lines awaiting put-away</div>
