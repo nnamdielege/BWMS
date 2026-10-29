@@ -45,6 +45,12 @@ class WebhookSignature
         };
     }
 
+    /** The hex signature Ordermentum sends for a body (om:simulate-webhook signs with it). */
+    public static function sign(string $rawBody, string $secret): string
+    {
+        return hash_hmac((string) config('bwms.ordermentum.webhook_signature.algorithm'), $rawBody, $secret);
+    }
+
     public static function isValid(string $result): bool
     {
         return in_array($result, [self::VALID_HEX, self::VALID_BASE64], true);

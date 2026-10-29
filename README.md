@@ -29,7 +29,9 @@ npm run dev && php artisan serve --port=8001
 
 There is no registration and no default password: every user is invited.
 
-**Database safety.** `migrate:fresh/refresh/reset/rollback`, `db:wipe`, `RefreshDatabase` and `DatabaseTruncation` refuse unless the database name ends in `_test` (`App\Support\DatabaseSafety`). Tests run on `bwms_test` (forced in `phpunit.xml`, also in `.env.testing`). On any other database, restore a backup instead of rolling back.
+**Database safety.** `migrate:fresh/refresh/reset/rollback`, `db:wipe`, `RefreshDatabase` and `DatabaseTruncation` refuse unless the database name ends in `_test` (`App\Support\DatabaseSafety`). Tests run on `bwms_test` (forced in `phpunit.xml`, also in `.env.testing`). On any other database, restore a backup instead of rolling back. One exception: `php artisan bwms:dev-reset` rebuilds the local dev database (APP_ENV=local, a database listed in `BWMS_DEV_RESET_DATABASES`, default `bwms_next`, on this machine only).
+
+**Local end-to-end testing:** [docs/TESTING.md](docs/TESTING.md): dev data reset, real Ordermentum orders read-only, webhook and portal simulators, handheld over Wi-Fi.
 
 ## Quality gates
 

@@ -41,6 +41,9 @@ return [
         // Pushes wait while order events are being ingested (so a push never overwrites a
         // decrement BWMS has not seen); an event older than this is treated as stuck.
         'ingest_wait_minutes' => (int) env('ORDERMENTUM_INGEST_WAIT_MINUTES', 10),
+        // Local testing only (APP_ENV local/testing): orders saved by om:simulate-webhook in
+        // storage/app/private/ordermentum-fixtures are used instead of fetching them.
+        'local_order_fixtures' => (bool) env('ORDERMENTUM_LOCAL_FIXTURES', false),
 
         /*
          * Webhook signature (confirmed by Ordermentum, 2026-10-27): header
@@ -104,4 +107,7 @@ return [
         'push_batch' => 100,
         'debounce_seconds' => (int) env('PORTAL_DEBOUNCE_SECONDS', 10),
     ],
+
+    // bwms:dev-reset may only wipe these databases (APP_ENV=local, local host).
+    'dev_reset_databases' => array_values(array_filter(explode(',', (string) env('BWMS_DEV_RESET_DATABASES', 'bwms_next')))),
 ];

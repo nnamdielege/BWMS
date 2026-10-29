@@ -99,6 +99,9 @@ class OrdermentumClient
     private function send(string $host, string $method, string $path, callable $call): Response
     {
         $this->assertSafeContext();
+        if ($method !== 'GET' && ($this->config['read_only'] ?? false)) {
+            throw new OrdermentumException("Ordermentum is read-only here (ORDERMENTUM_READ_ONLY=true): refused {$method} {$path}.");
+        }
 
         for ($attempt = 1; ; $attempt++) {
             $this->takeBudget($host, $method, $path);

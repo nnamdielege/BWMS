@@ -41,6 +41,8 @@ return [
      */
     'ordermentum' => [
         'api_key' => env('ORDERMENTUM_API_KEY'),
+        // Hard stop for local testing: the client refuses every request except GET.
+        'read_only' => (bool) env('ORDERMENTUM_READ_ONLY', false),
         'base_url' => env('ORDERMENTUM_BASE_URL', 'https://api.ordermentum.com'),
         'stock_url' => env('ORDERMENTUM_STOCK_URL', 'https://stock.ordermentum.com'),
         'supplier_id' => env('ORDERMENTUM_SUPPLIER_ID'),

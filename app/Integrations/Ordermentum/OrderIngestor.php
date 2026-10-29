@@ -31,6 +31,7 @@ class OrderIngestor
         private OrdermentumClient $client,
         private OrdermentumOrderMapper $mapper,
         private OrderService $orders,
+        private LocalOrderFixtures $fixtures,
     ) {}
 
     /**
@@ -108,6 +109,10 @@ class OrderIngestor
 
     private function fetch(string $orderId): ?array
     {
+        if (($fixture = $this->fixtures->get($orderId)) !== null) {
+            return $fixture; // local testing only (om:simulate-webhook)
+        }
+
         $started = hrtime(true);
         $log = fn (?int $status, ?string $error) => SyncAttempt::create([
             'channel' => OrderChannel::Ordermentum->value, 'operation' => 'fetch_order', 'external_id' => $orderId,
