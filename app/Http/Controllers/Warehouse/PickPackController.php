@@ -137,14 +137,26 @@ class PickPackController extends Controller
         ]);
     }
 
+    /** Called in the background as lines are ticked, so it answers without a page visit. */
+    public function ticks(Request $request, PickList $pickList): HttpResponse
+    {
+        $data = $request->validate([
+            'ticked' => ['array', 'max:500'],
+            'ticked.*' => ['integer'],
+            'unticked' => ['array', 'max:500'],
+            'unticked.*' => ['integer'],
+        ]);
+        $this->guard(fn () => $this->service->tick($pickList, $request->user(), $data['ticked'] ?? [], $data['unticked'] ?? []));
+
+        return response()->noContent();
+    }
+
     public function pack(Request $request, PickList $pickList, Order $order): RedirectResponse
     {
         $data = $request->validate([
             'cartons' => ['required', 'integer', 'min:0', 'max:500'],
-            'checked' => ['array'],
-            'checked.*' => ['integer'],
         ]);
-        $this->guard(fn () => $this->service->pack($pickList, $order, $request->user(), (int) $data['cartons'], $data['checked'] ?? []));
+        $this->guard(fn () => $this->service->pack($pickList, $order, $request->user(), (int) $data['cartons']));
 
         return back()->with('success', "{$order->number} packed.");
     }
@@ -244,6 +256,7 @@ class PickPackController extends Controller
             'to_pick_base' => $l->qty_to_pick_base,
             'to_pick_label' => $this->packs($l->qty_to_pick_base, $per).' '.$ol->unit->name,
             'picked_base' => $l->qty_picked_base,
+            'ticked' => $l->ticked_at !== null,
             'scanned' => (bool) ($l->bin_scanned_at && $l->product_scanned_at),
             'override_reason' => $l->override_reason,
         ];

@@ -8,8 +8,10 @@ use App\Models\CountTask;
 use App\Models\Customer;
 use App\Models\DeliveryArea;
 use App\Models\DeliveryRun;
+use App\Models\AuditLog;
 use App\Models\Location;
 use App\Models\Order;
+use App\Models\OrderPack;
 use App\Models\PickList;
 use App\Models\Product;
 use App\Models\User;
@@ -102,6 +104,43 @@ class PickPackTest extends TestCase
         return $this->actingAs($this->picker)->put(route('pick.record', [$list, $lineId]), $data);
     }
 
+    /** @param  list<int>  $ticked  @param  list<int>  $unticked */
+    private function tick(PickList $list, array $ticked, array $unticked = [])
+    {
+        return $this->actingAs($this->picker)->putJson(route('pick.ticks', $list), ['ticked' => $ticked, 'unticked' => $unticked]);
+    }
+
+    private function pickEverything(PickList $list): void
+    {
+        foreach ($list->lines as $line) {
+            $this->record($list, $line->id, ['qty_picked_base' => $line->qty_to_pick_base, 'override_reason' => 'scanner_fault'])->assertSessionHasNoErrors();
+        }
+    }
+
+    /** A second order on the same run as $this->order. */
+    private function secondOrder(): Order
+    {
+        return app(OrderService::class)->createManual($this->manager, [
+            'customer_id' => Customer::factory()->create(['delivery_postcode' => '4019', 'delivery_suburb' => 'Clontarf'])->id,
+            'site_id' => $this->site()->id, 'short_ship_policy' => 'backorder',
+            'lines' => [['product_id' => $this->chilled->id, 'product_unit_id' => $this->chilled->units()->value('id'), 'qty' => 1]],
+        ]);
+    }
+
+    /** @return list<int> */
+    private function lineIds(PickList $list, Order $order): array
+    {
+        return $list->lines()->whereHas('orderLine', fn ($q) => $q->where('order_id', $order->id))->pluck('id')->all();
+    }
+
+    /** @return list<int> Line ids the pack page shows as ticked, from a fresh page load. */
+    private function ticksOnPage(PickList $list, Order $order): array
+    {
+        $orders = $this->actingAs($this->picker)->get(route('pick.pack', $list))->assertOk()->inertiaProps('orders');
+
+        return collect(collect($orders)->firstWhere('id', $order->id)['lines'])->where('ticked', true)->pluck('id')->sort()->values()->all();
+    }
+
     public function test_bins_get_label_barcodes_and_the_queue_shows_the_run()
     {
         $this->assertSame(Location::barcodeFor($this->binA->id), $this->binA->fresh()->barcode);
@@ -172,9 +211,11 @@ class PickPackTest extends TestCase
         $this->actingAs($this->picker)->post(route('pick.dispatch', $this->run_()))->assertSessionHasErrors(['pick' => "Pack every order on {$list->number} before dispatch."]);
 
         $ids = $list->lines()->pluck('id')->all();
-        $this->actingAs($this->picker)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 2, 'checked' => array_slice($ids, 1)])
+        $this->tick($list, array_slice($ids, 1))->assertNoContent();
+        $this->actingAs($this->picker)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 2])
             ->assertSessionHasErrors(['pick' => 'Tick every line as packed.']);
-        $this->actingAs($this->picker)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 2, 'checked' => $ids])->assertSessionHasNoErrors();
+        $this->tick($list, $ids)->assertNoContent();
+        $this->actingAs($this->picker)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 2])->assertSessionHasNoErrors();
 
         $slip = $this->actingAs($this->picker)->get(route('pick.slip', [$list, $this->order]));
         $slip->assertOk()->assertHeader('Content-Type', 'application/pdf');
@@ -185,6 +226,90 @@ class PickPackTest extends TestCase
         $this->assertSame(DeliveryRun::STATUS_DISPATCHED, $this->run_()->status);
         $this->actingAs($this->picker)->get(route('pick.manifest', $this->run_()))->assertInertia(fn (AssertableInertia $p) => $p
             ->component('warehouse/RunManifest')->where('orders.0.cartons', 2)->where('orders.0.packed', true));
+    }
+
+    public function test_packing_one_order_leaves_the_ticks_on_the_other_orders()
+    {
+        $orderB = $this->secondOrder();
+        $list = $this->start();
+        $this->pickEverything($list);
+        $linesA = $this->lineIds($list, $this->order);
+        $linesB = $this->lineIds($list, $orderB);
+        $this->assertNotEmpty($linesB);
+
+        $this->tick($list, [...$linesA, ...$linesB])->assertNoContent();
+        $this->actingAs($this->picker)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 2])->assertSessionHasNoErrors();
+
+        $this->assertSame($linesB, $this->ticksOnPage($list, $orderB));
+    }
+
+    public function test_ticks_save_with_who_and_when_restore_on_load_and_untick_reverses()
+    {
+        $list = $this->start();
+        $this->pickEverything($list);
+        $ids = $this->lineIds($list, $this->order);
+
+        $this->tick($list, [$ids[0], $ids[1]])->assertNoContent();
+        $line = $list->lines()->find($ids[0]);
+        $this->assertSame($this->picker->id, $line->ticked_by);
+        $this->assertNotNull($line->ticked_at);
+        $this->assertSame([$ids[0], $ids[1]], $this->ticksOnPage($list, $this->order));
+
+        // A repeat tick, as a retry after a dropped connection sends, keeps the first who and when.
+        $first = $line->ticked_at;
+        Carbon::setTestNow(now()->addMinutes(5));
+        $this->actingAs($this->manager)->putJson(route('pick.ticks', $list), ['ticked' => [$ids[0]]])->assertNoContent();
+        $this->assertEquals($first, $line->fresh()->ticked_at);
+        $this->assertSame($this->picker->id, $line->fresh()->ticked_by);
+
+        $this->tick($list, [], [$ids[0]])->assertNoContent();
+        $this->assertNull($line->fresh()->ticked_at);
+        $this->assertNull($line->fresh()->ticked_by);
+        $this->assertSame([$ids[1]], $this->ticksOnPage($list, $this->order));
+    }
+
+    public function test_packed_is_final()
+    {
+        $list = $this->start();
+        $this->pickEverything($list);
+        $ids = $this->lineIds($list, $this->order);
+        $this->tick($list, $ids)->assertNoContent();
+        $this->actingAs($this->picker)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 2])->assertSessionHasNoErrors();
+
+        $this->tick($list, [], [$ids[0]])->assertUnprocessable()->assertJsonValidationErrors(['pick' => 'That order is already packed.']);
+        $this->assertSame($ids, $this->ticksOnPage($list, $this->order));
+
+        $this->actingAs($this->manager)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 9])->assertSessionHasNoErrors();
+        $pack = OrderPack::sole();
+        $this->assertSame([2, $this->picker->id], [$pack->cartons, $pack->packed_by]);
+        $this->assertSame(1, AuditLog::where('event', 'order_packed')->count());
+    }
+
+    public function test_ticks_are_refused_for_a_line_on_another_list_or_a_closed_list()
+    {
+        $list = $this->start();
+        $this->tick($list, [999999])->assertUnprocessable()->assertJsonValidationErrors(['pick' => "That line is not on {$list->number}."]);
+
+        $this->pickEverything($list);
+        $ids = $this->lineIds($list, $this->order);
+        $list->forceFill(['status' => PickList::STATUS_CANCELLED])->save();
+        $this->tick($list, $ids)->assertUnprocessable()->assertJsonValidationErrors('pick');
+        $this->assertSame(0, $list->lines()->whereNotNull('ticked_at')->count());
+    }
+
+    public function test_changing_a_picked_quantity_clears_its_tick()
+    {
+        $list = $this->start();
+        $this->pickEverything($list);
+        $ids = $this->lineIds($list, $this->order);
+        $this->tick($list, $ids)->assertNoContent();
+
+        $line = $list->lines()->where('product_id', $this->ambient->id)->first();
+        $this->record($list, $line->id, ['qty_picked_base' => $line->qty_to_pick_base, 'override_reason' => 'scanner_fault'])->assertSessionHasNoErrors();
+        $this->assertNotNull($line->fresh()->ticked_at);
+
+        $this->record($list, $line->id, ['qty_picked_base' => 0])->assertSessionHasNoErrors();
+        $this->assertNull($line->fresh()->ticked_at);
     }
 
     public function test_every_pick_page_renders_the_nav_bar_with_a_route_one_level_up()

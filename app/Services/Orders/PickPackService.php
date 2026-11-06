@@ -139,22 +139,45 @@ class PickPackService
         });
     }
 
-    /** @param  list<int>  $checkedLineIds */
-    public function pack(PickList $pickList, Order $order, User $packer, int $cartons, array $checkedLineIds): OrderPack
+    /**
+     * Save pack ticks as they're made. Ticking twice keeps the first who and when.
+     *
+     * @param  list<int>  $ticked  @param  list<int>  $unticked  pick_list_line ids
+     */
+    public function tick(PickList $pickList, User $packer, array $ticked, array $unticked): void
     {
-        return DB::transaction(function () use ($pickList, $order, $packer, $cartons, $checkedLineIds) {
+        DB::transaction(function () use ($pickList, $packer, $ticked, $unticked) {
+            $pickList = PickList::lockForUpdate()->findOrFail($pickList->id);
+            $this->assert($pickList->isOpen(), "{$pickList->number} is {$pickList->status}.");
+
+            $ids = array_values(array_unique([...$ticked, ...$unticked]));
+            $orderIds = $pickList->lines()->whereIn('pick_list_lines.id', $ids)->join('order_lines', 'order_lines.id', '=', 'pick_list_lines.order_line_id')->pluck('order_lines.order_id', 'pick_list_lines.id');
+            $this->assert($orderIds->count() === count($ids), "That line is not on {$pickList->number}.");
+            $this->assert(! OrderPack::where('pick_list_id', $pickList->id)->whereIn('order_id', $orderIds)->exists(), 'That order is already packed.');
+
+            $pickList->lines()->whereIn('id', $ticked)->whereNull('ticked_at')->update(['ticked_by' => $packer->id, 'ticked_at' => now()]);
+            $pickList->lines()->whereIn('id', $unticked)->update(['ticked_by' => null, 'ticked_at' => null]);
+        });
+    }
+
+    /** The final step: needs every line picked and ticked, and an order stays packed once it is. */
+    public function pack(PickList $pickList, Order $order, User $packer, int $cartons): OrderPack
+    {
+        return DB::transaction(function () use ($pickList, $order, $packer, $cartons) {
+            $pickList = PickList::lockForUpdate()->findOrFail($pickList->id);
             $this->assert($pickList->isOpen(), "{$pickList->number} is {$pickList->status}.");
             $lines = $pickList->lines()->whereHas('orderLine', fn ($q) => $q->where('order_id', $order->id))->get();
             $this->assert($lines->isNotEmpty(), "{$order->number} is not on {$pickList->number}.");
+            $existing = OrderPack::where('order_id', $order->id)->where('pick_list_id', $pickList->id)->first();
+            if ($existing) {
+                return $existing;
+            }
             $this->assert($lines->every(fn ($l) => $l->qty_picked_base !== null), 'Finish picking every line of this order first.');
-            $this->assert($lines->pluck('id')->sort()->values()->all() === collect($checkedLineIds)->map(fn ($i) => (int) $i)->sort()->values()->all(), 'Tick every line as packed.');
+            $this->assert($lines->every(fn ($l) => $l->ticked_at !== null), 'Tick every line as packed.');
             $picked = (int) $lines->sum('qty_picked_base');
             $this->assert($picked === 0 || $cartons >= 1, 'Enter how many cartons.');
 
-            $pack = OrderPack::updateOrCreate(
-                ['order_id' => $order->id, 'pick_list_id' => $pickList->id],
-                ['cartons' => $cartons, 'packed_by' => $packer->id, 'packed_at' => now()],
-            );
+            $pack = OrderPack::create(['order_id' => $order->id, 'pick_list_id' => $pickList->id, 'cartons' => $cartons, 'packed_by' => $packer->id, 'packed_at' => now()]);
             Audit::record('order_packed', $order, meta: ['pick_list' => $pickList->number, 'cartons' => $cartons]);
 
             return $pack;

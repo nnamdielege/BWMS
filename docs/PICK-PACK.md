@@ -47,7 +47,7 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
 
 ## Flow
 
-**Moving around:** every `/pick` screen has a one-row bar: Back goes up one level (pack → pick list → queue → dashboard, manifest → queue), and the menu links to the Dashboard, Pick queue, Pick lists and Orders, as the user's permissions allow, plus Log out. Leaving with unpicked lines on your own list, or with ticks on an order not yet marked Packed, asks first. Leaving never releases the claim; the list stays yours until someone takes it over. The Android/browser Back button goes straight back without asking.
+**Moving around:** every `/pick` screen has a one-row bar: Back goes up one level (pack → pick list → queue → dashboard, manifest → queue), and the menu links to the Dashboard, Pick queue, Pick lists and Orders, as the user's permissions allow, plus Log out. Leaving with unpicked lines on your own list asks first. Leaving never releases the claim; the list stays yours until someone takes it over. The Android/browser Back button goes straight back without asking; picked lines and pack ticks are already saved, so nothing is lost.
 
 1. **Pick queue:**
    - Runs for the coming days, each with order counts and its open pick lists.
@@ -61,7 +61,8 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
    - **Enter quantity** (no scan) needs a reason: label missing, label damaged, scanner not working, or other. It's audited.
    - **Short / not found:** enter what you found. The rest follows the order's backorder/cancel rule at dispatch, and the bin gets a **count task** on the dashboard.
 3. **Pack**, per order:
-   - Tick each line as it goes in the carton(s), enter the **carton count**, then **Packed** (records who and when).
+   - Tick each line as it goes in the carton(s). Each tick saves as it's made (who and when), so you can leave and come back; untick to reverse it. Changing a line's picked quantity clears its tick.
+   - Enter the **carton count**, then **Packed** (records who and when). Packed is final: ticks can't be changed afterwards. The carton count isn't saved until then.
    - **Packing slip** opens an A5 PDF to print and put in the carton.
 4. **Dispatch:**
    - The **run manifest** lists every order of the run with its address, carton count and packed state.

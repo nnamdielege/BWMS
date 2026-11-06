@@ -145,6 +145,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::get('lists/{pickList}', [PickPackController::class, 'work'])->name('work');
         Route::put('lists/{pickList}/lines/{line}', [PickPackController::class, 'record'])->name('record');
         Route::get('lists/{pickList}/pack', [PickPackController::class, 'packPage'])->name('pack');
+        Route::put('lists/{pickList}/ticks', [PickPackController::class, 'ticks'])->name('ticks');
         Route::post('lists/{pickList}/orders/{order}/pack', [PickPackController::class, 'pack'])->name('pack.store');
         Route::get('lists/{pickList}/orders/{order}/slip', [PickPackController::class, 'slip'])->name('slip');
     });

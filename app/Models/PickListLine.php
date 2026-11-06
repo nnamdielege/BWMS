@@ -17,7 +17,18 @@ class PickListLine extends Model
             'bin_scanned_at' => 'datetime',
             'product_scanned_at' => 'datetime',
             'picked_at' => 'datetime',
+            'ticked_at' => 'datetime',
         ];
+    }
+
+    /** A tick vouches for the picked quantity, so a changed quantity has to be ticked again. */
+    protected static function booted(): void
+    {
+        static::saving(function (PickListLine $line) {
+            if ($line->exists && $line->isDirty('qty_picked_base')) {
+                $line->forceFill(['ticked_by' => null, 'ticked_at' => null]);
+            }
+        });
     }
 
     public function pickList(): BelongsTo

@@ -776,8 +776,8 @@ When every line is picked, "All lines picked" shows. Tap **Go to packing**.
 
 For each order:
 
-1. Tick each line as it goes into the carton(s). You can't pack an order until all its lines are picked. Once an order is packed, its lines stay ticked and can't be changed.
-2. Enter the number of **Cartons**.
+1. Tick each line as it goes into the carton(s). Each tick saves straight away, so you can leave the screen and come back. Untick a line to reverse it. You can't pack an order until all its lines are picked. Once an order is packed, its lines stay ticked and can't be changed.
+2. Enter the number of **Cartons**. This isn't saved until you tap **Packed**.
 3. Tap **Packed**. Who and when are recorded.
 4. Tap **Packing slip** to open an A5 PDF. Print it and put it in the carton.
 
