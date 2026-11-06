@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -42,6 +43,8 @@ const props = defineProps<{
         requested_delivery_date: string | null;
         delivery_date: string | null;
         delivery_date_origin: string | null;
+        moved_from: string | null;
+        on_pick_list: boolean;
         review_notes: string[];
         run: { id: number; label: string; area_id: number; date: string } | null;
         run_assignment: string;
@@ -60,6 +63,8 @@ const saveRun = () => runForm.put(route('orders.run', props.order.id), { preserv
 const dateForm = useForm({ delivery_date: props.order.delivery_date ?? '' });
 const editDate = ref(false);
 const saveDate = () => dateForm.put(route('orders.delivery-date', props.order.id), { preserveScroll: true, onSuccess: () => (editDate.value = false) });
+
+const undoMove = () => confirm('Put this order back on its original date and run?') && router.post(route('orders.consolidate.undo', props.order.id), {}, { preserveScroll: true });
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Orders', href: '/orders' },
@@ -89,7 +94,7 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
                     <Button v-if="can.manage" variant="ghost" @click="cancel">Cancel order</Button>
                 </div>
             </header>
-            <InputError :message="errors.order" />
+            <InputError :message="errors.order || errors.consolidate" />
 
             <div v-if="order.oversold" class="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
                 Accepted beyond available stock{{ order.oversold_at ? ` on ${fmt(order.oversold_at)}` : '' }}. Decide: short-ship, substitute or contact the customer.
@@ -109,6 +114,10 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
                     {{ order.delivery_date ?? '—' }}
                     <span v-if="order.delivery_date_origin === 'manager'" class="text-xs text-muted-foreground">(set by a manager)</span>
                     <button v-if="can.manage" class="ml-2 text-xs underline" @click="editDate = !editDate">Change</button>
+                    <div v-if="order.moved_from" class="mt-1">
+                        <MovedBadge :from="order.moved_from" />
+                        <button v-if="can.manage && !order.on_pick_list" class="ml-2 text-xs underline" @click="undoMove">Undo</button>
+                    </div>
                     <form v-if="editDate" class="mt-2 flex items-center gap-2" @submit.prevent="saveDate">
                         <input v-model="dateForm.delivery_date" type="date" required class="h-9 rounded-md border bg-background px-2" aria-label="New delivery date" />
                         <button type="submit" class="h-9 rounded-md border px-3" :disabled="dateForm.processing">Save</button>

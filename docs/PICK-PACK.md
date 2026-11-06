@@ -34,7 +34,8 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
 - **Managers** change the date on the order page, under the same rules. Both outcomes go in the audit log.
 - **Review reasons** are kept per order (`review_notes`). One that stops being true clears itself. One marked handled isn't raised again unless it changes.
 - **Pick lists never mix days.**
-- **Backfill:** `php artisan orders:backfill-delivery-dates --dry-run` shows open orders not yet on a pick list, with their current and source dates and what would move. Ordermentum dates are read again from the API (GET only). `--yes` applies the moves and audits them. Run it once after deploying.
+- **Consolidation** (Orders → Consolidate) moves orders not yet on a pick list onto an earlier day, keeping their area: `delivery_date_origin = manager`, `delivery_date_reason = consolidated`, with the original date and origin kept for Undo. These orders aren't flagged "Not a delivery day". The same source date re-sent changes nothing. A different one flags all three dates and moves nothing. A manager's later date change or hand-set run on another day ends the consolidation. `orders:backfill-delivery-dates` leaves consolidated orders alone.
+- **Trips** (`delivery_runs.trip_label`) group runs on the driver's manifest (`/pick/trips/{date}`) only. Dispatch is still per run.- **Backfill:** `php artisan orders:backfill-delivery-dates --dry-run` shows open orders not yet on a pick list, with their current and source dates and what would move. Ordermentum dates are read again from the API (GET only). `--yes` applies the moves and audits them. Run it once after deploying.
 
 ## Setup before go-live
 

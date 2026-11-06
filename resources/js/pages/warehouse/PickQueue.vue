@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { dayGroups } from '@/lib/deliveryDays';
@@ -13,7 +14,7 @@ type Run = {
     area: string;
     waiting: number;
     active: number;
-    orders: { id: number; number: string; customer: string | null; channel: string }[];
+    orders: { id: number; number: string; customer: string | null; channel: string; moved_from: string | null }[];
     lists: { id: number; number: string; claimed_by: string | null; mine: boolean; lines: number; done: number }[];
 };
 const props = defineProps<{
@@ -50,7 +51,7 @@ const claim = (id: number, takeOver = false) => {
                 <ul v-if="run.orders.length" class="mt-2 space-y-1 text-sm">
                     <li v-for="o in run.orders" :key="o.id" class="flex items-center justify-between gap-2">
                         <span class="min-w-0 truncate"><span class="font-mono">{{ o.number }}</span> {{ o.customer }}</span>
-                        <SourceBadge :channel="o.channel" />
+                        <span class="flex shrink-0 items-center gap-1"><MovedBadge :from="o.moved_from" /><SourceBadge :channel="o.channel" /></span>
                     </li>
                 </ul>
 

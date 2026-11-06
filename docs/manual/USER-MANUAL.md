@@ -720,7 +720,23 @@ Managers click **Change** next to **Delivery date** on the order. The audit log 
 
 If the channel later sends a different date, that date wins. If it sends the same date as before, yours stays.
 
-### 9.8 Customers
+### 9.8 Consolidate runs
+
+**Orders → Consolidate** (managers and admins) pulls orders from later runs onto an earlier day, to fill a delivery day. For example, next Monday's North of Brisbane orders onto this Friday.
+
+1. Choose the **Target date**. The top table shows how full that day is: each run's orders, packs and value, where orders carry prices.
+2. Below are the orders from the next 7 days after it (change **Look ahead** for more), by date and area. Orders already on a pick list can't be selected.
+3. Tick orders, or a whole run. Click **Move N to (date)** and confirm.
+
+Each order keeps its own area and gets a **Moved from Mon 16 Nov** badge on the order, in the pick queue and on the run manifest. It isn't flagged "Not a delivery day": you chose that day on purpose. Stock doesn't change, and each move is in the audit log.
+
+- **Undo** (on the order, or under **Moved to** on this screen) puts it back on its original date and run, unless it's on a pick list or that run has been dispatched.
+- **If Ordermentum or the portal re-sends the same date,** the move stays. **A different date** flags the order for review with all three dates. It doesn't move.
+- **Stock warning:** "Stock for X arrives Mon via PO-…; not available for Fri" means that stock is due on an open PO after the target day. The warning shows before you confirm, and you can still move the order.
+- **Trips:** give several runs the same **Trip** to put them together on the driver's **Trip manifest**. This only changes the manifest's grouping. Runs and pick lists stay as they are.
+- **Telling customers:** tick **List moved customers** to see their phone and email for the day. Nothing is ever sent automatically. It's off by default.
+
+### 9.9 Customers
 
 **Orders → Customers** lists customers. Managers and admins can add and edit them.
 
@@ -733,7 +749,7 @@ The delivery fields decide the delivery run:
 
 Also on the customer: **Ordermentum retailer ID** and **Portal user ID**, which link channel orders to the customer.
 
-### 9.9 Pick lists without scanning (desktop)
+### 9.10 Pick lists without scanning (desktop)
 
 A pick list covers one delivery day: the app refuses a selection that mixes days.
 

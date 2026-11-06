@@ -225,6 +225,7 @@ Idempotency-Key: portal:order:ORD-7K2M9XQ4LP1A:v1
 | Order unknown to BWMS, `status: confirmed` | Creates it, the same as a reservation. |
 | New delivery date, not yet on a pick list | The order moves to the new run. |
 | New delivery date, already picking or packed | It **stays on the old date** and is flagged for staff with both dates. The answer is still 200. |
+| New delivery date on an order staff moved to an earlier run | It **stays on the earlier run** and is flagged for staff with all three dates. The answer is still 200. |
 | Change while being picked | Applied, and flagged for staff. |
 | Order already dispatched or cancelled | **422** `{"status":"invalid","message":"…"}`. A cancelled order can't come back: place a new one. |
 

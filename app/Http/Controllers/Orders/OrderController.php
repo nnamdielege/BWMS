@@ -57,6 +57,7 @@ class OrderController extends Controller
                 'status' => $o->status->value, 'status_label' => $o->status->label(),
                 'oversold' => $o->oversold, 'needs_review' => $o->needs_review,
                 'delivery_date' => $o->delivery_date?->toDateString(),
+                'moved_from' => $o->original_delivery_date?->toDateString(),
                 'run' => $o->deliveryRun?->area?->name,
                 'review_notes' => array_values($o->review_notes ?? []),
                 'created_at' => $o->created_at->toIso8601String(),
@@ -105,7 +106,7 @@ class OrderController extends Controller
         return redirect()->route('orders.show', $order)->with('success', "{$order->number} created and stock reserved.");
     }
 
-    public function show(Request $request, Order $order): Response
+    public function show(Request $request, Order $order, DeliveryScheduler $scheduler): Response
     {
         $order->load(['deliveryRun.area', 'customer', 'site', 'lines.product:id,sku,name,base_unit', 'lines.unit:id,name,base_qty', 'lines.reservation', 'lines.pickLines.pickList:id,number,status', 'creator:id,name']);
 
@@ -120,6 +121,8 @@ class OrderController extends Controller
                 'requested_delivery_date' => $order->requested_delivery_date?->toDateString(),
                 'delivery_date' => $order->delivery_date?->toDateString(),
                 'delivery_date_origin' => $order->delivery_date_origin,
+                'moved_from' => $order->original_delivery_date?->toDateString(),
+                'on_pick_list' => $scheduler->onPickList($order),
                 'review_notes' => array_values($order->review_notes ?? []),
                 'run' => $order->deliveryRun ? ['id' => $order->deliveryRun->id, 'label' => $order->deliveryRun->label(), 'area_id' => $order->deliveryRun->delivery_area_id, 'date' => $order->deliveryRun->run_date->toDateString()] : null,
                 'run_assignment' => $order->run_assignment,

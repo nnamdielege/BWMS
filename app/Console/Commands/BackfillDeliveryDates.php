@@ -10,6 +10,7 @@ use App\Integrations\Ordermentum\OrdermentumOrderMapper;
 use App\Integrations\Ordermentum\UnmappableOrder;
 use App\Models\Order;
 use App\Services\Delivery\DeliveryScheduler;
+use App\Services\Orders\ConsolidationService;
 use App\Support\Audit;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Response;
@@ -56,13 +57,13 @@ class BackfillDeliveryDates extends Command
 
             $target = $scheduler->dateFor($order, $source);
             $action = match (true) {
-                $order->run_assignment === 'manual' => 'kept',
+                $order->run_assignment === 'manual', $order->delivery_date_reason === ConsolidationService::REASON => 'kept',
                 $target === $current && ($order->delivery_run_id || ! $scheduler->areaForOrder($order)) => 'same',
                 default => 'move',
             };
             $counts[$action]++;
             $rows[] = [$order->number, $order->channel->label(), $current ?? '-', $source ?? 'none', $target ?? '-',
-                ['move' => 'Moves', 'same' => 'No change', 'kept' => 'Run set by hand: stays'][$action]];
+                ['move' => 'Moves', 'same' => 'No change', 'kept' => 'Set by hand or consolidated: stays'][$action]];
 
             if ($action === 'move' && ! $this->option('dry-run')) {
                 DB::transaction(function () use ($order, $source, $current, $scheduler) {
@@ -76,7 +77,7 @@ class BackfillDeliveryDates extends Command
         if ($rows !== []) {
             $this->table(['Order', 'Source', 'Current', 'Source date', 'Would be', 'Action'], $rows);
         }
-        $this->table(['Checked', 'Would move', 'No change', 'Kept (set by hand)', 'Could not read'], [[$counts['checked'], $counts['move'], $counts['same'], $counts['kept'], $counts['unread']]]);
+        $this->table(['Checked', 'Would move', 'No change', 'Kept (by hand or consolidated)', 'Could not read'], [[$counts['checked'], $counts['move'], $counts['same'], $counts['kept'], $counts['unread']]]);
         $this->option('dry-run') ? $this->warn('Dry run: nothing was saved.') : $this->info("Moved {$counts['move']} order(s).");
 
         return self::SUCCESS;

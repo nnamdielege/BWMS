@@ -61,7 +61,7 @@ class PickPackController extends Controller
                     'area' => $run->area->name,
                     'waiting' => $this->service->waitingOrders($run)->count(),
                     'active' => $active->count(),
-                    'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value])->values(),
+                    'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString()])->values(),
                     'lists' => $lists->map(fn (PickList $l) => [
                         'id' => $l->id, 'number' => $l->number, 'claimed_by' => $l->claimer?->name,
                         'mine' => $l->claimed_by === request()->user()->id, 'lines' => $l->lines_count, 'done' => $l->lines_done_count,
@@ -207,15 +207,41 @@ class PickPackController extends Controller
 
         return Inertia::render('warehouse/RunManifest', [
             'nav' => $this->nav($request, $run->label(), route('pick.queue')),
-            'run' => ['id' => $run->id, 'label' => $run->label(), 'status' => $run->status],
-            'orders' => $orders->map(fn (Order $o) => [
-                'id' => $o->id, 'number' => $o->number, 'status' => $o->status->value, 'status_label' => $o->status->label(),
-                'customer' => $o->customer?->name, 'channel' => $o->channel->value,
-                'address' => trim(($o->delivery_street ?? $o->customer?->delivery_street).' '.($o->delivery_suburb ?? $o->customer?->delivery_suburb).' '.($o->delivery_postcode ?? $o->customer?->delivery_postcode)),
-                'cartons' => (int) $o->packs->sum('cartons'), 'packed' => $o->packs->isNotEmpty(),
-            ]),
+            'run' => ['id' => $run->id, 'label' => $run->label(), 'status' => $run->status, 'date' => $run->run_date->toDateString(), 'trip' => $run->trip_label],
+            'orders' => $orders->map(fn (Order $o) => $this->manifestRow($o)),
             'openLists' => $run->pickLists()->where('status', PickList::STATUS_OPEN)->get(['id', 'number']),
         ]);
+    }
+
+    /** The day for the driver: runs grouped by trip label, each area its own trip without one. Only the grouping is shared. */
+    public function trips(Request $request, string $date): Response
+    {
+        $runs = DeliveryRun::with(['area:id,name,sort_order', 'orders' => fn ($q) => $q->whereIn('status', [...self::ACTIVE, OrderStatus::Dispatched])->with(['customer', 'packs'])->orderBy('id')])
+            ->whereDate('run_date', $date)->get()->sortBy('area.sort_order')->filter(fn (DeliveryRun $r) => $r->orders->isNotEmpty());
+        $label = Carbon::parse($date)->format('D j M');
+
+        return Inertia::render('warehouse/TripManifest', [
+            'nav' => $this->nav($request, "Trips · {$label}", route('pick.queue')),
+            'label' => $label,
+            'trips' => $runs->groupBy(fn (DeliveryRun $r) => $r->trip_label ?: $r->area->name)->map(fn ($group, $trip) => [
+                'label' => $trip,
+                'orders' => $group->sum(fn (DeliveryRun $r) => $r->orders->count()),
+                'cartons' => (int) $group->sum(fn (DeliveryRun $r) => $r->orders->sum(fn (Order $o) => $o->packs->sum('cartons'))),
+                'runs' => $group->map(fn (DeliveryRun $r) => [
+                    'id' => $r->id, 'area' => $r->area->name, 'status' => $r->status, 'orders' => $r->orders->map(fn (Order $o) => $this->manifestRow($o))->values(),
+                ])->values(),
+            ])->values(),
+        ]);
+    }
+
+    private function manifestRow(Order $o): array
+    {
+        return [
+            'id' => $o->id, 'number' => $o->number, 'status' => $o->status->value, 'status_label' => $o->status->label(),
+            'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(),
+            'address' => trim(($o->delivery_street ?? $o->customer?->delivery_street).' '.($o->delivery_suburb ?? $o->customer?->delivery_suburb).' '.($o->delivery_postcode ?? $o->customer?->delivery_postcode)),
+            'cartons' => (int) $o->packs->sum('cartons'), 'packed' => $o->packs->isNotEmpty(),
+        ];
     }
 
     public function dispatchRun(Request $request, DeliveryRun $run): RedirectResponse

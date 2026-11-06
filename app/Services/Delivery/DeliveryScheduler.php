@@ -9,6 +9,7 @@ use App\Models\DeliveryRun;
 use App\Models\Order;
 use App\Models\PickList;
 use App\Models\PickListLine;
+use App\Services\Orders\ConsolidationService;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Database\QueryException;
@@ -26,7 +27,8 @@ use Illuminate\Database\QueryException;
  *
  * Only a change to the source's date moves an order, so re-sending an unchanged
  * order leaves a date a manager set. An order on a pick list, or on a run set by
- * hand, never moves on its own: it is flagged with both dates instead.
+ * hand, never moves on its own: it is flagged with both dates instead. Nor does
+ * one a manager consolidated: a different source date flags all three dates.
  *
  * Business days are Mon-Fri; public holidays are not modelled yet.
  */
@@ -119,6 +121,12 @@ class DeliveryScheduler
         $source = $order->requested_delivery_date?->toDateString();
         $current = $order->delivery_date?->toDateString();
 
+        if ($order->delivery_date_reason === ConsolidationService::REASON && $dateChanged) {
+            $this->flagAfterConsolidation($order, $source, $current);
+
+            return;
+        }
+
         if ($order->run_assignment === 'manual' || $this->onPickList($order)) {
             if ($dateChanged && $source && $source !== $current) {
                 $why = $this->onPickList($order) ? 'it is already being picked' : 'its run was set by hand';
@@ -131,7 +139,7 @@ class DeliveryScheduler
 
         $area = $this->areaForOrder($order);
         if ($current && ! $dateChanged && $order->delivery_date_origin !== 'fallback') {
-            $this->place($order, $area, $current, $order->delivery_date_origin ?? 'source');
+            $this->place($order, $area, $current, $order->delivery_date_origin ?? 'source', $order->delivery_date_reason);
 
             return;
         }
@@ -148,24 +156,63 @@ class DeliveryScheduler
     /** Staff override from the order page: sticks across later channel updates. */
     public function assignManually(Order $order, DeliveryArea $area, DateTimeInterface $date): void
     {
+        $date = CarbonImmutable::instance($date)->toDateString();
         $order->forceFill(['run_assignment' => 'manual']);
-        $this->place($order, $area, CarbonImmutable::instance($date)->toDateString(), 'manager');
+        $this->place($order, $area, $date, 'manager', $date === $order->delivery_date?->toDateString() ? $order->delivery_date_reason : null);
     }
 
-    private function place(Order $order, ?DeliveryArea $area, ?string $date, string $origin): void
+    /** A date chosen on purpose, on the order's own area: no weekday flag. The first original date stays through a second move. */
+    public function consolidate(Order $order, string $date): void
+    {
+        if ($order->delivery_date_reason !== ConsolidationService::REASON) {
+            $order->forceFill(['original_delivery_date' => $order->delivery_date, 'original_delivery_date_origin' => $order->delivery_date_origin]);
+        }
+        $this->place($order, $order->deliveryRun->area, $date, 'manager', ConsolidationService::REASON);
+    }
+
+    /** Back where it came from. If the source has since moved on, that stays flagged for a person. */
+    public function undoConsolidation(Order $order): void
+    {
+        $original = $order->original_delivery_date->toDateString();
+        $this->place($order, $order->deliveryRun->area, $original, $order->original_delivery_date_origin ?? 'source');
+
+        $source = $order->requested_delivery_date?->toDateString();
+        if ($source && $source !== $original) {
+            $order->flag('date_changed', "{$order->channel->label()} now says {$source}. The order went back to {$original}.");
+            $order->save();
+        }
+    }
+
+    /** A date differing from both the original and the consolidated one is for a person. Nothing moves. */
+    private function flagAfterConsolidation(Order $order, ?string $source, ?string $current): void
+    {
+        $original = $order->original_delivery_date?->toDateString();
+        if ($source && ! in_array($source, [$current, $original], true)) {
+            $order->flag('date_changed', "{$order->channel->label()} changed the delivery date to {$source}. Original {$original}, consolidated to {$current}. It stays on {$current}.");
+        } else {
+            $order->unflag('date_changed');
+        }
+        $order->save();
+    }
+
+    private function place(Order $order, ?DeliveryArea $area, ?string $date, string $origin, ?string $reason = null): void
     {
         $day = $date ? CarbonImmutable::parse($date, config('bwms.business_timezone')) : null;
         $manual = $order->run_assignment === 'manual';
 
+        if ($reason !== ConsolidationService::REASON) {
+            $order->forceFill(['original_delivery_date' => null, 'original_delivery_date_origin' => null]);
+        }
         $order->forceFill([
             'delivery_date' => $date,
             'delivery_date_origin' => $origin,
+            'delivery_date_reason' => $reason,
             'delivery_run_id' => $area && $day ? $this->run($order->site_id, $area, $day)->id : null,
             'run_assignment' => $manual ? 'manual' : ($area && $day ? 'auto' : 'unassigned'),
         ]);
 
         $origin === 'fallback' ? $order->flag('no_date', "No delivery date from {$order->channel->label()}") : $order->unflag('no_date');
-        $area && $day && ! $this->runsOn($area, $day) ? $order->flag('not_delivery_day', "Not a delivery day for {$area->name}") : $order->unflag('not_delivery_day');
+        $area && $day && $reason !== ConsolidationService::REASON && ! $this->runsOn($area, $day) ? $order->flag('not_delivery_day', "Not a delivery day for {$area->name}") : $order->unflag('not_delivery_day');
         $order->unflag('date_changed');
         $order->save();
     }

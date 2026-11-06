@@ -26,6 +26,7 @@ class Order extends Model
             'cancelled_at' => 'datetime',
             'requested_delivery_date' => 'date',
             'delivery_date' => 'date',
+            'original_delivery_date' => 'date',
             'review_notes' => 'array',
             'external_version' => 'integer',
         ];

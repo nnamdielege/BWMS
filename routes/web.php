@@ -10,6 +10,7 @@ use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\Orders\ConsolidationController;
 use App\Http\Controllers\Orders\CustomerController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\PickListController;
@@ -140,6 +141,13 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::get('orders', [OrderController::class, 'index'])->middleware('can:orders.view')->name('orders.index');
     Route::get('orders/create', [OrderController::class, 'create'])->middleware('can:orders.manage')->name('orders.create');
     Route::post('orders', [OrderController::class, 'store'])->middleware('can:orders.manage')->name('orders.store');
+    Route::middleware('can:orders.manage')->prefix('orders/consolidate')->name('orders.consolidate.')->group(function () {
+        Route::get('/', [ConsolidationController::class, 'index'])->name('index');
+        Route::post('move', [ConsolidationController::class, 'move'])->name('move');
+        Route::post('{order}/undo', [ConsolidationController::class, 'undo'])->name('undo');
+        Route::put('trips', [ConsolidationController::class, 'trips'])->name('trips');
+        Route::put('notice', [ConsolidationController::class, 'notice'])->name('notice');
+    });
     Route::get('orders/next-date/{customer}', [OrderController::class, 'nextDate'])->middleware('can:orders.manage')->name('orders.next-date');
     Route::get('orders/{order}', [OrderController::class, 'show'])->middleware('can:orders.view')->name('orders.show');
     Route::put('orders/{order}/delivery-date', [OrderController::class, 'changeDeliveryDate'])->middleware('can:orders.manage')->name('orders.delivery-date');
@@ -158,6 +166,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::get('/', [PickPackController::class, 'queue'])->name('queue');
         Route::post('runs/{run}/start', [PickPackController::class, 'start'])->name('start');
         Route::get('runs/{run}', [PickPackController::class, 'manifest'])->name('manifest');
+        Route::get('trips/{date}', [PickPackController::class, 'trips'])->where('date', '\d{4}-\d{2}-\d{2}')->name('trips');
         Route::post('runs/{run}/dispatch', [PickPackController::class, 'dispatchRun'])->name('dispatch');
         Route::post('lists/{pickList}/claim', [PickPackController::class, 'claim'])->name('claim');
         Route::get('lists/{pickList}', [PickPackController::class, 'work'])->name('work');

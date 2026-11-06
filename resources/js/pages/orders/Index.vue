@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import MovedBadge from '@/components/MovedBadge.vue';
 import Pagination from '@/components/Pagination.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ interface Row {
     oversold: boolean;
     needs_review: boolean;
     delivery_date: string | null;
+    moved_from: string | null;
     run: string | null;
     review_notes: string[];
     created_at: string;
@@ -80,6 +82,7 @@ const groups = computed(() => dayGroups(props.orders.data, (o) => o.delivery_dat
                 </form>
                 <div class="ml-auto flex gap-2">
                     <Button v-if="can.pick && selected.length" :disabled="siteConflict" @click="createPickList">Create pick list ({{ selected.length }})</Button>
+                    <Button v-if="can.manage" as-child variant="outline"><Link :href="route('orders.consolidate.index')">Consolidate</Link></Button>
                     <Button v-if="can.manage" as-child variant="outline"><Link :href="route('orders.create')">New order</Link></Button>
                 </div>
             </div>
@@ -101,6 +104,7 @@ const groups = computed(() => dayGroups(props.orders.data, (o) => o.delivery_dat
                         <td class="py-2">
                             <Link :href="route('orders.show', o.id)" class="font-mono underline">{{ o.number }}</Link>
                             <div v-if="o.external_ref" class="text-xs text-muted-foreground">{{ o.external_ref }}</div>
+                            <MovedBadge :from="o.moved_from" />
                         </td>
                         <td><SourceBadge :channel="o.channel" /></td>
                         <td>{{ o.customer ?? '—' }}</td>

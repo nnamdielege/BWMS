@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
-import SourceBadge from '@/components/SourceBadge.vue';
+import ManifestOrder, { type ManifestRow } from '@/components/ManifestOrder.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const props = defineProps<{
-    run: { id: number; label: string; status: string };
-    orders: { id: number; number: string; status: string; status_label: string; customer: string | null; channel: string; address: string; cartons: number; packed: boolean }[];
+    run: { id: number; label: string; status: string; date: string; trip: string | null };
+    orders: ManifestRow[];
     openLists: { id: number; number: string }[];
 }>();
 
@@ -27,20 +27,10 @@ const dispatchRun = () => {
             <span class="rounded bg-muted px-2 py-0.5 capitalize">{{ run.status }}</span>
         </div>
 
+        <Link v-if="run.trip" :href="route('pick.trips', run.date)" class="mb-3 block text-sm underline">Trip: {{ run.trip }}</Link>
+
         <ul class="divide-y rounded-xl border">
-            <li v-for="o in orders" :key="o.id" class="flex items-start gap-3 p-3">
-                <div class="flex-1">
-                    <div class="font-mono font-semibold">
-                        {{ o.number }} <span class="ml-1 text-xs font-normal text-muted-foreground">{{ o.status_label }}</span> <SourceBadge :channel="o.channel" />
-                    </div>
-                    <div class="text-sm">{{ o.customer }}</div>
-                    <div class="text-xs text-muted-foreground">{{ o.address || 'No address' }}</div>
-                </div>
-                <div class="text-right text-sm">
-                    <div class="tabular-nums">{{ o.cartons }} ctn</div>
-                    <div :class="o.packed ? 'text-green-700 dark:text-green-300' : 'text-amber-700 dark:text-amber-300'">{{ o.packed ? 'packed' : 'not packed' }}</div>
-                </div>
-            </li>
+            <ManifestOrder v-for="o in orders" :key="o.id" :order="o" />
         </ul>
 
         <div v-if="openLists.length" class="mt-3 space-y-2">
