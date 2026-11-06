@@ -68,8 +68,8 @@ const claim = (id: number, takeOver = false) => {
 
         <p v-if="!runs.length" class="py-8 text-center text-muted-foreground">No runs waiting.</p>
 
-        <section v-if="unassigned.length" class="mt-6 rounded-xl border border-amber-300 p-3">
-            <h2 class="mb-1 font-semibold text-amber-800">Orders without a run ({{ unassigned.length }})</h2>
+        <section v-if="unassigned.length" class="mt-6 rounded-xl border border-amber-300 p-3 dark:border-amber-800">
+            <h2 class="mb-1 font-semibold text-amber-800 dark:text-amber-200">Orders without a run ({{ unassigned.length }})</h2>
             <p class="mb-2 text-sm text-muted-foreground">Their address matches no delivery area. Set the run on the order, or add the postcode in Settings → Delivery areas.</p>
             <ul class="space-y-1 text-sm">
                 <li v-for="o in unassigned" :key="o.id">

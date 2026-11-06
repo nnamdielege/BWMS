@@ -125,7 +125,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 <template>
     <Head :title="pickList.number" />
     <WarehouseLayout :leave-warning="leaveWarning">
-        <div v-if="!pickList.mine && pickList.status === 'open'" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div v-if="!pickList.mine && pickList.status === 'open'" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
             {{ pickList.claimed_by ? `Being picked by ${pickList.claimed_by}.` : 'Not claimed.' }}
             <button class="ml-2 underline" @click="router.post(route('pick.claim', pickList.id), { take_over: true })">Take over</button>
         </div>
@@ -137,13 +137,13 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                 <div class="text-xs uppercase tracking-wide text-muted-foreground">Bin</div>
                 <div class="flex items-center gap-2">
                     <span class="font-mono text-4xl font-bold">{{ line.bin.code }}</span>
-                    <span v-if="binCode" class="rounded bg-green-100 px-2 text-sm text-green-800">✓</span>
+                    <span v-if="binCode" class="rounded bg-green-100 px-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">✓</span>
                 </div>
                 <div class="text-xs text-muted-foreground">{{ line.bin.path }}</div>
 
                 <div class="mt-3 flex items-center gap-2 text-lg font-semibold">
                     {{ line.product.name }}
-                    <span v-if="line.product.chilled" class="rounded bg-sky-100 px-2 text-xs font-semibold text-sky-800">CHILLED</span>
+                    <span v-if="line.product.chilled" class="rounded bg-sky-100 px-2 text-xs font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">CHILLED</span>
                 </div>
                 <div class="font-mono text-sm text-muted-foreground">{{ line.product.sku }}</div>
                 <div v-if="line.batch" class="mt-1 text-sm">Lot {{ line.batch.lot }} · BB {{ line.batch.best_before ?? '—' }}</div>
@@ -155,7 +155,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
             <div
                 v-if="message"
                 class="mt-2 rounded-lg px-3 py-2 text-sm font-medium"
-                :class="message.kind === 'ok' ? 'bg-green-100 text-green-900' : 'bg-red-100 text-red-900'"
+                :class="message.kind === 'ok' ? 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200' : 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200'"
                 role="status"
             >
                 {{ message.text }}
@@ -165,14 +165,14 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                 <ScanInput :placeholder="binCode ? 'Scan product' : 'Scan bin label'" :disabled="saving || !pickList.mine" @scan="onScan" />
                 <div class="mt-3 grid grid-cols-2 gap-2">
                     <button class="h-12 rounded-lg border text-sm" @click="mode = 'manual'">Enter quantity</button>
-                    <button class="h-12 rounded-lg border text-sm text-red-700" @click="mode = 'short'">Short / not found</button>
+                    <button class="h-12 rounded-lg border text-sm text-red-700 dark:text-destructive" @click="mode = 'short'">Short / not found</button>
                 </div>
             </div>
 
             <form v-else class="mt-3 space-y-3 rounded-xl border p-3" @submit.prevent="manualBase !== null && submit(manualBase)">
                 <div class="font-semibold">{{ mode === 'short' ? 'How many did you find?' : 'Quantity picked' }}</div>
                 <div class="flex items-center gap-2">
-                    <input v-model.number="manualQty" type="number" inputmode="numeric" min="0" class="h-14 w-32 rounded-lg border px-3 text-2xl tabular-nums" autofocus />
+                    <input v-model.number="manualQty" type="number" inputmode="numeric" min="0" class="h-14 w-32 rounded-lg border bg-background px-3 text-2xl tabular-nums" autofocus />
                     <span>{{ manualUnit }}</span>
                 </div>
                 <div v-if="needsReason && (manualQty ?? 0) > 0">
@@ -204,8 +204,8 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
             </form>
         </template>
 
-        <div v-if="allDone" class="rounded-xl border border-green-300 bg-green-50 p-4 text-center">
-            <div class="text-lg font-semibold text-green-900">All lines picked</div>
+        <div v-if="allDone" class="rounded-xl border border-green-300 bg-green-50 p-4 text-center dark:border-green-800 dark:bg-green-950">
+            <div class="text-lg font-semibold text-green-900 dark:text-green-200">All lines picked</div>
             <Link :href="route('pick.pack', pickList.id)" class="mt-3 inline-flex h-12 items-center rounded-lg bg-primary px-6 font-semibold text-primary-foreground">Go to packing</Link>
         </div>
 
@@ -214,7 +214,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
             <li v-for="(l, i) in lines" :key="l.id" class="flex items-center gap-2 p-2" :class="{ 'bg-muted': i === index }" @click="index = i">
                 <span class="w-16 font-mono">{{ l.bin.code }}</span>
                 <span class="flex-1 truncate">{{ l.product.name }}</span>
-                <span v-if="l.product.chilled" class="text-xs text-sky-700">chilled</span>
+                <span v-if="l.product.chilled" class="text-xs text-sky-700 dark:text-sky-300">chilled</span>
                 <span class="tabular-nums">{{ l.picked_base === null ? l.to_pick_label : l.picked_base < l.to_pick_base ? 'short' : '✓' }}</span>
             </li>
         </ol>

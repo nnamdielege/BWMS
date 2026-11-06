@@ -133,7 +133,7 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
                 <a :href="route('pick.slip', [pickList.id, o.id])" target="_blank" class="rounded-md border px-3 py-2 text-sm">Packing slip</a>
             </div>
 
-            <p v-if="!o.picking_done" class="mt-2 text-sm text-amber-800">Some lines are not picked yet.</p>
+            <p v-if="!o.picking_done" class="mt-2 text-sm text-amber-800 dark:text-amber-200">Some lines are not picked yet.</p>
 
             <ul class="mt-2 divide-y">
                 <li v-for="l in o.lines" :key="l.id">
@@ -141,18 +141,18 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
                         <input type="checkbox" class="size-6" :checked="!!o.pack || s(o).checked.includes(l.id)" :disabled="!!o.pack" @change="toggle(o, l.id)" />
                         <span class="flex-1">
                             {{ l.product.name }}
-                            <span v-if="l.product.chilled" class="ml-1 rounded bg-sky-100 px-1.5 text-xs text-sky-800">CHILLED</span>
+                            <span v-if="l.product.chilled" class="ml-1 rounded bg-sky-100 px-1.5 text-xs text-sky-800 dark:bg-sky-950 dark:text-sky-200">CHILLED</span>
                             <span class="block font-mono text-xs text-muted-foreground">{{ l.product.sku }}</span>
                         </span>
                         <span class="text-right tabular-nums">
                             {{ packed(l) }}
-                            <span v-if="l.picked_base !== null && l.picked_base < l.to_pick_base" class="block text-xs text-red-700">short of {{ l.to_pick_label }}</span>
+                            <span v-if="l.picked_base !== null && l.picked_base < l.to_pick_base" class="block text-xs text-red-700 dark:text-destructive">short of {{ l.to_pick_label }}</span>
                         </span>
                     </label>
                 </li>
             </ul>
 
-            <div v-if="o.pack" class="mt-2 text-sm text-green-800">
+            <div v-if="o.pack" class="mt-2 text-sm text-green-800 dark:text-green-200">
                 Packed: {{ o.pack.cartons }} carton(s) by {{ o.pack.packed_by }} · {{ new Date(o.pack.packed_at).toLocaleTimeString() }}
             </div>
             <div v-else class="mt-3 flex items-center gap-2">
@@ -163,7 +163,7 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
                     type="number"
                     inputmode="numeric"
                     min="0"
-                    class="h-12 w-24 rounded-lg border px-3 text-xl tabular-nums"
+                    class="h-12 w-24 rounded-lg border bg-background px-3 text-xl tabular-nums"
                 />
                 <button class="ml-auto h-12 rounded-lg bg-primary px-5 font-semibold text-primary-foreground disabled:opacity-50" :disabled="!ready(o)" @click="save(o)">
                     Packed

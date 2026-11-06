@@ -37,7 +37,7 @@ const dispatchRun = () => {
                 </div>
                 <div class="text-right text-sm">
                     <div class="tabular-nums">{{ o.cartons }} ctn</div>
-                    <div :class="o.packed ? 'text-green-700' : 'text-amber-700'">{{ o.packed ? 'packed' : 'not packed' }}</div>
+                    <div :class="o.packed ? 'text-green-700 dark:text-green-300' : 'text-amber-700 dark:text-amber-300'">{{ o.packed ? 'packed' : 'not packed' }}</div>
                 </div>
             </li>
         </ul>

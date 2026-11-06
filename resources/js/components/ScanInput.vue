@@ -103,6 +103,6 @@ defineExpose({ focus });
             </button>
         </div>
         <video v-if="camera" ref="video" class="w-full rounded-lg bg-black" playsinline muted />
-        <p v-if="cameraError" class="text-sm text-red-700">{{ cameraError }}</p>
+        <p v-if="cameraError" class="text-sm text-red-700 dark:text-destructive">{{ cameraError }}</p>
     </div>
 </template>
