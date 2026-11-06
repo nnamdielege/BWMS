@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Warehouse;
 
-use App\Authorization\Permissions;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryRun;
@@ -16,6 +15,7 @@ use App\Services\Documents\PdfRenderer;
 use App\Services\Orders\PickPackService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Support\BusinessDate;
+use App\Support\WarehouseNav;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -46,7 +46,7 @@ class PickPackController extends Controller
             ->orderBy('run_date')->orderBy('delivery_area_id')->get();
 
         return Inertia::render('warehouse/PickQueue', [
-            'nav' => $this->nav($request, 'Pick queue', route('dashboard')),
+            'nav' => WarehouseNav::for($request, 'Pick queue', route('dashboard')),
             'today' => $today,
             'runs' => $runs->map(function (DeliveryRun $run) {
                 $lists = $run->pickLists()->where('status', PickList::STATUS_OPEN)->with('claimer:id,name')->withCount([
@@ -94,7 +94,7 @@ class PickPackController extends Controller
         $pickList->load(['deliveryRun.area', 'claimer:id,name']);
 
         return Inertia::render('warehouse/PickWork', [
-            'nav' => $this->nav($request, collect([$pickList->number, $pickList->deliveryRun?->label()])->filter()->implode(' · '), route('pick.queue')),
+            'nav' => WarehouseNav::for($request, collect([$pickList->number, $pickList->deliveryRun?->label()])->filter()->implode(' · '), route('pick.queue')),
             'pickList' => [
                 'id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status,
                 'run' => $pickList->deliveryRun?->label(), 'run_id' => $pickList->delivery_run_id,
@@ -130,7 +130,7 @@ class PickPackController extends Controller
         $drafts = OrderPackDraft::where('pick_list_id', $pickList->id)->pluck('cartons', 'order_id');
 
         return Inertia::render('warehouse/Pack', [
-            'nav' => $this->nav($request, "Pack {$pickList->number}", route('pick.work', $pickList)),
+            'nav' => WarehouseNav::for($request, "Pack {$pickList->number}", route('pick.work', $pickList)),
             'pickList' => ['id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status, 'run_id' => $pickList->delivery_run_id, 'run' => $pickList->deliveryRun?->label()],
             'orders' => $lines->groupBy(fn ($l) => $l->orderLine->order_id)->map(function ($group) use ($packs, $drafts) {
                 $order = $group->first()->orderLine->order;
@@ -207,7 +207,7 @@ class PickPackController extends Controller
         $orders = $run->orders()->with(['customer', 'packs'])->orderBy('id')->get();
 
         return Inertia::render('warehouse/RunManifest', [
-            'nav' => $this->nav($request, $run->label(), route('pick.queue')),
+            'nav' => WarehouseNav::for($request, $run->label(), route('pick.queue')),
             'run' => ['id' => $run->id, 'label' => $run->label(), 'status' => $run->status, 'date' => $run->run_date->toDateString(), 'trip' => $run->trip_label],
             'orders' => $orders->map(fn (Order $o) => $this->manifestRow($o)),
             'openLists' => $run->pickLists()->where('status', PickList::STATUS_OPEN)->get(['id', 'number']),
@@ -222,7 +222,7 @@ class PickPackController extends Controller
         $label = Carbon::parse($date)->format('D j M');
 
         return Inertia::render('warehouse/TripManifest', [
-            'nav' => $this->nav($request, "Trips · {$label}", route('pick.queue')),
+            'nav' => WarehouseNav::for($request, "Trips · {$label}", route('pick.queue')),
             'label' => $label,
             'trips' => $runs->groupBy(fn (DeliveryRun $r) => $r->trip_label ?: $r->area->name)->map(fn ($group, $trip) => [
                 'label' => $trip,
@@ -250,31 +250,6 @@ class PickPackController extends Controller
         $this->guard(fn () => $this->service->dispatchRun($run, $request->user()));
 
         return redirect()->route('pick.manifest', $run)->with('success', 'Run dispatched.');
-    }
-
-    /**
-     * The handheld nav bar: title, one level up, and the menu links this user
-     * can open. Permissions match the sidebar items in AppSidebar.vue.
-     *
-     * @return array{title: string, back: string, links: list<array{title: string, href: string}>}
-     */
-    private function nav(Request $request, string $title, string $back): array
-    {
-        $links = [
-            ['title' => 'Dashboard', 'href' => route('dashboard'), 'permission' => null],
-            ['title' => 'Pick queue', 'href' => route('pick.queue'), 'permission' => Permissions::PICKING_PERFORM],
-            ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index'), 'permission' => Permissions::PICKING_PERFORM],
-            ['title' => 'Orders', 'href' => route('orders.index'), 'permission' => Permissions::ORDERS_VIEW],
-        ];
-
-        return [
-            'title' => $title,
-            'back' => $back,
-            'links' => collect($links)
-                ->filter(fn (array $link) => $link['permission'] === null || $request->user()->can($link['permission']))
-                ->map(fn (array $link) => ['title' => $link['title'], 'href' => $link['href']])
-                ->values()->all(),
-        ];
     }
 
     /** @return array<string, mixed> */

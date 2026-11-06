@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\DeliveryAreaController;
 use App\Http\Controllers\Admin\InvitationController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\BarcodeCaptureController;
 use App\Http\Controllers\BatchTrackingController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\CategoryController;
@@ -71,6 +72,10 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::put('revise', [ProductImportController::class, 'revise'])->name('revise');
         Route::post('apply', [ProductImportController::class, 'apply'])->name('apply');
     });
+
+    // Barcode capture on a handheld: admin and warehouse manager.
+    Route::get('capture-barcodes', [BarcodeCaptureController::class, 'index'])->middleware('can:products.manage')->name('barcode-capture.index');
+    Route::post('capture-barcodes', [BarcodeCaptureController::class, 'store'])->middleware('can:products.manage')->name('barcode-capture.store');
 
     // Batch tracking for products already holding stock: admin and warehouse manager.
     Route::get('batch-tracking', [BatchTrackingController::class, 'index'])->middleware('can:products.manage')->name('batch-tracking.index');

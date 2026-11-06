@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
 import ScanInput from '@/components/ScanInput.vue';
-import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
+import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
+import { catchVisitFailures } from '@/lib/visitFailures';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, nextTick, ref, watch } from 'vue';
 
@@ -140,18 +141,7 @@ const submit = (qtyBase: number) => {
     if (!l) return;
     saving.value = true;
     problem.value = null;
-    // Not validation errors: without these a 500, an expired session or lost signal looks like nothing happened.
-    const listeners = [
-        router.on('invalid', (event) => {
-            event.preventDefault();
-            const status = event.detail.response.status;
-            showProblem(status === 419 ? 'Your session expired, so this line was not saved. Reload the page.' : `The server had a problem (${status}), so this line was not saved. Try again.`);
-        }),
-        router.on('exception', (event) => {
-            event.preventDefault();
-            showProblem('No connection, so this line was not saved. Try again.');
-        }),
-    ];
+    const stopCatching = catchVisitFailures(showProblem);
     router.put(
         route('pick.record', [props.pickList.id, l.id]),
         { qty_picked_base: qtyBase, bin_barcode: binCode.value, product_barcodes: productCodes.value, override_reason: needsReason.value && qtyBase > 0 ? reason.value || null : null },
@@ -167,7 +157,7 @@ const submit = (qtyBase: number) => {
             onError: (errors) => showProblem(Object.values(errors)[0] ?? 'This line was not saved.'),
             onFinish: () => {
                 saving.value = false;
-                listeners.forEach((stop) => stop());
+                stopCatching();
             },
         },
     );

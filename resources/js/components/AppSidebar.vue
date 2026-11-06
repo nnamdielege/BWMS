@@ -5,6 +5,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { type NavGroup } from '@/types';
 import { Link } from '@inertiajs/vue3';
 import {
+    Barcode,
     Boxes,
     ClipboardList,
     Combine,
@@ -66,6 +67,7 @@ const navGroups: NavGroup[] = [
             { title: 'Pack setup', href: '/product-packs', icon: Layers, permission: 'products.view' },
             { title: 'Import products', href: '/product-import', icon: Import, permission: 'products.manage' },
             { title: 'Batch tracking', href: '/batch-tracking', icon: Tags, permission: 'products.manage' },
+            { title: 'Capture barcodes', href: '/capture-barcodes', icon: Barcode, permission: 'products.manage' },
             { title: 'Locations', href: '/locations', icon: Warehouse, permission: 'locations.view' },
         ],
     },

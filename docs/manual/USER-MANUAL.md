@@ -316,6 +316,16 @@ Before go-live, packs can also be set up in bulk on **Pack setup** ([4.5](#45-pa
 
 The amber box lists products still on the single "Unit" pack. That's fine if they really are bought, counted and sold as one unit.
 
+### 4.5a Capture barcodes
+
+**Catalogue → Capture barcodes** is made for a handheld. Admins and warehouse managers can use it. Walk the warehouse and give each pack its barcode.
+
+1. Scan a product's barcode or SKU, type a search, or tap it in **Missing barcodes**, which runs in bin walk order.
+2. Scan the barcode for the highlighted pack. It saves straight away, the next pack without a barcode is highlighted, and the scan box is ready again. Tap a pack to scan that one instead.
+3. When every pack is done, the next scan finds the next product. **Done** leaves the product early.
+
+**N of M have barcodes** counts active stock-tracked products with a barcode on at least one pack. A wrong check digit is refused, and so is a barcode already in use, with the product that has it. A bin label scanned by mistake is refused too.
+
 ### 4.6 Costs
 
 **Catalogue → Product costs** shows each product's cost per base unit. Costs drive stock valuation (weighted average). Receipts update the cost automatically.
