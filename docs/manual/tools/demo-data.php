@@ -282,7 +282,7 @@ foreach ($pp->walkOrder($list2) as $pl) {
     $pl->loadMissing('location');
     $pp->recordLine($pl, Auth::user(), $pl->qty_to_pick_base, $pl->location->barcode, [], 'scanner_fault');
 }
-$pp->tick($list2->refresh(), Auth::user(), $list2->lines()->whereIn('order_line_id', $gold->lines()->pluck('id'))->pluck('id')->all(), []);
+$pp->saveProgress($list2->refresh(), Auth::user(), $list2->lines()->whereIn('order_line_id', $gold->lines()->pluck('id'))->pluck('id')->all(), []);
 $pp->pack($list2, $gold, Auth::user(), 2);
 
 // --- Stock oddities: a negative bin and an expired batch already in stock ---------------

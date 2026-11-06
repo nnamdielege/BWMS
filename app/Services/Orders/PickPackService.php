@@ -7,6 +7,7 @@ use App\Models\CountTask;
 use App\Models\DeliveryRun;
 use App\Models\Order;
 use App\Models\OrderPack;
+use App\Models\OrderPackDraft;
 use App\Models\PickList;
 use App\Models\PickListLine;
 use App\Models\User;
@@ -140,23 +141,31 @@ class PickPackService
     }
 
     /**
-     * Save pack ticks as they're made. Ticking twice keeps the first who and when.
+     * Save pack progress as it's made: ticks and carton counts, all or nothing.
+     * Ticking twice keeps the first who and when. Nothing changes once an order is packed.
      *
      * @param  list<int>  $ticked  @param  list<int>  $unticked  pick_list_line ids
+     * @param  array<int, int|null>  $cartons  order id => count, null clears it
      */
-    public function tick(PickList $pickList, User $packer, array $ticked, array $unticked): void
+    public function saveProgress(PickList $pickList, User $packer, array $ticked, array $unticked, array $cartons = []): void
     {
-        DB::transaction(function () use ($pickList, $packer, $ticked, $unticked) {
+        DB::transaction(function () use ($pickList, $packer, $ticked, $unticked, $cartons) {
             $pickList = PickList::lockForUpdate()->findOrFail($pickList->id);
             $this->assert($pickList->isOpen(), "{$pickList->number} is {$pickList->status}.");
 
+            $lineOrders = $pickList->lines()->join('order_lines', 'order_lines.id', '=', 'pick_list_lines.order_line_id')->pluck('order_lines.order_id', 'pick_list_lines.id');
             $ids = array_values(array_unique([...$ticked, ...$unticked]));
-            $orderIds = $pickList->lines()->whereIn('pick_list_lines.id', $ids)->join('order_lines', 'order_lines.id', '=', 'pick_list_lines.order_line_id')->pluck('order_lines.order_id', 'pick_list_lines.id');
-            $this->assert($orderIds->count() === count($ids), "That line is not on {$pickList->number}.");
-            $this->assert(! OrderPack::where('pick_list_id', $pickList->id)->whereIn('order_id', $orderIds)->exists(), 'That order is already packed.');
+            $this->assert($lineOrders->only($ids)->count() === count($ids), "That line is not on {$pickList->number}.");
+            $this->assert($lineOrders->intersect(array_keys($cartons))->unique()->count() === count($cartons), "That order is not on {$pickList->number}.");
+            $touched = $lineOrders->only($ids)->values()->merge(array_keys($cartons));
+            $this->assert(! OrderPack::where('pick_list_id', $pickList->id)->whereIn('order_id', $touched)->exists(), 'That order is already packed.');
 
             $pickList->lines()->whereIn('id', $ticked)->whereNull('ticked_at')->update(['ticked_by' => $packer->id, 'ticked_at' => now()]);
             $pickList->lines()->whereIn('id', $unticked)->update(['ticked_by' => null, 'ticked_at' => null]);
+            foreach ($cartons as $orderId => $count) {
+                $draft = ['order_id' => $orderId, 'pick_list_id' => $pickList->id];
+                $count === null ? OrderPackDraft::where($draft)->delete() : OrderPackDraft::updateOrCreate($draft, ['cartons' => $count, 'updated_by' => $packer->id]);
+            }
         });
     }
 
@@ -178,6 +187,7 @@ class PickPackService
             $this->assert($picked === 0 || $cartons >= 1, 'Enter how many cartons.');
 
             $pack = OrderPack::create(['order_id' => $order->id, 'pick_list_id' => $pickList->id, 'cartons' => $cartons, 'packed_by' => $packer->id, 'packed_at' => now()]);
+            OrderPackDraft::where('order_id', $order->id)->where('pick_list_id', $pickList->id)->delete();
             Audit::record('order_packed', $order, meta: ['pick_list' => $pickList->number, 'cartons' => $cartons]);
 
             return $pack;

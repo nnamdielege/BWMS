@@ -19,22 +19,24 @@ type PackOrder = {
     customer: string | null;
     picking_done: boolean;
     lines: PackLine[];
+    cartons: number | null;
     pack: { cartons: number; packed_by: string; packed_at: string } | null;
 };
 const props = defineProps<{ pickList: { id: number; number: string; status: string; run_id: number | null }; orders: PackOrder[] }>();
 
 const errors = computed(() => usePage().props.errors as Record<string, string>);
-const state = reactive<Record<number, { checked: number[]; cartons: number | null }>>({});
+const state = reactive<Record<number, { checked: number[]; cartons: number | '' | null }>>({});
 const savedTicks = (o: PackOrder) => o.lines.filter((l) => l.ticked).map((l) => l.id);
-const s = (o: PackOrder) => (state[o.id] ??= { checked: savedTicks(o), cartons: o.pack?.cartons ?? null });
+const s = (o: PackOrder) => (state[o.id] ??= { checked: savedTicks(o), cartons: o.cartons });
 
-// Ticks save in the background with a plain fetch: no Inertia visit, so nothing moves focus or
-// interrupts a navigation. Rapid changes are batched, the last change to a line wins, and
-// batches go one at a time so an untick can't overtake its tick.
-const TICK_DEBOUNCE_MS = 300;
-const TICK_RETRY_MS = 3000;
+// Ticks and carton counts save in the background with a plain fetch: no Inertia visit, so nothing
+// moves focus or interrupts a navigation. Rapid changes are batched, the last change to a line or
+// order wins, and batches go one at a time so an untick can't overtake its tick.
+const SAVE_DEBOUNCE_MS = 300;
+const SAVE_RETRY_MS = 3000;
 const pending = new Map<number, boolean>();
-const tickError = ref('');
+const pendingCartons = new Map<number, number | null>();
+const saveError = ref('');
 let timer: number | undefined;
 let sending: Promise<boolean> | null = null;
 let left = false;
@@ -52,52 +54,67 @@ const refresh = () => {
                     if (pending.has(l.id)) checked[pending.get(l.id) ? 'add' : 'delete'](l.id);
                 }
                 s(o).checked = [...checked];
+                if (!pendingCartons.has(o.id)) s(o).cartons = o.cartons;
             }
         },
     });
 };
-const putTicks = async (batch: Map<number, boolean>): Promise<boolean> => {
-    const ids = (ticked: boolean) => [...batch].filter(([, value]) => value === ticked).map(([id]) => id);
+const putProgress = async (ticks: Map<number, boolean>, cartons: Map<number, number | null>): Promise<boolean> => {
+    const ids = (ticked: boolean) => [...ticks].filter(([, value]) => value === ticked).map(([id]) => id);
     const xsrf = document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '';
-    const res = await fetch(route('pick.ticks', props.pickList.id), {
+    const res = await fetch(route('pick.progress', props.pickList.id), {
         method: 'PUT',
         keepalive: true, // still sends if the page is closing
         credentials: 'same-origin',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-XSRF-TOKEN': decodeURIComponent(xsrf) },
-        body: JSON.stringify({ ticked: ids(true), unticked: ids(false) }),
+        body: JSON.stringify({ ticked: ids(true), unticked: ids(false), cartons: Object.fromEntries(cartons) }),
     }).catch(() => null);
 
     if (res?.ok) {
-        tickError.value = '';
+        saveError.value = '';
         return true;
     }
     if (res && res.status < 500) {
         const body = await res.json().catch(() => null);
-        tickError.value = body?.errors?.pick?.[0] ?? 'Ticks could not be saved. Reload and try again.';
+        saveError.value = body?.errors?.pick?.[0] ?? 'Changes could not be saved. Reload and try again.';
         refresh();
         return false;
     }
-    batch.forEach((value, id) => pending.has(id) || pending.set(id, value));
-    tickError.value = 'Ticks not saved yet. Retrying…';
-    timer = window.setTimeout(flush, TICK_RETRY_MS);
+    ticks.forEach((value, id) => pending.has(id) || pending.set(id, value));
+    cartons.forEach((value, id) => pendingCartons.has(id) || pendingCartons.set(id, value));
+    saveError.value = 'Changes not saved yet. Retrying…';
+    timer = window.setTimeout(flush, SAVE_RETRY_MS);
     return false;
 };
 const flush = async (): Promise<boolean> => {
     window.clearTimeout(timer);
     while (sending) await sending;
-    if (!pending.size) return true;
-    const batch = new Map(pending);
+    if (!pending.size && !pendingCartons.size) return true;
+    const ticks = new Map(pending);
+    const cartons = new Map(pendingCartons);
     pending.clear();
-    sending = putTicks(batch).finally(() => (sending = null));
+    pendingCartons.clear();
+    sending = putProgress(ticks, cartons).finally(() => (sending = null));
     return sending;
+};
+const saveSoon = () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(flush, SAVE_DEBOUNCE_MS);
 };
 const toggle = (o: PackOrder, id: number) => {
     const st = s(o);
     const ticked = !st.checked.includes(id);
     st.checked = ticked ? [...st.checked, id] : st.checked.filter((x) => x !== id);
     pending.set(id, ticked);
-    window.clearTimeout(timer);
-    timer = window.setTimeout(flush, TICK_DEBOUNCE_MS);
+    saveSoon();
+};
+const validCartons = (value: number | '' | null): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 500;
+// A count the server would refuse is never sent, or it would take the batch's ticks with it.
+const cartonsChanged = (o: PackOrder, event: Event) => {
+    const value = (event.target as HTMLInputElement).value;
+    const count = value === '' ? null : Number(value);
+    pendingCartons.set(o.id, validCartons(count) ? count : null);
+    saveSoon();
 };
 onMounted(() => {
     window.addEventListener('pagehide', flush);
@@ -111,7 +128,7 @@ onBeforeUnmount(() => {
 
 const packed = (l: PackLine) =>
     l.picked_base === null ? '—' : l.picked_base % l.pack.base_qty === 0 ? `${l.picked_base / l.pack.base_qty} ${l.pack.name}` : `${l.picked_base} ${l.product.base_unit}`;
-const ready = (o: PackOrder) => o.picking_done && s(o).checked.length === o.lines.length && s(o).cartons !== null;
+const ready = (o: PackOrder) => o.picking_done && s(o).checked.length === o.lines.length && validCartons(s(o).cartons);
 const save = async (o: PackOrder) => {
     if (await flush()) router.post(route('pick.pack.store', [props.pickList.id, o.id]), { cartons: s(o).cartons }, { preserveScroll: true });
 };
@@ -122,7 +139,7 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
     <Head :title="`Pack ${pickList.number}`" />
     <WarehouseLayout>
         <InputError :message="errors.pick" class="mb-2" />
-        <InputError :message="tickError" class="sticky top-14 z-[5] mb-2 bg-background py-1" />
+        <InputError :message="saveError" class="sticky top-14 z-[5] mb-2 bg-background py-1" />
 
         <div v-for="o in orders" :key="o.id" class="mb-4 rounded-xl border p-3" :class="{ 'border-green-400': o.pack }">
             <div class="flex items-center justify-between">
@@ -163,7 +180,9 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
                     type="number"
                     inputmode="numeric"
                     min="0"
+                    max="500"
                     class="h-12 w-24 rounded-lg border bg-background px-3 text-xl tabular-nums"
+                    @input="cartonsChanged(o, $event)"
                 />
                 <button class="ml-auto h-12 rounded-lg bg-primary px-5 font-semibold text-primary-foreground disabled:opacity-50" :disabled="!ready(o)" @click="save(o)">
                     Packed

@@ -62,7 +62,7 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
    - **Short / not found:** enter what you found. The rest follows the order's backorder/cancel rule at dispatch, and the bin gets a **count task** on the dashboard.
 3. **Pack**, per order:
    - Tick each line as it goes in the carton(s). Each tick saves as it's made (who and when), so you can leave and come back; untick to reverse it. Changing a line's picked quantity clears its tick.
-   - Enter the **carton count**, then **Packed** (records who and when). Packed is final: ticks can't be changed afterwards. The carton count isn't saved until then.
+   - Enter the **carton count**, which saves the same way, then **Packed** (records who and when). Packed is final: ticks and the carton count can't be changed afterwards.
    - **Packing slip** opens an A5 PDF to print and put in the carton.
 4. **Dispatch:**
    - The **run manifest** lists every order of the run with its address, carton count and packed state.

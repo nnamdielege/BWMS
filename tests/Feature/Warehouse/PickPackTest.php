@@ -12,6 +12,7 @@ use App\Models\AuditLog;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\OrderPack;
+use App\Models\OrderPackDraft;
 use App\Models\PickList;
 use App\Models\Product;
 use App\Models\User;
@@ -107,7 +108,7 @@ class PickPackTest extends TestCase
     /** @param  list<int>  $ticked  @param  list<int>  $unticked */
     private function tick(PickList $list, array $ticked, array $unticked = [])
     {
-        return $this->actingAs($this->picker)->putJson(route('pick.ticks', $list), ['ticked' => $ticked, 'unticked' => $unticked]);
+        return $this->actingAs($this->picker)->putJson(route('pick.progress', $list), ['ticked' => $ticked, 'unticked' => $unticked]);
     }
 
     private function pickEverything(PickList $list): void
@@ -131,6 +132,19 @@ class PickPackTest extends TestCase
     private function lineIds(PickList $list, Order $order): array
     {
         return $list->lines()->whereHas('orderLine', fn ($q) => $q->where('order_id', $order->id))->pluck('id')->all();
+    }
+
+    /** @param  array<int, int|null>  $cartons  order id => count */
+    private function saveCartons(PickList $list, array $cartons)
+    {
+        return $this->actingAs($this->picker)->putJson(route('pick.progress', $list), ['cartons' => $cartons]);
+    }
+
+    private function cartonsOnPage(PickList $list, Order $order): ?int
+    {
+        $orders = $this->actingAs($this->picker)->get(route('pick.pack', $list))->assertOk()->inertiaProps('orders');
+
+        return collect($orders)->firstWhere('id', $order->id)['cartons'];
     }
 
     /** @return list<int> Line ids the pack page shows as ticked, from a fresh page load. */
@@ -258,7 +272,7 @@ class PickPackTest extends TestCase
         // A repeat tick, as a retry after a dropped connection sends, keeps the first who and when.
         $first = $line->ticked_at;
         Carbon::setTestNow(now()->addMinutes(5));
-        $this->actingAs($this->manager)->putJson(route('pick.ticks', $list), ['ticked' => [$ids[0]]])->assertNoContent();
+        $this->actingAs($this->manager)->putJson(route('pick.progress', $list), ['ticked' => [$ids[0]]])->assertNoContent();
         $this->assertEquals($first, $line->fresh()->ticked_at);
         $this->assertSame($this->picker->id, $line->fresh()->ticked_by);
 
@@ -295,6 +309,73 @@ class PickPackTest extends TestCase
         $list->forceFill(['status' => PickList::STATUS_CANCELLED])->save();
         $this->tick($list, $ids)->assertUnprocessable()->assertJsonValidationErrors('pick');
         $this->assertSame(0, $list->lines()->whereNotNull('ticked_at')->count());
+    }
+
+    public function test_carton_counts_save_restore_on_load_and_can_be_changed_or_cleared()
+    {
+        $orderB = $this->secondOrder();
+        $list = $this->start();
+        $this->assertNull($this->cartonsOnPage($list, $this->order));
+
+        $this->saveCartons($list, [$this->order->id => 3, $orderB->id => 1])->assertNoContent();
+        $this->assertSame(3, $this->cartonsOnPage($list, $this->order));
+        $this->assertSame(1, $this->cartonsOnPage($list, $orderB));
+
+        $this->saveCartons($list, [$this->order->id => 0])->assertNoContent();
+        $this->assertSame(0, $this->cartonsOnPage($list, $this->order));
+
+        $this->saveCartons($list, [$this->order->id => null])->assertNoContent();
+        $this->assertNull($this->cartonsOnPage($list, $this->order));
+        $this->assertSame(1, $this->cartonsOnPage($list, $orderB));
+        $this->assertSame(1, OrderPackDraft::count());
+    }
+
+    public function test_a_saved_carton_count_does_not_make_an_order_packed()
+    {
+        $list = $this->start();
+        $this->pickEverything($list);
+        $this->saveCartons($list, [$this->order->id => 3])->assertNoContent();
+
+        $this->assertSame(0, OrderPack::count());
+        $this->actingAs($this->picker)->post(route('pick.dispatch', $this->run_()))->assertSessionHasErrors(['pick' => "Pack every order on {$list->number} before dispatch."]);
+        $this->actingAs($this->picker)->get(route('pick.manifest', $this->run_()))->assertInertia(fn (AssertableInertia $p) => $p
+            ->where('orders.0.packed', false)->where('orders.0.cartons', 0));
+        $orders = $this->actingAs($this->picker)->get(route('pick.pack', $list))->inertiaProps('orders');
+        $this->assertNull($orders[0]['pack']);
+    }
+
+    public function test_the_carton_count_locks_once_packed()
+    {
+        $orderB = $this->secondOrder();
+        $list = $this->start();
+        $this->pickEverything($list);
+        $this->tick($list, $this->lineIds($list, $this->order))->assertNoContent();
+        $this->saveCartons($list, [$this->order->id => 3, $orderB->id => 2])->assertNoContent();
+
+        $this->actingAs($this->picker)->post(route('pick.pack.store', [$list, $this->order]), ['cartons' => 3])->assertSessionHasNoErrors();
+        $this->assertSame([$orderB->id], OrderPackDraft::pluck('order_id')->all());
+
+        $this->saveCartons($list, [$this->order->id => 9])->assertUnprocessable()->assertJsonValidationErrors(['pick' => 'That order is already packed.']);
+        $this->saveCartons($list, [$this->order->id => null])->assertUnprocessable();
+        $this->assertSame(3, $this->cartonsOnPage($list, $this->order));
+        $this->assertSame(3, OrderPack::sole()->cartons);
+
+        // A refused batch changes nothing, including the other order on it.
+        $this->saveCartons($list, [$orderB->id => 7, $this->order->id => 9])->assertUnprocessable();
+        $this->assertSame(2, $this->cartonsOnPage($list, $orderB));
+    }
+
+    public function test_carton_counts_are_refused_when_invalid_off_the_list_or_on_a_closed_list()
+    {
+        $list = $this->start();
+        foreach ([-1, 501, 1.5, 'x'] as $bad) {
+            $this->saveCartons($list, [$this->order->id => $bad])->assertUnprocessable();
+        }
+        $this->saveCartons($list, [999999 => 1])->assertUnprocessable()->assertJsonValidationErrors(['pick' => "That order is not on {$list->number}."]);
+
+        $list->forceFill(['status' => PickList::STATUS_CANCELLED])->save();
+        $this->saveCartons($list, [$this->order->id => 1])->assertUnprocessable()->assertJsonValidationErrors('pick');
+        $this->assertSame(0, OrderPackDraft::count());
     }
 
     public function test_changing_a_picked_quantity_clears_its_tick()

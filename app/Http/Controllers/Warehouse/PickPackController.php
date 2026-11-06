@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DeliveryRun;
 use App\Models\Order;
 use App\Models\OrderPack;
+use App\Models\OrderPackDraft;
 use App\Models\PickList;
 use App\Models\PickListLine;
 use App\Models\Setting;
@@ -119,11 +120,12 @@ class PickPackController extends Controller
     {
         $lines = $this->service->walkOrder($pickList);
         $packs = OrderPack::where('pick_list_id', $pickList->id)->with('packer:id,name')->get()->keyBy('order_id');
+        $drafts = OrderPackDraft::where('pick_list_id', $pickList->id)->pluck('cartons', 'order_id');
 
         return Inertia::render('warehouse/Pack', [
             'nav' => $this->nav($request, "Pack {$pickList->number}", route('pick.work', $pickList)),
             'pickList' => ['id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status, 'run_id' => $pickList->delivery_run_id],
-            'orders' => $lines->groupBy(fn ($l) => $l->orderLine->order_id)->map(function ($group) use ($packs) {
+            'orders' => $lines->groupBy(fn ($l) => $l->orderLine->order_id)->map(function ($group) use ($packs, $drafts) {
                 $order = $group->first()->orderLine->order;
                 $pack = $packs[$order->id] ?? null;
 
@@ -131,22 +133,25 @@ class PickPackController extends Controller
                     'id' => $order->id, 'number' => $order->number, 'customer' => $order->customer?->name,
                     'picking_done' => $group->every(fn ($l) => $l->qty_picked_base !== null),
                     'lines' => $group->map(fn (PickListLine $l) => $this->lineRow($l))->values(),
+                    'cartons' => $pack?->cartons ?? $drafts[$order->id] ?? null,
                     'pack' => $pack ? ['cartons' => $pack->cartons, 'packed_by' => $pack->packer->name, 'packed_at' => $pack->packed_at->toIso8601String()] : null,
                 ];
             })->values(),
         ]);
     }
 
-    /** Called in the background as lines are ticked, so it answers without a page visit. */
-    public function ticks(Request $request, PickList $pickList): HttpResponse
+    /** Called in the background as the pack screen changes, so it answers without a page visit. */
+    public function progress(Request $request, PickList $pickList): HttpResponse
     {
         $data = $request->validate([
             'ticked' => ['array', 'max:500'],
             'ticked.*' => ['integer'],
             'unticked' => ['array', 'max:500'],
             'unticked.*' => ['integer'],
+            'cartons' => ['array', 'max:500'],
+            'cartons.*' => ['nullable', 'integer', 'min:0', 'max:500'],
         ]);
-        $this->guard(fn () => $this->service->tick($pickList, $request->user(), $data['ticked'] ?? [], $data['unticked'] ?? []));
+        $this->guard(fn () => $this->service->saveProgress($pickList, $request->user(), $data['ticked'] ?? [], $data['unticked'] ?? [], $data['cartons'] ?? []));
 
         return response()->noContent();
     }
