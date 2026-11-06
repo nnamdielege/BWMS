@@ -102,6 +102,7 @@ class PickPackController extends Controller
             ],
             'lines' => $this->service->walkOrder($pickList)->map(fn (PickListLine $l) => $this->lineRow($l))->values(),
             'overrideReasons' => PickPackService::OVERRIDE_REASONS,
+            'requireBinScan' => Setting::requiresBinScan(),
         ]);
     }
 

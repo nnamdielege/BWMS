@@ -7,7 +7,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/vue3';
 
-const props = defineProps<{ settings: Record<string, string>; logo: { url: string; uploaded: boolean } }>();
+const props = defineProps<{ settings: Record<string, string>; requireBinScan: boolean; logo: { url: string; uploaded: boolean } }>();
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Company settings', href: '/admin/settings' }];
 
 const form = useForm({
@@ -18,6 +18,7 @@ const form = useForm({
     company_email: props.settings['company.email'] ?? '',
     company_delivery_address: props.settings['company.delivery_address'] ?? '',
     po_terms: props.settings['po.terms'] ?? '',
+    require_bin_scan: props.requireBinScan,
 });
 
 const logoForm = useForm<{ logo: File | null }>({ logo: null });
@@ -53,6 +54,13 @@ const removeLogo = () => router.delete(route('admin.settings.logo.destroy'), { p
             <div class="grid gap-1">
                 <Label>PO terms (footer)</Label><textarea v-model="form.po_terms" rows="3" class="rounded-md border bg-background p-2 text-sm" />
             </div>
+            <label class="flex items-start gap-2 text-sm">
+                <input v-model="form.require_bin_scan" type="checkbox" class="mt-0.5" aria-label="Require bin scan when picking" />
+                <span>
+                    <span class="font-medium">Require bin scan when picking</span>
+                    <span class="block text-muted-foreground">When off, the product scan alone confirms a line. The bin still shows in large letters.</span>
+                </span>
+            </label>
             <Button type="submit" :disabled="form.processing">Save</Button>
         </form>
 

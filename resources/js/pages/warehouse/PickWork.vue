@@ -24,6 +24,7 @@ const props = defineProps<{
     pickList: { id: number; number: string; status: string; run: string | null; run_id: number | null; claimed_by: string | null; mine: boolean };
     lines: Line[];
     overrideReasons: string[];
+    requireBinScan: boolean;
 }>();
 
 const errors = computed(() => usePage().props.errors as Record<string, string>);
@@ -79,6 +80,8 @@ watch(mode, (now) => {
     }
 });
 
+const binDone = computed(() => !props.requireBinScan || !!binCode.value);
+
 const buzz = (ok: boolean) => navigator.vibrate?.(ok ? 40 : [80, 60, 80]);
 const say = (kind: 'ok' | 'error', text: string) => {
     message.value = { kind, text };
@@ -95,7 +98,7 @@ const onScan = (code: string) => {
     }
     const match = l.barcodes.find((b) => b.code === code);
     if (match) {
-        if (!binCode.value) return say('error', `Scan bin ${l.bin.code} first`);
+        if (!binDone.value) return say('error', `Scan bin ${l.bin.code} first`);
         if (countBase.value + match.base_qty > l.to_pick_base) return say('error', `Too many: only ${l.to_pick_label} needed`);
         productCodes.value.push(code);
         countBase.value += match.base_qty;
@@ -114,7 +117,7 @@ const manualBase = computed(() => {
     return l.to_pick_base % l.pack.base_qty === 0 ? manualQty.value * l.pack.base_qty : manualQty.value;
 });
 const manualUnit = computed(() => (line.value && line.value.to_pick_base % line.value.pack.base_qty === 0 ? line.value.pack.name : line.value?.product.base_unit));
-const needsReason = computed(() => !(binCode.value && productCodes.value.length));
+const needsReason = computed(() => !(binDone.value && productCodes.value.length));
 
 const blockedBy = computed(() => {
     const l = line.value;
@@ -214,7 +217,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
             <div v-if="problem && mode === 'scan'" ref="problemBox" role="alert" class="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-900 dark:bg-red-950 dark:text-red-200">{{ problem }}</div>
 
             <div v-if="mode === 'scan'" class="mt-3">
-                <ScanInput :placeholder="binCode ? 'Scan product' : 'Scan bin label'" :disabled="saving || !pickList.mine" @scan="onScan" />
+                <ScanInput :placeholder="binDone ? 'Scan product' : 'Scan bin label'" :disabled="saving || !pickList.mine" @scan="onScan" />
                 <div class="mt-3 grid grid-cols-2 gap-2">
                     <button class="h-12 rounded-lg border text-sm" @click="mode = 'manual'">Enter quantity</button>
                     <button class="h-12 rounded-lg border text-sm text-red-700 dark:text-destructive" @click="mode = 'short'">Short / not found</button>

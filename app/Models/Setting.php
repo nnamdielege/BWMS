@@ -26,6 +26,14 @@ class Setting extends Model
         'company.delivery_address', 'po.terms',
     ];
 
+    /** When off, the product scan alone confirms a pick. On until someone turns it off. */
+    public const REQUIRE_BIN_SCAN = 'picking.require_bin_scan';
+
+    public static function requiresBinScan(): bool
+    {
+        return self::get(self::REQUIRE_BIN_SCAN, '1') !== '0';
+    }
+
     public static function get(string $key, ?string $default = null): ?string
     {
         return self::all_()[$key] ?? $default;

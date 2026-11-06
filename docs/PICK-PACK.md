@@ -62,7 +62,7 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
    - Each run lists its orders with a source badge, plus its open pick lists.
    - **"Pick N new orders"** creates a pick list for the run's orders that are waiting, claimed by you.
    - **Continue** resumes your list. **Take over** reassigns another picker's list, and is audited.
-2. **Picking**, one line at a time:
+2. **Picking**, one line at a time. **Company settings → Require bin scan when picking** is on by default. With it off, the product scan alone confirms a line, and the bin still shows in large letters. A bin scanned anyway is still checked.
    - The screen shows the **bin** in large type, the product (with a **CHILLED** badge), lot and best-before (earliest expiry first), and the quantity in packs.
    - **Scan the bin label, then the product.** Each product scan adds that pack's quantity, and the line confirms itself when the count matches.
    - Both scans are **checked by the server** against the bin's label code and the product's barcodes.

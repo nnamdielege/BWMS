@@ -4,17 +4,18 @@ namespace Tests\Feature\Warehouse;
 
 use App\Authorization\Permissions;
 use App\Enums\OrderStatus;
+use App\Models\AuditLog;
 use App\Models\CountTask;
 use App\Models\Customer;
 use App\Models\DeliveryArea;
 use App\Models\DeliveryRun;
-use App\Models\AuditLog;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\OrderPack;
 use App\Models\OrderPackDraft;
 use App\Models\PickList;
 use App\Models\Product;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\Orders\OrderService;
 use Database\Seeders\DeliveryAreaSeeder;
@@ -481,5 +482,78 @@ class PickPackTest extends TestCase
         $this->assertSame([2, 4], $gold->fresh()->weekdays);
 
         $this->actingAs($this->picker)->get(route('admin.delivery-areas.index'))->assertForbidden();
+    }
+
+    private function binScanSetting(bool $on): void
+    {
+        $this->actingAs($this->userWithRole(Permissions::ROLE_ADMIN))->put(route('admin.settings.update'), ['company_name' => 'Local Selection', 'require_bin_scan' => $on])->assertSessionHasNoErrors();
+    }
+
+    public function test_the_bin_scan_is_required_by_default()
+    {
+        $this->assertTrue(Setting::requiresBinScan());
+        $list = $this->start();
+        $line = $list->lines()->where('product_id', $this->ambient->id)->first();
+
+        $this->record($list, $line->id, ['qty_picked_base' => 6, 'product_barcodes' => ['9300000000019']])->assertSessionHasErrors('pick');
+
+        $this->assertNull($line->fresh()->qty_picked_base);
+    }
+
+    public function test_with_the_setting_off_the_product_scan_alone_confirms_a_line()
+    {
+        $this->binScanSetting(false);
+        $list = $this->start();
+        $line = $list->lines()->where('product_id', $this->ambient->id)->first();
+
+        $this->record($list, $line->id, ['qty_picked_base' => 6, 'product_barcodes' => ['9300000000019']])->assertSessionHasNoErrors();
+
+        $line->refresh();
+        $this->assertSame(6, $line->qty_picked_base);
+        $this->assertNull($line->bin_scanned_at);
+        $this->assertNotNull($line->product_scanned_at);
+        $this->assertNull($line->override_reason);
+        $this->assertSame(0, AuditLog::where('event', 'pick_scan_override')->count());
+    }
+
+    public function test_with_the_setting_off_a_line_still_needs_the_product_scan_or_a_reason()
+    {
+        $this->binScanSetting(false);
+        $list = $this->start();
+        $line = $list->lines()->where('product_id', $this->ambient->id)->first();
+
+        $this->record($list, $line->id, ['qty_picked_base' => 6])->assertSessionHasErrors('pick');
+        $this->record($list, $line->id, ['qty_picked_base' => 6, 'override_reason' => 'scanner_fault'])->assertSessionHasNoErrors();
+
+        $this->assertSame('scanner_fault', $line->fresh()->override_reason);
+    }
+
+    public function test_with_the_setting_off_a_wrong_bin_scanned_anyway_is_still_refused()
+    {
+        $this->binScanSetting(false);
+        $list = $this->start();
+        $line = $list->lines()->where('product_id', $this->ambient->id)->first();
+
+        $this->record($list, $line->id, ['qty_picked_base' => 6, 'bin_barcode' => 'NOT-THIS-BIN', 'product_barcodes' => ['9300000000019']])->assertSessionHasErrors('pick');
+    }
+
+    public function test_the_pick_screen_is_told_the_setting_and_only_admins_change_it()
+    {
+        $list = $this->start();
+        $this->actingAs($this->picker)->get(route('pick.work', $list))->assertInertia(fn (AssertableInertia $p) => $p->where('requireBinScan', true));
+
+        $this->binScanSetting(false);
+
+        $this->actingAs($this->picker)->get(route('pick.work', $list))->assertInertia(fn (AssertableInertia $p) => $p->where('requireBinScan', false));
+        $this->actingAs($this->manager)->put(route('admin.settings.update'), ['company_name' => 'X', 'require_bin_scan' => true])->assertForbidden();
+    }
+
+    public function test_saving_company_details_without_the_field_leaves_the_setting_alone()
+    {
+        $this->binScanSetting(false);
+
+        $this->actingAs($this->userWithRole(Permissions::ROLE_ADMIN))->put(route('admin.settings.update'), ['company_name' => 'Local Selection'])->assertSessionHasNoErrors();
+
+        $this->assertFalse(Setting::requiresBinScan());
     }
 }

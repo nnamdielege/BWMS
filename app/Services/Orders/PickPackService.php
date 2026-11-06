@@ -10,6 +10,7 @@ use App\Models\OrderPack;
 use App\Models\OrderPackDraft;
 use App\Models\PickList;
 use App\Models\PickListLine;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\Stock\CountTaskService;
 use App\Services\Stock\Exceptions\InvalidMovement;
@@ -24,7 +25,8 @@ use Illuminate\Support\Facades\DB;
  *  - walk order: ambient lines by bin walk_seq, chilled lines last (no
  *    refrigerated transport), then earliest best-before
  *  - scan confirmation of bin and product, verified here against the bin's
- *    label code and the product's pack barcodes; otherwise an override reason
+ *    label code and the product's pack barcodes; otherwise an override reason.
+ *    The company setting can make the product scan enough on its own
  *  - short picks raise a count task for the bin
  *  - per-order pack (all lines ticked, carton count) before the run dispatches
  */
@@ -113,8 +115,9 @@ class PickPackService
                 $this->assert(in_array(trim($code), $known, true), "Barcode {$code} is not {$line->product->sku}.");
             }
             $productOk = $productBarcodes !== [];
+            $scanned = ($binOk || ! Setting::requiresBinScan()) && $productOk;
 
-            if ($qtyBase > 0 && ! ($binOk && $productOk)) {
+            if ($qtyBase > 0 && ! $scanned) {
                 $this->assert(in_array($overrideReason, self::OVERRIDE_REASONS, true), 'Scan the bin and the product, or choose why not.');
             }
 
@@ -122,7 +125,7 @@ class PickPackService
                 'qty_picked_base' => $qtyBase,
                 'bin_scanned_at' => $binOk ? now() : null,
                 'product_scanned_at' => $productOk ? now() : null,
-                'override_reason' => $binOk && $productOk ? null : $overrideReason,
+                'override_reason' => $scanned ? null : $overrideReason,
                 'picked_by' => $picker->id,
                 'picked_at' => now(),
             ])->save();

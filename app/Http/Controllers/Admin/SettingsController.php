@@ -16,6 +16,7 @@ class SettingsController extends Controller
     {
         return Inertia::render('admin/settings/Company', [
             'settings' => collect(Setting::COMPANY_KEYS)->mapWithKeys(fn ($k) => [$k => Setting::get($k, '')]),
+            'requireBinScan' => Setting::requiresBinScan(),
             'logo' => ['url' => Branding::logoUrl(), 'uploaded' => Branding::hasUploadedLogo()],
         ]);
     }
@@ -25,9 +26,13 @@ class SettingsController extends Controller
         $rules = collect(Setting::COMPANY_KEYS)->mapWithKeys(fn ($k) => [str_replace('.', '_', $k) => ['nullable', 'string', 'max:2000']])->all();
         $rules['company_name'] = ['required', 'string', 'max:255'];
         $rules['company_email'] = ['nullable', 'email', 'max:255'];
+        $rules['require_bin_scan'] = ['sometimes', 'boolean'];
         $data = $request->validate($rules);
 
         Setting::put(collect(Setting::COMPANY_KEYS)->mapWithKeys(fn ($k) => [$k => $data[str_replace('.', '_', $k)] ?? ''])->all());
+        if (array_key_exists('require_bin_scan', $data)) {
+            Setting::put([Setting::REQUIRE_BIN_SCAN => $data['require_bin_scan'] ? '1' : '0']);
+        }
 
         return back()->with('success', 'Company details saved.');
     }

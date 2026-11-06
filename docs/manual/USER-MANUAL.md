@@ -796,6 +796,8 @@ Each run shows how many orders it has and how many are waiting to pick.
 
 ### 10.3 Pick a line
 
+Admins can turn off **Require bin scan when picking** in **Company settings**. The product scan alone then confirms the line. The bin still shows in large letters, so walk to it first.
+
 The screen shows one line at a time, in walk order. Chilled lines come last.
 
 ![Pick a line](img/81-pick-line.png)
