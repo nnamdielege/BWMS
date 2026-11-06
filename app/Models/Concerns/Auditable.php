@@ -14,10 +14,18 @@ trait Auditable
     public static function bootAuditable(): void
     {
         static::created(function (Model $model) {
+            if (Audit::modelEventsMuted()) {
+                return;
+            }
+
             Audit::record('created', $model, null, $model->auditFilter($model->getAttributes()));
         });
 
         static::updated(function (Model $model) {
+            if (Audit::modelEventsMuted()) {
+                return;
+            }
+
             $changes = $model->auditFilter($model->getChanges());
             unset($changes['updated_at']);
 

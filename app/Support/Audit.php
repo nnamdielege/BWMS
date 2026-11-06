@@ -12,6 +12,33 @@ use Illuminate\Support\Facades\Auth;
  */
 final class Audit
 {
+    private static bool $modelEventsMuted = false;
+
+    /**
+     * Run a bulk writer that records one summary entry per subject itself, so the
+     * Auditable trait stays out of it. Audit::record() still writes.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $work
+     * @return T
+     */
+    public static function withoutModelEvents(callable $work): mixed
+    {
+        $before = self::$modelEventsMuted;
+        self::$modelEventsMuted = true;
+        try {
+            return $work();
+        } finally {
+            self::$modelEventsMuted = $before;
+        }
+    }
+
+    public static function modelEventsMuted(): bool
+    {
+        return self::$modelEventsMuted;
+    }
+
     /**
      * @param  array<string, mixed>|null  $old
      * @param  array<string, mixed>|null  $new

@@ -25,6 +25,12 @@ class Gtin implements ValidationRule
         }
     }
 
+    /** A whole GTIN: digits, a GTIN length and a valid check digit. */
+    public static function isValid(string $value): bool
+    {
+        return ctype_digit($value) && in_array(strlen($value), [8, 12, 13, 14], true) && self::hasValidCheckDigit($value);
+    }
+
     public static function hasValidCheckDigit(string $digits): bool
     {
         $body = substr($digits, 0, -1);

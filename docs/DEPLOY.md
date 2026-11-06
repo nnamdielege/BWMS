@@ -1,6 +1,6 @@
 # Deploy checklist
 
-Target: VPS, **MariaDB 10.5.29**, PHP 8.2+ (incl. `bcmath`, `gd`, `intl`), Apache + PHP-FPM, Supervisor.
+Target: VPS, **MariaDB 10.5.29**, PHP 8.2+ (incl. `bcmath`, `gd`, `intl`, and `zip` for XLSX product imports), Apache + PHP-FPM, Supervisor.
 The go-live sequence (stages, checks, rollback) is in `CUTOVER.md`.
 Paths: the new app is in **`/var/www/bwms`**; the old app is kept in **`/var/www/BWMS-legacy`** until the cutover is done. Branch: `rebuild/app` until the `main` switch at cutover (see `CUTOVER.md`, "Paths and branches"), then `main`.
 Run every step on the first deploy; steps marked **(every deploy)** each time.

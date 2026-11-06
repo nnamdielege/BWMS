@@ -87,6 +87,26 @@ Other inbound behaviour:
 - `lineItems[].variantId` (also `variant.id`) is the stock API item ID and matches the legacy mapping.
 - `ORDERMENTUM_LINE_VARIANT_FIELDS` can re-point the field without a code change. An order whose lines don't match fails with the keys it found; fix the setting, then replay it.
 
+## Product import
+
+`Catalogue → Import products` and `php artisan products:import ordermentum` read the catalogue with two paged GETs, joined on `productId`. Details are in the manual (4.7).
+
+| Ordermentum field | Used for |
+|---|---|
+| `GET /v1/variants`: `id`, `productId` | The listing's `external_variant_id` and `external_product_id` |
+| `SKU` | Matching, then the product SKU (uppercased) and `external_sku` |
+| `name` | Product name **and the pack** (see below) |
+| `price` | `sell_price`, only if the WMS has none |
+| `deactivatedAt`, `visible`, `deletedAt` | Active state. Deactivated items are skipped; deleted ones aren't read |
+| `GET /v1/products`: `categoryNames` | Range: the category with the most products, so "Juices" over "Noah's Juices" |
+
+**Checked on the live catalogue, 2026-11-06 (145 items):**
+- **`unit`, `uom`, `unitSize` and `packingUnit` are `unit` / 1 on every item**, so packs are read from the name ("… 330ml x 12", "(12x1lt)"). A numeric `unit` would be used first if one ever appears. Only an explicit quantity counts as sure. Anything else is "Check pack".
+- **`barcode` is never a GTIN.** It's an internal `x` + 8 hex value on all 145, so it's ignored and reported in the summary.
+- `LOCSEL6` is on two active items, and `SPGWC1kg` on an active and a deactivated one.
+
+`php artisan products:import ordermentum --dry-run` prints the summary, with conflicts and checks listed (`--all` lists every row). Without `--dry-run` it needs `--yes`, and it applies no overwrites and leaves "Check pack" rows out: those need the preview screen.
+
 ## Cutover
 
 1. Legacy migration committed (docs/MIGRATION.md). Listings exist, all off.

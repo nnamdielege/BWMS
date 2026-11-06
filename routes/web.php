@@ -14,6 +14,7 @@ use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\PickListController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductCostController;
+use App\Http\Controllers\ProductImportController;
 use App\Http\Controllers\ProductPackController;
 use App\Http\Controllers\Purchasing\PurchaseOrderController;
 use App\Http\Controllers\Purchasing\ReceiptController;
@@ -58,6 +59,16 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::put('product-costs/{product}', [ProductCostController::class, 'update'])->middleware('can:products.manage')->name('product-costs.update');
     Route::post('product-costs/import/preview', [ProductCostController::class, 'preview'])->middleware('can:products.manage')->name('product-costs.preview');
     Route::post('product-costs/import/apply', [ProductCostController::class, 'apply'])->middleware('can:products.manage')->name('product-costs.apply');
+
+    // Bulk product import: admin and warehouse manager (products.manage). Catalogue only.
+    Route::middleware('can:products.manage')->prefix('product-import')->name('product-import.')->group(function () {
+        Route::get('/', [ProductImportController::class, 'index'])->name('index');
+        Route::get('template', [ProductImportController::class, 'template'])->name('template');
+        Route::post('fetch', [ProductImportController::class, 'fetch'])->name('fetch');
+        Route::post('upload', [ProductImportController::class, 'upload'])->name('upload');
+        Route::put('revise', [ProductImportController::class, 'revise'])->name('revise');
+        Route::post('apply', [ProductImportController::class, 'apply'])->name('apply');
+    });
 
     Route::get('product-packs', [ProductPackController::class, 'index'])->middleware('can:products.view')->name('product-packs.index');
     Route::get('product-packs/export', [ProductPackController::class, 'export'])->middleware('can:products.view')->name('product-packs.export');

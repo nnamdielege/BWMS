@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Sync;
 
 use App\Http\Controllers\Controller;
 use App\Integrations\Ordermentum\OrderInbox;
-use App\Jobs\ProcessOrdermentumOrder;
 use App\Jobs\PushOrdermentumStock;
 use App\Jobs\PushPortalStock;
 use App\Models\ChannelListing;
@@ -25,6 +24,8 @@ use Inertia\Response;
 class SyncController extends Controller
 {
     private const CHANNEL = 'ordermentum';
+
+    public function __construct(private OrderInbox $inbox) {}
 
     public function index(Request $request): Response
     {
@@ -139,7 +140,7 @@ class SyncController extends Controller
         if (! in_array($inbox->event, OrderInbox::ORDER_EVENTS, true) || ! $inbox->external_id) {
             throw ValidationException::withMessages(['inbox' => 'Only order events can be replayed.']);
         }
-        $this->requeue($inbox);
+        $this->inbox->requeue($inbox);
         Audit::record('sync_inbox_replayed', meta: ['inbox_id' => $inbox->id, 'order' => $inbox->external_id]);
 
         return back()->with('success', 'Replay queued.');
@@ -176,8 +177,7 @@ class SyncController extends Controller
 
         // Ordermentum orders that waited for this variant run again (the portal retries its own calls).
         if ($variant->channel === self::CHANNEL) {
-            IntegrationInbox::where('channel', self::CHANNEL)->where('status', IntegrationInbox::STATUS_NEEDS_MAPPING)
-                ->where('error', 'like', '%'.$variant->external_variant_id.'%')->get()->each(fn ($i) => $this->requeue($i));
+            $this->inbox->replayHeldFor($variant->external_variant_id);
         }
 
         return back()->with('success', "Mapped to {$product->sku}.");
@@ -210,15 +210,6 @@ class SyncController extends Controller
             'refused' => IntegrationInbox::where('channel', 'portal')->whereIn('status', ['rejected', IntegrationInbox::STATUS_FAILED])
                 ->latest('id')->limit(50)->get(['id', 'event', 'external_id', 'status', 'error', 'created_at']),
         ];
-    }
-
-    private function requeue(IntegrationInbox $inbox): void
-    {
-        $enabled = (bool) config('bwms.ordermentum.ingest_enabled');
-        $inbox->mark($enabled ? IntegrationInbox::STATUS_RECEIVED : IntegrationInbox::STATUS_HELD, $enabled ? null : 'Ingestion is switched off.');
-        if ($enabled) {
-            ProcessOrdermentumOrder::dispatch($inbox->external_id, $inbox->id);
-        }
     }
 
     /** @return array<string, mixed> */

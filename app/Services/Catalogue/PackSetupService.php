@@ -42,6 +42,13 @@ class PackSetupService
             ->has('units', '=', 1);
     }
 
+    /** The same test on one product with its units loaded. */
+    public static function isOnDefaultPack(Product $product): bool
+    {
+        return $product->base_unit === 'unit' && $product->is_stock_tracked && $product->units->count() === 1
+            && $product->units->first()->name === 'Unit' && $product->units->first()->base_qty === 1;
+    }
+
     /**
      * @return array{plans: list<array<string, mixed>>, errors: list<string>}
      */

@@ -194,7 +194,7 @@ Each user has one or more roles. The menu on the left only shows what your roles
 |---|:-:|:-:|:-:|:-:|:-:|
 | See products, locations, stock, POs, orders | ✓ | ✓ | ✓ | ✓ | ✓ |
 | See suppliers, product costs, the Sync screen | ✓ | ✓ | | ✓ | ✓ |
-| Edit products, packs, costs | ✓ | ✓ | | | |
+| Edit products, packs, costs; import products | ✓ | ✓ | | | |
 | Edit locations and bins | ✓ | ✓ | | | |
 | Print bin labels | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Move stock between bins | ✓ | ✓ | ✓ | | |
@@ -337,6 +337,45 @@ The amber box lists products still on the single "Unit" pack. That's fine if the
 5. Click **Apply N change(s)**. Only valid rows are applied.
 
 A preview expires after 30 minutes. If it has expired, upload the file again.
+
+### 4.7 Import products
+
+**Catalogue → Import products** brings products, packs and channel mappings into the catalogue in bulk. Admins and warehouse managers can use it. It changes the catalogue only: **stock never changes**, and new listings start with sync off, so pushing stock is still a separate choice on the Sync screen.
+
+**Start an import**
+
+- **Fetch from Ordermentum** reads the live catalogue. Nothing is sent to Ordermentum. The preview appears by itself when the fetch finishes, usually within a few seconds.
+- **Preview file** reads a CSV or XLSX. Click **Download template** for the columns. Use this for the portal: see below.
+
+**Read the preview**
+
+Rows are grouped, each with its reason:
+
+| Group | Meaning |
+|---|---|
+| **Conflict** | Not imported. For example, the SKU is one product and the channel item is mapped to another. |
+| **New** | Creates the product, its packs and the mapping, and sets **Sold on**. |
+| **Update** | Fills fields that are empty in the WMS, and adds a missing pack, mapping or barcode. |
+| **Mapping only** | Adds a channel mapping to an existing product. |
+| **Skipped** | Nothing to do, deactivated at the source, or excluded by you. |
+
+A product is matched by SKU, then by its channel mapping, then by barcode.
+
+**Change what happens**
+
+- **Amber rows say "Check pack".** The app couldn't read the pack for certain, so enter the pack name and size, or untick **Include**. **Accept suggested packs** fills in the rows where the name gives a single size, such as "Syrup 750ml" (Each × 1).
+- **Overwrite** appears on a row whose WMS values differ from the source. Without the tick, the WMS keeps its name, pack and flags.
+- **Pack sizes never change.** With Overwrite ticked on a different pack size, the app adds the new pack and moves the channel listing to it. The old pack stays as it was.
+- **Batch-tracked by range** ticks a whole range at once, such as Kombucha. An existing product only changes if its Overwrite is ticked too. A product with stock movements keeps its setting.
+- A product still on the default "Unit" pack gets no extra pack. Set it up on **Pack setup** ([4.5](#45-pack-setup-before-go-live)).
+
+Click **Re-check** to see what your edits do, then **Apply**. Conflicts stay out, and Apply checks everything again first. Each product gets one entry in the audit log. Held Ordermentum orders containing a newly mapped item are processed again, as with **Map** ([12.4](#124-map-a-channel-item)).
+
+A preview expires after 30 minutes. If it has expired, start the import again.
+
+**Import from the portal**
+
+The app can't read the portal catalogue directly. Export the portal's products to the template, then upload that file. The fields are listed in `docs/PORTAL.md` under "Importing portal products".
 
 ---
 

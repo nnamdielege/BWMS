@@ -50,4 +50,29 @@ class OrderInbox
 
         return $inbox;
     }
+
+    /** Run an event again, or park it as held while ingestion is off. */
+    public function requeue(IntegrationInbox $inbox): void
+    {
+        $enabled = (bool) config('bwms.ordermentum.ingest_enabled');
+        $inbox->mark($enabled ? IntegrationInbox::STATUS_RECEIVED : IntegrationInbox::STATUS_HELD, $enabled ? null : 'Ingestion is switched off.');
+        if ($enabled) {
+            ProcessOrdermentumOrder::dispatch($inbox->external_id, $inbox->id);
+        }
+    }
+
+    /**
+     * Orders that waited for a variant run again once it is mapped. An order still
+     * missing another variant goes back to needs_mapping by itself.
+     *
+     * @return int events requeued
+     */
+    public function replayHeldFor(string $variantId): int
+    {
+        $held = IntegrationInbox::where('channel', OrderChannel::Ordermentum->value)->where('status', IntegrationInbox::STATUS_NEEDS_MAPPING)
+            ->where('error', 'like', '%'.$variantId.'%')->get();
+        $held->each(fn (IntegrationInbox $inbox) => $this->requeue($inbox));
+
+        return $held->count();
+    }
 }

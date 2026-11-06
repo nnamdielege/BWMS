@@ -66,6 +66,26 @@ Timeouts are 5s connect and 15s total. The client refuses to run during a web re
 - **Bulk:** run `php artisan channels:portal-map products.csv [--dry-run]`. The CSV has columns `portal_product_id, sku[, pack_qty]`. `pack_qty` picks the BWMS pack; without it, the product's default sale pack is used. Listings start with sync off.
 - **One at a time:** an unknown product on a portal call appears in the Sync screen's mapping queue (channel `portal`). Map it there.
 
+## Importing portal products
+
+BWMS can't read the portal catalogue. `PortalClient` only pushes stock and dispatch events, `PORTAL_DB_*` is an optional copy for the migration report and isn't set, and the portal has no signed catalogue endpoint for BWMS. So portal products come in through the CSV/XLSX route (`Catalogue → Import products`, or `php artisan products:import file=portal.csv`). `products:import portal` says this and stops.
+
+Fill the template from the portal's `products` table:
+
+| Template column | From the portal | Notes |
+|---|---|---|
+| `portal_item_id` | `id` | Required for a mapping. The ID BWMS uses as `portal_product_id`. |
+| `sku` | `sku` | How it finds the product Ordermentum already created. |
+| `name` | `name` | |
+| `pack_name`, `pack_size` | **Chosen by a person** | The BWMS pack equal to **one portal sell unit**. Don't derive these from `unit` / `unit_quantity`: the same sell unit can be written "1 × carton" or "12 × bottle" (`docs/portal-bwms-integration.md`). If the file leaves them blank, a pack in the name is used, otherwise the row is "Check pack". |
+| `sell_on_portal` | `yes` | |
+| `active` | `is_active` | |
+| `range` | first category (optional) | |
+| `barcode` | none | The portal has no barcode column. |
+| `base_unit`, `batch_tracked`, `shelf_life_days` | none | Only for products new to BWMS. |
+
+Leave `sell_on_ordermentum` and `ordermentum_variant_id` blank so the Ordermentum side isn't touched. Same SKU from both channels gives one product with two mappings.
+
 ## Cutover
 
 1. Exchange keys: BWMS's inbound key goes to the portal, and the portal's outbound key comes to BWMS.
