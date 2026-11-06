@@ -1,6 +1,6 @@
 # Portal integration (BWMS side)
 
-BWMS and the portal (shop.localselection.com.au) talk over two small signed APIs (spec B4.3–B4.4). BWMS owns stock. The portal keeps `stock_qty` as a display cache and reserves at checkout. The portal's own changes are a separate task: `docs/portal-bwms-integration.md`.
+BWMS and the portal (shop.localselection.com.au) talk over two small signed APIs (spec B4.3–B4.4). The contract the portal builds from is `docs/PORTAL-INTEGRATION-SPEC.md`. BWMS owns stock. The portal keeps `stock_qty` as a display cache and reserves at checkout. The portal's own changes are a separate task: `docs/portal-bwms-integration.md`.
 
 ## Settings
 

@@ -1,5 +1,7 @@
 # Task: connect the portal to BWMS (portal side)
 
+> **Build from `docs/PORTAL-INTEGRATION-SPEC.md`.** That's the exact contract, checked against the running API. It corrects this page where they differ: for example, a `PUT` must carry the customer and delivery date, not just `{version, status, lines}`. This page stays for the reasoning behind the short-shipment and `unit_quantity` decisions.
+
 **Repo:** `localSelection` (shop.localselection.com.au). This is a standalone task for the portal maintainer. BWMS does not change the portal repo.
 **Contract:** spec B4.3–B4.4. BWMS's side is built and tested (`docs/PORTAL.md` in the BWMS repo).
 **Rule that must not break:** the portal **never stops taking orders because BWMS is down** (D-5).

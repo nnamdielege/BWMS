@@ -1,0 +1,469 @@
+# Portal ↔ BWMS integration spec
+
+The contract the portal (`localSelection`, shop.localselection.com.au) implements to send orders to BWMS, the warehouse system. This document is self-contained: you don't need the BWMS repo to build from it. BWMS's side is built and tested. Every response body below is real output from it.
+
+**Rule that must never break:** the portal keeps taking orders when BWMS is down. BWMS being slow or unreachable is never a reason to refuse a shopper.
+
+**Who owns what:**
+- BWMS owns stock. The portal's `products.stock_qty` becomes a display cache that BWMS overwrites.
+- The portal owns prices, payment, invoices and the shopper.
+- Each side calls the other. Both directions are signed the same way.
+
+**Contents:** [1 Config](#1-config) · [2 Signing](#2-signing-both-directions) · [3 Idempotency](#3-idempotency-keys) · [4 Reserve at checkout](#4-post-reservations-reserve-at-checkout) · [5 Refusals at checkout](#5-handling-the-response-at-checkout) · [6 Update](#6-put-ordersref-full-state-update) · [7 Cancel](#7-cancel) · [8 Outbox and retries](#8-outbox-and-retries) · [9 Reading from BWMS](#9-reading-from-bwms) · [10 Stock from BWMS](#10-put-apibwmsv1stock-stock-from-bwms) · [11 Dispatch events](#11-post-apibwmsv1order-events-dispatch-events) · [12 Portal changes](#12-changes-in-the-portal-code) · [13 Go-live](#13-go-live) · [14 Acceptance](#14-acceptance-checks)
+
+## 1. Config
+
+Add to the portal's `.env`. Both apps are on the same VPS, so use a private hostname or localhost, not public DNS.
+
+| Setting | Holds |
+|---|---|
+| `BWMS_BASE_URL` | BWMS's base URL. All calls below go to `{BWMS_BASE_URL}/api/portal/v1/…`. |
+| `BWMS_KEY_ID`, `BWMS_SECRET` | The key the portal signs with when calling BWMS. |
+| `BWMS_INBOUND_KEYS` | `keyId:secret[,keyId2:secret2]`. The keys BWMS signs with when calling the portal. Two can be active at once, for rotation. |
+| `BWMS_ENABLED` | Off until cutover. While off, the portal behaves exactly as it does today. |
+
+Never log a secret or a signature.
+
+## 2. Signing (both directions)
+
+There's no bearer token or API key header. Every request carries three headers:
+
+| Header | Value |
+|---|---|
+| `X-BWMS-Key-Id` | The key ID |
+| `X-BWMS-Timestamp` | Unix seconds, as a string of digits |
+| `X-BWMS-Signature` | Lowercase hex HMAC-SHA256 of `{timestamp}.{raw body}`, using the secret for that key ID |
+
+```php
+$body = json_encode($payload, JSON_UNESCAPED_SLASHES);  // sign these exact bytes, and send these exact bytes
+$timestamp = (string) time();
+$signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
+```
+
+- **Sign the exact bytes you send.** Encode once, then pass that string as the request body. Don't hand an array to the HTTP client and let it encode again.
+- **A GET signs an empty body:** `{timestamp}.`
+- **Re-sign on every attempt.** Signatures go stale after 300 seconds, so an outbox stores the body, never the signature.
+
+**Test vector.** Secret `test-secret`, timestamp `1762400000`:
+
+| Body | Signature |
+|---|---|
+| `{"order_ref":"ORD-TEST"}` | `b990a69c8bee0f1bd4fc2c1ffdd975103da0e7cb7c2660e44acefa6d5f8a2ba7` |
+| (empty) | `706c92724e4f461f647d1b8c045967f6c4eaaeb983a78be7171f33ef220fac03` |
+
+**Failures from BWMS:**
+
+| Status | Body | Meaning |
+|---|---|---|
+| 401 | `{"error":"unknown_key"}` | Key ID missing or not known |
+| 401 | `{"error":"stale_timestamp"}` | More than 300 seconds off. Check the clock. |
+| 401 | `{"error":"bad_signature"}` | Wrong secret, or the signed bytes aren't the sent bytes |
+| 503 | `{"error":"portal_api_disabled"}` | BWMS has the API switched off |
+| 429 | | More than 300 requests a minute. Honour `Retry-After`. |
+
+**When the portal verifies calls from BWMS** ([10](#10-put-apibwmsv1stock-stock-from-bwms), [11](#11-post-apibwmsv1order-events-dispatch-events)), apply the same rules. Answer 401 for an unknown key, a timestamp more than 300 seconds off, or a signature that doesn't match. Compare with `hash_equals`, over the raw request body (`$request->getContent()`).
+
+## 3. Idempotency keys
+
+Every `POST` and `PUT` to BWMS needs an `Idempotency-Key` header, 1 to 191 characters. Without one the answer is `400 {"error":"idempotency_key_required"}`.
+
+| Call | Key |
+|---|---|
+| Reservation | `portal:order:{reference}:reserve` |
+| Update or cancel | `portal:order:{reference}:v{version}` |
+
+BWMS stores the first answer for 30 days, per key:
+
+- **Same key, same body:** the stored response comes back, with header `Idempotent-Replay: true`. Nothing runs again.
+- **Same key, different body:** `422 {"error":"idempotency_conflict"}`.
+- **5xx answers aren't stored,** so a retry runs for real.
+
+> **A stored refusal stays refused.** A 409 or 422 is stored like a success. Retrying with the same key returns the same refusal even after the problem is fixed: more stock arrived, or the product was mapped. To try again after a fix, use a **new key**, for example `portal:order:{reference}:reserve:r2`. Retries for a timeout or 5xx keep the **same** key.
+
+## 4. `POST /reservations`: reserve at checkout
+
+Call this once per order, when it's placed, **before** the portal's stock transaction opens and never inside it.
+
+```
+POST {BWMS_BASE_URL}/api/portal/v1/reservations
+Content-Type: application/json
+Accept: application/json
+Idempotency-Key: portal:order:ORD-7K2M9XQ4LP1A:reserve
+X-BWMS-Key-Id: …
+X-BWMS-Timestamp: …
+X-BWMS-Signature: …
+```
+
+```json
+{
+  "order_ref": "ORD-7K2M9XQ4LP1A",
+  "customer": { "portal_user_id": 77, "business_name": "Cafe Test" },
+  "requested_delivery_date": "2026-11-10",
+  "delivery": { "street": "1 Test St", "suburb": "Clontarf", "postcode": "4019", "instructions": "Rear door" },
+  "lines": [
+    { "line_ref": "501", "portal_product_id": 501, "qty": 2, "unit_quantity": 1, "unit": "carton" }
+  ]
+}
+```
+
+| Field | Rules | Source in the portal |
+|---|---|---|
+| `order_ref` | Required, string, max 128. Unique per placement attempt. | `orders.reference` |
+| `customer.portal_user_id` | Integer. Send it: without it the order has no customer. | `orders.retailer_id` |
+| `customer.business_name` | String, max 255. Only used the first time BWMS sees this user. | The buyer's business name |
+| `requested_delivery_date` | `YYYY-MM-DD`, Brisbane date. **Always send it.** | The value `placeOrder()` stores in `orders.requested_delivery_date` |
+| `delivery.street` | String, max 255 | `delivery_address['street']` |
+| `delivery.suburb` | String, max 100 | `delivery_address['city']`, if not empty |
+| `delivery.postcode` | **Exactly 4 digits, or leave it out** | See below |
+| `delivery.instructions` | String, max 1000 | `delivery_address['notes']` |
+| `lines` | Required, 1 to 500 lines | The order's items |
+| `lines[].line_ref` | Required, string, max 64, unique in the order, **the same on every later call** | Use the product ID as a string. Cart lines are unique per product, and the item ID doesn't exist yet. |
+| `lines[].portal_product_id` | Required, integer | `product_id` |
+| `lines[].qty` | Required, whole number, 0 to 1,000,000. In the portal's sell units. | `qty` |
+| `lines[].unit_quantity`, `lines[].unit` | Optional. Send both. | From the item snapshot |
+
+**`version` and `status` are refused on this call** (`422`, "field is prohibited"). They belong to `PUT`.
+
+**Delivery date.** BWMS uses this date as sent. If the area doesn't run that day, BWMS keeps the date and flags it for staff. It never moves it, and it never refuses the order over a date. Leaving the date out, or sending one that can't be read, puts the order on the next run after 1 pm cutoff with a "No delivery date from Portal" flag. A timestamp is accepted and takes its Brisbane date.
+
+**Postcode.** BWMS works out the delivery run from it. A postcode that isn't 4 digits is a `422` and **refuses the order**, so only send one you've checked against `/^\d{4}$/`.
+- Retail buyers: `users.cached_postcode`.
+- Wholesale buyers have no postcode field. Take a 4-digit token from the end of `users.business_address` if there is one.
+- If you have neither, leave `postcode` out. BWMS parks the order for staff to assign a run.
+- Leave out empty strings throughout `delivery`.
+
+**Quantities are portal sell units,** not BWMS base units. Each portal product maps to one BWMS pack equal to one sell unit. `unit_quantity` and `unit` are only a consistency check: a mismatch adds a `warnings` entry and the order still succeeds. Log warnings for staff.
+
+**Success: 201.**
+
+```json
+{"status":"confirmed","bwms_status":"open","reservation_status":"confirmed","reservation_id":1,"lines":[{"line_ref":"501","reserved_qty":2}]}
+```
+
+With a warning:
+
+```json
+{"status":"confirmed","bwms_status":"open","reservation_status":"confirmed","reservation_id":3,"lines":[{"line_ref":"501","reserved_qty":1}],"warnings":["line 501: portal \"12 x carton\" differs from the mapped pack (1 Carton)"]}
+```
+
+Reservation is all-or-nothing: every line is reserved, or none.
+
+## 5. Handling the response at checkout
+
+**Timeouts: 1 second to connect, 3 seconds total.** A shopper is waiting.
+
+| Response | What the portal does | `reservation_status` |
+|---|---|---|
+| **201** | Place the order as today. | `confirmed` |
+| **409** `insufficient_stock` | **Don't place it.** Show the shopper `available` per line. BWMS reserved nothing. | none |
+| **422** | **Don't place it.** Show a plain message, log it, alert staff. | none |
+| Timeout, connection error, **5xx**, **503**, **429**, **401**, **400** | **Place the order anyway.** Queue the same request in the outbox ([8](#8-outbox-and-retries)). Alert staff on 400 or 401: those are bugs or bad keys, not outages. | `unconfirmed` |
+
+```json
+{"status":"insufficient_stock","lines":[{"line_ref":"501","requested":9,"available":3}]}
+```
+
+`requested` and `available` are in sell units. `available` can be 0.
+
+**The 422s** are all refusals, in three shapes. Show the shopper something like "This item can't be ordered right now", never the raw error.
+
+```json
+{"status":"unknown_product","lines":[{"line_ref":"501","portal_product_id":999}]}
+{"status":"invalid","errors":{"delivery.postcode":["The delivery.postcode field format is invalid."]}}
+{"error":"idempotency_conflict"}
+```
+
+| 422 | Cause | Fix |
+|---|---|---|
+| `unknown_product` | The product isn't mapped in BWMS. It appears in BWMS's mapping queue. | Staff map it. **The shopper can then try again.** |
+| `invalid` | A field broke the rules above. | A portal bug: fix the payload. |
+| `idempotency_conflict` | A key was reused with a different body. | A portal bug: references must be unique per attempt. |
+
+**Each placement attempt gets a new `reference`.** A refused order is never saved, so the shopper's next try mints a new reference, and so a new key. That's what stops a stored refusal ([3](#3-idempotency-keys)) from sticking to them.
+
+**If the portal can't finish after a 201.** BWMS is now holding stock for an order that won't exist: for example, the stock transaction threw. Queue a cancel for that `order_ref` in the outbox ([7](#7-cancel)). The outbox row can't depend on a saved order.
+
+## 6. `PUT /orders/{ref}`: full-state update
+
+Send this whenever an order changes: payment confirmed, a line edited, the delivery date or address changed.
+
+```
+PUT {BWMS_BASE_URL}/api/portal/v1/orders/ORD-7K2M9XQ4LP1A
+Idempotency-Key: portal:order:ORD-7K2M9XQ4LP1A:v1
+```
+
+```json
+{
+  "version": 1,
+  "status": "confirmed",
+  "customer": { "portal_user_id": 77, "business_name": "Cafe Test" },
+  "requested_delivery_date": "2026-11-10",
+  "delivery": { "street": "1 Test St", "suburb": "Clontarf", "postcode": "4019", "instructions": "Rear door" },
+  "lines": [
+    { "line_ref": "501", "portal_product_id": 501, "qty": 2, "unit_quantity": 1, "unit": "carton" }
+  ]
+}
+```
+
+`order_ref` comes from the URL. The fields follow the rules in [4](#4-post-reservations-reserve-at-checkout), plus:
+
+| Field | Rules |
+|---|---|
+| `version` | Required, integer from 1. Increases on every change sent. |
+| `status` | Required: `confirmed` or `cancelled` |
+
+> **It's full state: send every field, every time.** BWMS replaces what it holds. A `PUT` with only `version`, `status` and `lines` **clears the order's customer and delivery date**, and flags it "No delivery date from Portal". The exception is `delivery`: left out, the address stays as it was.
+
+**How BWMS applies it:**
+
+| Situation | Result |
+|---|---|
+| `version` is higher than the last applied | Applied. 200, same body as a reservation. |
+| `version` is the same or lower | **Ignored.** 200 with the current state, so check `lines` if it matters. |
+| A line left out | That line is cancelled. |
+| A quantity raised beyond stock | **409** `insufficient_stock`. Nothing changes: not the lines, the date or the version. |
+| Order unknown to BWMS, `status: confirmed` | Creates it, the same as a reservation. |
+| New delivery date, not yet on a pick list | The order moves to the new run. |
+| New delivery date, already picking or packed | It **stays on the old date** and is flagged for staff with both dates. The answer is still 200. |
+| Change while being picked | Applied, and flagged for staff. |
+| Order already dispatched or cancelled | **422** `{"status":"invalid","message":"…"}`. A cancelled order can't come back: place a new one. |
+
+**Version.** Add `orders.bwms_version`, default 0 (a reservation counts as 0). Increment it and save it with the change, then queue the call. After a 409 on an edit, BWMS keeps its old state and a person decides. No automatic cancellation.
+
+**Payment.** BWMS has no payment state. Sending a `PUT` on payment is harmless but changes nothing: see [Open items](#open-items).
+
+## 7. Cancel
+
+A cancel is a `PUT` with `status: "cancelled"`.
+
+```
+PUT {BWMS_BASE_URL}/api/portal/v1/orders/ORD-7K2M9XQ4LP1A
+Idempotency-Key: portal:order:ORD-7K2M9XQ4LP1A:v2
+```
+
+```json
+{
+  "version": 2,
+  "status": "cancelled",
+  "customer": { "portal_user_id": 77, "business_name": "Cafe Test" },
+  "requested_delivery_date": "2026-11-10",
+  "lines": []
+}
+```
+
+**Send `lines: []` on a cancel.** The field must be present, but BWMS doesn't need the lines, and a line whose product has since been unmapped would otherwise refuse the cancel with a 422.
+
+BWMS releases everything not yet dispatched and removes it from any open pick list.
+
+| Situation | Response | Then |
+|---|---|---|
+| Nothing dispatched yet | 200, `"status":"cancelled"` | Done. `reserved_qty` is 0. |
+| **Part already dispatched** | 200, `"status":"confirmed","bwms_status":"dispatched"` | The remainder is cancelled. Goods that left stay left. **Read `bwms_status`, not `status`.** Handle what shipped as in [11](#11-post-apibwmsv1order-events-dispatch-events). |
+| Already cancelled | 422 `{"status":"invalid","message":"… is Cancelled."}` | Treat as done. |
+| Already fully dispatched | 422 `{"status":"invalid","message":"…"}` | Too late. Alert staff: the goods have left. |
+| BWMS never saw the order | 404 `{"status":"unknown_order","message":"…"}` | Treat as done. Make sure no reservation for it is still waiting in the outbox ([8](#8-outbox-and-retries)). |
+
+```json
+{"status":"cancelled","bwms_status":"cancelled","reservation_status":"confirmed","reservation_id":10,"lines":[{"line_ref":"501","reserved_qty":0}]}
+```
+
+`reservation_status` always reads `confirmed`, even on a cancelled order. Ignore it after the first reservation.
+
+**Every path that ends an order must send this.** See [12](#12-changes-in-the-portal-code).
+
+## 8. Outbox and retries
+
+Anything that can't complete in the moment goes in an outbox, so nothing is lost when BWMS is away.
+
+**Table**, for example `bwms_outbox`: `id, order_ref, order_id (nullable), method, path, idempotency_key, body, attempts, next_attempt_at, last_error`.
+
+**Rules:**
+- Store the **exact body** and the key. Re-sign on every attempt ([2](#2-signing-both-directions)).
+- **Keep the order of calls per `order_ref`:** one at a time, oldest first, so a cancel can't overtake its reservation.
+- Queue after the database commit. Never call BWMS inside a transaction.
+- Schedule: 10s, 30s, 1m, 5m, then every 15m, with no limit while the order is open.
+- Timeouts for outbox calls can be longer: 5 seconds to connect, 15 total.
+
+| Response | Action |
+|---|---|
+| **2xx** | Delete the row. A reservation sets `reservation_status = 'confirmed'`. |
+| Timeout, connection error, **5xx**, **503** | Retry on schedule, same key and body. |
+| **429** | Retry after `Retry-After`. |
+| **401** | Keep retrying and alert staff: a bad key or clock must not lose orders. |
+| **400** | Stop and alert: a bug. |
+| **409**, reservation | Set `reservation_status = 'reservation_failed'`, delete the row, email staff, show an admin banner. BWMS lists it too. A person decides. **No automatic cancellation.** |
+| **409**, update | Delete the row and alert staff. BWMS kept its previous state. |
+| **422** `unknown_product` | Keep the row, marked as blocked, and alert staff. Once it's mapped, retry with a **new key** ([3](#3-idempotency-keys)). |
+| **422**, other | Delete the row and alert staff, except a cancel ([7](#7-cancel)). |
+| **404** on a cancel | Delete the row. |
+
+Idempotency records last 30 days. An outbox row older than that re-runs for real, which is safe: BWMS ignores a version it has already applied.
+
+## 9. Reading from BWMS
+
+For reconciliation and support. Both calls are signed, with an empty body and no `Idempotency-Key`.
+
+**`GET /api/portal/v1/orders/{ref}`.** The source of truth for an order. `404 {"status":"unknown_order"}` if BWMS never saw it.
+
+```json
+{"status":"confirmed","bwms_status":"open","reservation_status":"confirmed","reservation_id":1,"lines":[{"line_ref":"501","reserved_qty":2,"dispatched_qty":0}]}
+```
+
+| `bwms_status` | Meaning |
+|---|---|
+| `open` | Reserved, waiting to be picked |
+| `picking` | On a pick list |
+| `partially_dispatched` | Some has left. The rest is still reserved. |
+| `dispatched` | Finished |
+| `cancelled` | Cancelled |
+
+`dispatched_qty` is cumulative and in sell units. It can be a decimal if BWMS shipped part of a pack, for example `0.5`.
+
+**`GET /api/portal/v1/stock?product_ids=501,999`.** Comma-separated, up to 500. Unmapped IDs are left out.
+
+```json
+[{"portal_product_id":501,"available":3}]
+```
+
+## 10. `PUT /api/bwms/v1/stock`: stock from BWMS
+
+BWMS calls the portal after stock changes, debounced by a few seconds.
+
+```
+PUT {PORTAL}/api/bwms/v1/stock
+Content-Type: application/json
+X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
+```
+
+The body is a bare JSON array, up to 100 items:
+
+```json
+[{"portal_product_id":501,"available":3,"as_of":"2026-11-06T11:31:20.123456Z"}]
+```
+
+- `available` is in sell units, and never below 0.
+- `as_of` is a UTC timestamp with microseconds. Add `products.stock_as_of` and update `stock_qty = available` only when `as_of` is newer than the stored value, so a late delivery can't overwrite a fresher one.
+- **Skip an ID you don't know and still answer 200.** A 4xx fails the whole batch.
+
+| Your answer | BWMS does |
+|---|---|
+| 2xx | Done. An unchanged figure isn't resent for up to 24 hours. |
+| 5xx or timeout | Retries the batch at 10s, 30s, 1m, 5m, 15m, for up to 12 hours |
+| 4xx | **Doesn't retry.** It shows the error on BWMS's Sync screen. |
+
+BWMS's timeouts are 5 seconds to connect and 15 total.
+
+## 11. `POST /api/bwms/v1/order-events`: dispatch events
+
+BWMS calls the portal once per order, per pick list, when goods leave.
+
+```
+POST {PORTAL}/api/bwms/v1/order-events
+Content-Type: application/json
+Idempotency-Key: bwms:order-event:ORD-7K2M9XQ4LP1A:12
+X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
+```
+
+```json
+{"order_ref":"ORD-7K2M9XQ4LP1A","event":"short_shipped","lines":[{"line_ref":"501","qty":1}],"at":"2026-11-06T11:31:20Z"}
+```
+
+| Field | Meaning |
+|---|---|
+| `event` | `dispatched`, or `short_shipped` if less was picked than was planned on this pick list |
+| `lines[].qty` | Sell units that left **in this dispatch**. Can be a decimal, or 0. |
+| `at` | When it left, UTC |
+
+**Answer 200.** Dedupe on the `Idempotency-Key`: a redelivered event must change nothing, and above all must never credit twice.
+
+| Your answer | BWMS does |
+|---|---|
+| 2xx | Done |
+| 5xx or timeout | Retries at 30s, 1m, 5m, 15m, 1h, for up to 24 hours |
+| 4xx | **Doesn't retry.** The event is logged in BWMS and lost to you. Use [9](#9-reading-from-bwms) to recover. |
+
+> **Work out what shipped from the quantities, not the event name.**
+> - **One order can get several events.** Portal orders are backordered by default, so `short_shipped` means the rest is still reserved and may ship later. Add each event's `qty` per line.
+> - **A `dispatched` event doesn't prove the order is complete.** It compares picked against what was planned, and a line with no stock when the pick list was made is never planned. That line is simply missing from `lines`.
+> - **A missing line means nothing shipped for it in this dispatch.**
+
+**On each event:**
+1. Add `qty` to a shipped total per order line.
+2. Shipped total ≥ ordered on every line: set the order to `dispatched`.
+3. Otherwise: mark it part-shipped, and show staff what's outstanding. `GET /orders/{ref}` is the source of truth for `bwms_status` and `dispatched_qty`.
+
+**BWMS doesn't send events for:** an order cancelled in BWMS, a delivery date changed in BWMS, or delivery itself. Run a daily job over open orders that calls `GET /orders/{ref}` and flags any difference for staff.
+
+### Short shipments (decided 2026-10-27)
+
+The portal **invoices shipped quantities only**.
+- **Not yet charged** (invoice, COD, wallet not yet captured): invoice and charge shipped quantities.
+- **Already charged** (Stripe captured, or a Xero invoice raised): issue a Xero credit note and/or a Stripe partial refund for (ordered − shipped) × unit price, including GST, and email the customer what was short and what was credited.
+- Record the credit note or refund reference on the order.
+
+See [Open items](#open-items) for when to credit.
+
+## 12. Changes in the portal code
+
+Line numbers are as of commit `6bccbc2`.
+
+**`app/Services/CheckoutService.php`, `placeOrder()`:**
+1. **Mint `reference` before the transaction.** Today it's created inside `Order::create()` (~line 519), but BWMS needs it first.
+2. **Call BWMS after every local check and before `DB::transaction()` (~line 505).** Both `confirm()` and `placeOnBehalf()` go through here, so staff-entered orders are covered.
+3. Act on the response ([5](#5-handling-the-response-at-checkout)). Add `orders.reservation_status`, nullable: `confirmed`, `unconfirmed`, `reservation_failed`.
+4. Keep the `stock_qty` decrement. It's now only a display cache, and BWMS's push overwrites it. If it throws after a 201, queue a cancel ([5](#5-handling-the-response-at-checkout)).
+5. Add `orders.bwms_version`, default 0.
+
+**Send a cancel ([7](#7-cancel)) from every path that ends an order:**
+
+| Where | Line |
+|---|---|
+| `OrderAdminService::cancel()` | ~130 |
+| `Api/OrderController` | ~88 |
+| `StripeOrderPaymentService::release()`, which covers `ReleaseAbandonedStripeOrders` and `PaymentLinkService` | ~83 |
+
+Check for any other move to `cancelled`, `payment_failed` or an expired state.
+
+**Add two routes** in `routes/api.php`, outside the `auth` and `throttle` groups, stateless, with a middleware that verifies the signature ([2](#2-signing-both-directions)):
+- `PUT /api/bwms/v1/stock` ([10](#10-put-apibwmsv1stock-stock-from-bwms))
+- `POST /api/bwms/v1/order-events` ([11](#11-post-apibwmsv1order-events-dispatch-events))
+
+**The HTTP client:** one service, used for checkout and the outbox. It signs, sets the timeouts, and never logs secrets.
+
+## 13. Go-live
+
+1. **Exchange keys.** The portal's key goes into BWMS's `PORTAL_API_KEYS`. BWMS's `PORTAL_OUTBOUND_KEY_ID` and `PORTAL_OUTBOUND_SECRET` go into `BWMS_INBOUND_KEYS`.
+2. **Map every portal product.** Export `id` as `portal_item_id`, with `sku`, `name` and `is_active`, plus `pack_name` and `pack_size` chosen by a person: the BWMS pack equal to **one portal sell unit**. Don't derive them from `unit_quantity`: the same sell unit can be written "1 × carton" or "12 × bottle", and `ImportRealProducts` wrote every product as `carton / 1`.
+3. **Turn on BWMS's API** (`PORTAL_API_ENABLED`), then `BWMS_ENABLED`. The portal starts reserving.
+4. **Turn on stock and events** in BWMS (`PORTAL_PUSH_ENABLED`, `PORTAL_EVENTS_ENABLED`, then "Enable all portal listings" on its Sync screen).
+5. **Turn off the portal's own Ordermentum sync,** so BWMS is the only stock writer: set `ORDERMENTUM_SYNC_MODE=off` and stop `PushProductStockToOrdermentum`.
+
+## 14. Acceptance checks
+
+Build tests for these against a stub of BWMS:
+
+- [ ] The signature matches both test vectors in [2](#2-signing-both-directions).
+- [ ] 201 places the order. `reservation_status = 'confirmed'`.
+- [ ] 409 shows `available` per line and saves nothing.
+- [ ] 422 shows a plain message, saves nothing, and alerts staff.
+- [ ] BWMS down (timeout, 5xx, 503) still places the order within about 3 seconds, as `unconfirmed`, with an outbox row.
+- [ ] An outbox retry uses the same key and body with a new timestamp and signature, and a 201 sets `confirmed`.
+- [ ] An outbox 409 sets `reservation_failed`, alerts staff and doesn't cancel.
+- [ ] A 201 followed by a local failure queues a cancel.
+- [ ] A refused shopper's next try uses a new `reference`.
+- [ ] Every cancel path sends a `PUT` with a higher version, the customer, the date and `lines: []`.
+- [ ] Every `PUT` includes `customer` and `requested_delivery_date`.
+- [ ] A bad postcode is left out, never sent.
+- [ ] No BWMS call happens inside a database transaction.
+- [ ] Calls to the two inbound routes without a valid signature get 401.
+- [ ] A stock push with an older `as_of` is ignored, and an unknown product ID still gets 200.
+- [ ] A redelivered order event changes nothing and credits nothing.
+- [ ] Two events for one order add up. The order is only `dispatched` once every line has shipped in full.
+- [ ] A `dispatched` event missing a line leaves the order part-shipped.
+
+## Open items
+
+Decisions for the owner. **Don't work around these without asking.**
+
+1. **Unpaid Stripe orders can be picked.** BWMS creates the order at reservation and has no payment state, so an `awaiting_payment` order is pickable until the portal cancels it. The portal's own run sheets leave those orders out. Either reserve only once paid, losing the hold during payment, or give BWMS a hold state.
+2. **When to credit a short shipment.** Portal orders backorder by default, so the rest may still ship after a `short_shipped` event. Crediting straight away, as decided on 2026-10-27, then needs a re-charge if it ships. Until this is decided: on `short_shipped`, flag it for staff and **don't credit automatically** while `GET /orders/{ref}` shows `partially_dispatched`. Credit once the order is `dispatched` or the remainder is cancelled.
