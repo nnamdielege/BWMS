@@ -430,6 +430,61 @@ class ProductImportTest extends TestCase
         $this->assertFalse($p->fresh()->is_batch_tracked);
     }
 
+    public function test_the_batch_only_overwrite_changes_batch_tracking_and_nothing_else()
+    {
+        $p = $this->packedProduct(attrs: ['name' => 'Soda (our name)', 'shelf_life_days' => 30]);
+        $rows = [['sku' => 'SODA-12', 'name' => 'Soda from the file', 'shelf_life_days' => '90', 'pack_name' => 'Case', 'pack_size' => '12']];
+
+        $key = $this->upload($this->csv($rows))['rows'][0]['key'];
+        $edit = [$key => ['batch_tracked' => true, 'overwrite_batch' => true]];
+        $this->actingAs($this->manager)->put(route('product-import.revise'), ['token' => session('product_import_token'), 'edits' => $edit])->assertSessionHasNoErrors();
+
+        $preview = $this->previewFor();
+        $row = $preview['rows'][0];
+        $this->assertSame(['shelf_life_days' => false, 'name' => false, 'is_batch_tracked' => true], array_column($row['diffs'], 'applied', 'field'));
+        $this->assertStringContainsString('name', $row['reason']);
+        $this->assertStringNotContainsString('batch', $row['reason']);
+        $this->assertSame(1, $preview['summary']['needs_tick'], 'Name and shelf life still wait for the row tick');
+
+        $this->applyPreview($edit)->assertSessionHas('success');
+
+        $p->refresh();
+        $this->assertTrue($p->is_batch_tracked);
+        $this->assertSame(['Soda (our name)', 30], [$p->name, $p->shelf_life_days]);
+    }
+
+    public function test_setting_a_batch_value_without_any_overwrite_changes_nothing()
+    {
+        $p = $this->packedProduct();
+        $key = $this->upload($this->csv([['sku' => 'SODA-12', 'name' => 'Soda 330ml x 12']]))['rows'][0]['key'];
+
+        $this->applyPreview([$key => ['batch_tracked' => true]])->assertSessionHas('success');
+
+        $this->assertFalse($p->fresh()->is_batch_tracked);
+    }
+
+    public function test_rows_show_when_stock_movements_lock_batch_tracking_and_an_overwrite_cant_get_past_it()
+    {
+        $moved = $this->packedProduct();
+        $this->stockIn($moved, 5);
+        $free = $this->packedProduct('FREE-1');
+        $preview = $this->upload($this->csv([
+            ['sku' => 'SODA-12', 'name' => 'Soda 330ml x 12'],
+            ['sku' => 'FREE-1', 'name' => 'Soda 330ml x 12'],
+            ['sku' => 'NEW-1', 'name' => 'Soda 330ml x 12'],
+        ]));
+        $rows = $this->rowsBySku($preview);
+        $this->assertSame([true, false, false], [$rows['SODA-12']['batch_locked'], $rows['FREE-1']['batch_locked'], $rows['NEW-1']['batch_locked']]);
+
+        // What Apply to whole range sends, even if a stale page included the locked row.
+        $edit = ['batch_tracked' => true, 'overwrite_batch' => true];
+        $this->applyPreview(array_fill_keys(array_column($preview['rows'], 'key'), $edit))->assertSessionHas('success');
+
+        $this->assertFalse($moved->fresh()->is_batch_tracked);
+        $this->assertTrue($free->fresh()->is_batch_tracked);
+        $this->assertTrue(Product::where('sku', 'NEW-1')->sole()->is_batch_tracked);
+    }
+
     public function test_an_import_creates_and_changes_no_stock()
     {
         $p = $this->packedProduct();

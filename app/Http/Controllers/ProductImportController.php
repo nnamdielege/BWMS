@@ -131,6 +131,7 @@ class ProductImportController extends Controller
             'edits.*' => ['array'],
             'edits.*.included' => ['sometimes', 'boolean'],
             'edits.*.overwrite' => ['sometimes', 'boolean'],
+            'edits.*.overwrite_batch' => ['sometimes', 'boolean'],
             'edits.*.pack_name' => ['nullable', 'string', 'max:64'],
             'edits.*.pack_size' => ['nullable', 'integer', 'min:1', 'max:100000'],
             'edits.*.base_unit' => ['nullable', 'string', 'max:32'],

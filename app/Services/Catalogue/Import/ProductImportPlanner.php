@@ -23,7 +23,8 @@ use App\Services\Catalogue\PackSetupService;
  * apply resolves each item again on live data, so a preview can't go stale silently.
  * `actions` is what ProductImportService carries out; `changes` and `diffs` say the
  * same thing for people. Only `actions` from `changes` happen by themselves: `diffs`
- * are WMS values that differ and stay as they are until the row's overwrite is ticked.
+ * are WMS values that differ and stay as they are until the row's overwrite is ticked,
+ * or, for batch tracking alone, its overwrite_batch.
  */
 class ProductImportPlanner
 {
@@ -79,7 +80,7 @@ class ProductImportPlanner
         return $counts + [
             'total' => count($rows),
             'check_pack' => count(array_filter($rows, fn ($r) => $r['check_pack'])),
-            'needs_tick' => count(array_filter($rows, fn ($r) => $r['diffs'] !== [] && ! $r['overwrite'])),
+            'needs_tick' => count(array_filter($rows, fn ($r) => array_filter($r['diffs'], fn ($d) => ! $d['applied']) !== [])),
             'barcodes_ignored' => count(array_filter($rows, fn ($r) => $r['barcode_ignored'])),
         ];
     }
@@ -162,6 +163,7 @@ class ProductImportPlanner
             'barcodes' => $codes,
             'by_id' => $products->keyBy('id'),
             'by_sku' => $products->keyBy(fn (Product $p) => strtoupper($p->sku)),
+            'moved' => StockMovement::whereIn('product_id', $products->pluck('id'))->distinct()->pluck('product_id')->flip()->all(),
         ];
     }
 
@@ -197,6 +199,7 @@ class ProductImportPlanner
         // An inactive item stays out, unless it speaks about a product already here: then it is a difference to show.
         $included = $edit['included'] ?? ($item['active'] !== false || $mapped !== [] || ($product && $item['external'] === []));
         $pack = $this->pack($item, $edit);
+        $locked = $product && isset($context['moved'][$product->id]); // batch tracking is fixed once stock has moved
         $row = [
             'key' => $item['key'], 'line' => $item['line'], 'source' => $item['source'], 'sku' => $sku, 'name' => $item['name'],
             'product' => $product?->only(['id', 'sku', 'name']), 'matched_by' => $matchedBy,
@@ -204,8 +207,9 @@ class ProductImportPlanner
             'pack_why' => $pack['why'], 'suggested' => $pack['suggested'], 'check_pack' => false,
             'range' => ($edit['range'] ?? null) ?: ($item['range'] ?: $product?->range?->name),
             'categories' => $item['categories'],
-            'batch_tracked' => $edit['batch_tracked'] ?? $item['batch_tracked'] ?? $product?->is_batch_tracked ?? false,
-            'included' => $included, 'overwrite' => (bool) ($edit['overwrite'] ?? false),
+            'batch_tracked' => $locked ? $product->is_batch_tracked : ($edit['batch_tracked'] ?? $item['batch_tracked'] ?? $product?->is_batch_tracked ?? false),
+            'wms_batch_tracked' => $product?->is_batch_tracked, 'batch_locked' => $locked,
+            'included' => $included, 'overwrite' => (bool) ($edit['overwrite'] ?? false), 'overwrite_batch' => (bool) ($edit['overwrite_batch'] ?? false),
             'barcode_ignored' => $item['barcode_ignored'],
             'changes' => [], 'diffs' => [], 'notes' => [], 'group' => 'skipped', 'reason' => '', 'actions' => [],
         ];
@@ -324,7 +328,7 @@ class ProductImportPlanner
             }
             foreach ($elsewhere as $listing) {
                 $current = $units->firstWhere('id', $listing->product_unit_id);
-                $row['diffs'][] = ['field' => 'pack', 'label' => 'Pack', 'wms' => "{$current?->name} ×{$current?->base_qty}", 'incoming' => $this->packLabel($pack)];
+                $row['diffs'][] = ['field' => 'pack', 'label' => 'Pack', 'wms' => "{$current?->name} ×{$current?->base_qty}", 'incoming' => $this->packLabel($pack), 'applied' => $overwrite];
                 if ($overwrite) {
                     $actions['repoint'][] = ['listing_id' => $listing->id, 'channel' => $listing->channel];
                 }
@@ -350,8 +354,9 @@ class ProductImportPlanner
 
         // Empty in the WMS: filled in. Otherwise a difference to show, changed only with the tick.
         $apply = function (string $field, string $label, mixed $wms, mixed $incoming, array $set = []) use (&$row, &$actions, $overwrite) {
-            $row['diffs'][] = ['field' => $field, 'label' => $label, 'wms' => $this->show($wms), 'incoming' => $this->show($incoming)];
-            if ($overwrite) {
+            $applied = $overwrite || ($field === 'is_batch_tracked' && $row['overwrite_batch']);
+            $row['diffs'][] = ['field' => $field, 'label' => $label, 'wms' => $this->show($wms), 'incoming' => $this->show($incoming), 'applied' => $applied];
+            if ($applied) {
                 $actions['attributes'] = $set + $actions['attributes'];
             }
         };
@@ -385,7 +390,7 @@ class ProductImportPlanner
         }
         $batch = $edit['batch_tracked'] ?? $item['batch_tracked'];
         if ($batch !== null && (bool) $batch !== $product->is_batch_tracked) {
-            if (StockMovement::where('product_id', $product->id)->exists()) {
+            if ($row['batch_locked']) {
                 $notes[] = 'Batch tracking stays as it is: this product already has stock movements.';
             } else {
                 $apply('is_batch_tracked', 'Batch-tracked', $product->is_batch_tracked, (bool) $batch, ['is_batch_tracked' => (bool) $batch]);
@@ -464,8 +469,9 @@ class ProductImportPlanner
         if ($row['check_pack']) {
             $reason = 'Check pack: '.$row['pack_why'].' '.$reason;
         }
-        if ($row['diffs'] !== [] && ! $row['overwrite']) {
-            $fields = implode(', ', array_map(fn ($d) => mb_strtolower($d['label']), $row['diffs']));
+        $kept = array_filter($row['diffs'], fn ($d) => ! $d['applied']);
+        if ($kept !== []) {
+            $fields = implode(', ', array_map(fn ($d) => mb_strtolower($d['label']), $kept));
             $reason .= " Differs from the WMS: {$fields}. Nothing changes there unless overwrite is ticked.";
         }
         $row['reason'] = $reason;

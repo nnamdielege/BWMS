@@ -22,6 +22,9 @@ type Row = {
     range: string | null;
     categories: string[];
     batch_tracked: boolean;
+    wms_batch_tracked: boolean | null;
+    batch_locked: boolean;
+    overwrite_batch: boolean;
     sell_ordermentum: boolean;
     sell_portal: boolean;
     included: boolean;
@@ -29,7 +32,7 @@ type Row = {
     check_pack: boolean;
     suggested: { pack_name: string; pack_size: number; base_unit: string } | null;
     changes: string[];
-    diffs: { field: string; label: string; wms: string; incoming: string }[];
+    diffs: { field: string; label: string; wms: string; incoming: string; applied: boolean }[];
     notes: string[];
 };
 type Summary = Record<Group | 'total' | 'check_pack' | 'needs_tick' | 'barcodes_ignored', number>;
@@ -43,7 +46,7 @@ type Preview = {
     edits: Record<string, Partial<Draft>>;
     expires_at: number;
 };
-type Draft = Pick<Row, 'pack_name' | 'pack_size' | 'base_unit' | 'range' | 'batch_tracked' | 'sell_ordermentum' | 'sell_portal' | 'included' | 'overwrite'>;
+type Draft = Pick<Row, 'pack_name' | 'pack_size' | 'base_unit' | 'range' | 'batch_tracked' | 'sell_ordermentum' | 'sell_portal' | 'included' | 'overwrite' | 'overwrite_batch'>;
 
 const props = defineProps<{ preview: Preview | null; ranges: string[] }>();
 
@@ -59,7 +62,7 @@ const GROUPS: { key: Group; title: string; hint: string }[] = [
     { key: 'mapping', title: 'Mapping only', hint: 'Adds a channel mapping to an existing product.' },
     { key: 'skipped', title: 'Skipped', hint: 'Nothing to do. Tick Include to bring a row in.' },
 ];
-const FIELDS = ['pack_name', 'pack_size', 'base_unit', 'range', 'batch_tracked', 'sell_ordermentum', 'sell_portal', 'included', 'overwrite'] as const;
+const FIELDS = ['pack_name', 'pack_size', 'base_unit', 'range', 'batch_tracked', 'sell_ordermentum', 'sell_portal', 'included', 'overwrite', 'overwrite_batch'] as const;
 
 const upload = useForm<{ file: File | null }>({ file: null });
 const sendFile = () => upload.post(route('product-import.upload'), { forceFormData: true, preserveScroll: true });
@@ -107,12 +110,19 @@ const rangeNames = computed(() => {
     return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 });
 const selectedRange = ref('');
-const setBatch = (value: boolean) =>
-    props.preview?.rows
-        .filter((r) => r.range === selectedRange.value || r.categories.includes(selectedRange.value))
-        .forEach((r) => {
-            draft[r.key].batch_tracked = value;
-        });
+const rangeValue = ref(true);
+const rangeResult = ref<{ range: string; applied: number; locked: Row[] } | null>(null);
+/** Batch tracking only: the row's other differences keep their own overwrite. Stock that has moved stays as it is. */
+const applyToRange = () => {
+    const rows = props.preview?.rows.filter((r) => r.range === selectedRange.value || r.categories.includes(selectedRange.value)) ?? [];
+    const open = rows.filter((r) => !r.batch_locked);
+    open.forEach((r) => {
+        draft[r.key].batch_tracked = rangeValue.value;
+        draft[r.key].overwrite_batch = true;
+    });
+    rangeResult.value = { range: selectedRange.value, applied: open.length, locked: rows.filter((r) => r.batch_locked) };
+};
+const batchDiffers = (r: Row) => r.product?.id && !r.batch_locked && draft[r.key]?.batch_tracked !== r.wms_batch_tracked;
 
 const recheck = () => props.preview && router.put(route('product-import.revise'), { token: props.preview.token, edits: edits() }, { preserveScroll: true });
 const apply = () =>
@@ -204,12 +214,31 @@ onBeforeUnmount(() => clearInterval(poll));
                             <option v-for="[name, n] in rangeNames" :key="name" :value="name">{{ name }} ({{ n }})</option>
                         </select>
                     </label>
-                    <Button size="sm" variant="outline" :disabled="!selectedRange" @click="setBatch(true)">Tick all</Button>
-                    <Button size="sm" variant="outline" :disabled="!selectedRange" @click="setBatch(false)">Untick all</Button>
-                    <span class="text-muted-foreground">An existing product changes only if its overwrite is ticked too.</span>
+                    <label class="flex flex-col gap-1">
+                        <span class="font-medium">Set to</span>
+                        <select v-model="rangeValue" class="h-9 rounded-md border border-input bg-background px-2">
+                            <option :value="true">Batch-tracked</option>
+                            <option :value="false">Not batch-tracked</option>
+                        </select>
+                    </label>
+                    <Button size="sm" variant="outline" :disabled="!selectedRange" @click="applyToRange">Apply to whole range</Button>
+                    <span class="text-muted-foreground">Sets every row in the range, new and existing, and overwrites batch tracking only.</span>
                     <Button v-if="suggestions.length" size="sm" variant="outline" class="ml-auto" @click="acceptSuggestions">
                         Accept {{ suggestions.length }} suggested pack(s)
                     </Button>
+                    <div v-if="rangeResult" class="w-full" role="status">
+                        <p>{{ rangeResult.range }}: set on {{ rangeResult.applied }} row(s). Nothing is saved until you Apply.</p>
+                        <template v-if="rangeResult.locked.length">
+                            <p class="mt-1 font-medium text-amber-900 dark:text-amber-200">
+                                Skipped {{ rangeResult.locked.length }} product(s) with stock movements. Batch tracking stays as it is:
+                            </p>
+                            <ul class="list-disc pl-5">
+                                <li v-for="r in rangeResult.locked" :key="r.key">
+                                    <span class="font-mono">{{ r.sku }}</span> {{ r.name }} ({{ r.wms_batch_tracked ? 'batch-tracked' : 'not batch-tracked' }})
+                                </li>
+                            </ul>
+                        </template>
+                    </div>
                 </section>
 
                 <details v-for="g in GROUPS" v-show="rowsIn(g.key).length" :key="g.key" class="rounded-lg border" :open="g.key !== 'skipped'">
@@ -260,7 +289,7 @@ onBeforeUnmount(() => clearInterval(poll));
                                             <li v-for="c in r.changes" :key="c">+ {{ c }}</li>
                                         </ul>
                                         <ul v-if="r.diffs.length" class="text-xs">
-                                            <li v-for="d in r.diffs" :key="d.field">{{ d.label }}: {{ d.wms || '(empty)' }} → {{ d.incoming }}</li>
+                                            <li v-for="d in r.diffs" :key="d.field">{{ d.label }}: {{ d.wms || '(empty)' }} → {{ d.incoming }}{{ d.applied ? ' (will change)' : '' }}</li>
                                         </ul>
                                         <ul v-if="r.notes.length" class="text-xs text-amber-900 dark:text-amber-200">
                                             <li v-for="n in r.notes" :key="n">{{ n }}</li>
@@ -292,7 +321,19 @@ onBeforeUnmount(() => clearInterval(poll));
                                     <td class="py-2 pr-2">
                                         <Input v-model="draft[r.key].range" class="h-8 w-40" list="import-ranges" :aria-label="`Range of ${r.sku}`" />
                                     </td>
-                                    <td class="py-2 pr-2"><input v-model="draft[r.key].batch_tracked" type="checkbox" :aria-label="`Batch-tracked ${r.sku}`" /></td>
+                                    <td class="py-2 pr-2 whitespace-nowrap">
+                                        <input
+                                            v-model="draft[r.key].batch_tracked"
+                                            type="checkbox"
+                                            :disabled="r.batch_locked"
+                                            :title="r.batch_locked ? 'This product has stock movements' : undefined"
+                                            :aria-label="`Batch-tracked ${r.sku}`"
+                                        />
+                                        <label v-if="batchDiffers(r)" class="block text-xs">
+                                            <input v-model="draft[r.key].overwrite_batch" type="checkbox" :aria-label="`Overwrite batch tracking of ${r.sku}`" />
+                                            Overwrite
+                                        </label>
+                                    </td>
                                     <td class="py-2 pr-3 whitespace-nowrap">
                                         <label class="block"><input v-model="draft[r.key].sell_ordermentum" type="checkbox" /> Ordermentum</label>
                                         <label class="block"><input v-model="draft[r.key].sell_portal" type="checkbox" /> Portal</label>

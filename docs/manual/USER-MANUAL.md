@@ -366,7 +366,7 @@ A product is matched by SKU, then by its channel mapping, then by barcode.
 - **Amber rows say "Check pack".** The app couldn't read the pack for certain, so enter the pack name and size, or untick **Include**. **Accept suggested packs** fills in the rows where the name gives a single size, such as "Syrup 750ml" (Each × 1).
 - **Overwrite** appears on a row whose WMS values differ from the source. Without the tick, the WMS keeps its name, pack and flags.
 - **Pack sizes never change.** With Overwrite ticked on a different pack size, the app adds the new pack and moves the channel listing to it. The old pack stays as it was.
-- **Batch-tracked by range** ticks a whole range at once, such as Kombucha. An existing product only changes if its Overwrite is ticked too. A product with stock movements keeps its setting.
+- **Apply to whole range** sets batch tracking on every row in a range at once, such as Kombucha, new and existing. It overwrites batch tracking only: a row's other differences keep their own Overwrite tick. Products with stock movements are skipped and listed, because batch tracking can't change once stock has moved.
 - A product still on the default "Unit" pack gets no extra pack. Set it up on **Pack setup** ([4.5](#45-pack-setup-before-go-live)).
 
 Click **Re-check** to see what your edits do, then **Apply**. Conflicts stay out, and Apply checks everything again first. Each product gets one entry in the audit log. Held Ordermentum orders containing a newly mapped item are processed again, as with **Map** ([12.4](#124-map-a-channel-item)).
