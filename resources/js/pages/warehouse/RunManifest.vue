@@ -19,7 +19,7 @@ const dispatchRun = () => {
 
 <template>
     <Head :title="run.label" />
-    <WarehouseLayout :title="run.label" :back="route('pick.queue')">
+    <WarehouseLayout>
         <InputError :message="errors.pick" class="mb-2" />
         <div class="mb-3 flex items-center justify-between text-sm">
             <span>{{ orders.length }} order(s) · {{ cartons }} carton(s)</span>

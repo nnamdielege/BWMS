@@ -47,6 +47,8 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
 
 ## Flow
 
+**Moving around:** every `/pick` screen has a one-row bar: Back goes up one level (pack → pick list → queue → dashboard, manifest → queue), and the menu links to the Dashboard, Pick queue, Pick lists and Orders, as the user's permissions allow, plus Log out. Leaving with unpicked lines on your own list, or with ticks on an order not yet marked Packed, asks first. Leaving never releases the claim; the list stays yours until someone takes it over. The Android/browser Back button goes straight back without asking.
+
 1. **Pick queue:**
    - Runs for the coming days, each with order counts and its open pick lists.
    - **"Pick N new orders"** creates a pick list for the run's orders that are waiting, claimed by you.

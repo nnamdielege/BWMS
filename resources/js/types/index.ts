@@ -39,6 +39,13 @@ export interface SharedData {
     [key: string]: unknown;
 }
 
+/** Handheld nav bar, built per page by PickPackController. */
+export interface WarehouseNav {
+    title: string;
+    back: string;
+    links: { title: string; href: string }[];
+}
+
 export interface User {
     id: number;
     name: string;

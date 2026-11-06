@@ -6,7 +6,7 @@
  * up. Fallback: the phone camera via the browser BarcodeDetector API (HTTPS only).
  * Reused later by the driver app screens on the same handhelds.
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const props = withDefaults(defineProps<{ placeholder?: string; disabled?: boolean }>(), { placeholder: 'Scan…', disabled: false });
 const emit = defineEmits<{ scan: [code: string] }>();
@@ -70,6 +70,12 @@ const stopCamera = () => {
 };
 
 onMounted(focus);
+// Disabling drops focus (e.g. while a line saves), so take it back for the next scan.
+watch(
+    () => props.disabled,
+    (disabled) => disabled || focus(),
+    { flush: 'post' },
+);
 onBeforeUnmount(stopCamera);
 defineExpose({ focus });
 </script>
@@ -80,6 +86,7 @@ defineExpose({ focus });
             <input
                 ref="input"
                 v-model="value"
+                data-scan-input
                 :placeholder="placeholder"
                 :disabled="disabled"
                 :inputmode="keyboard ? 'text' : 'none'"

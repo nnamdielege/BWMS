@@ -34,11 +34,18 @@ const packed = (l: PackLine) =>
 const ready = (o: PackOrder) => o.picking_done && s(o).checked.length === o.lines.length && s(o).cartons !== null;
 const save = (o: PackOrder) => router.post(route('pick.pack.store', [props.pickList.id, o.id]), { cartons: s(o).cartons, checked: s(o).checked }, { preserveScroll: true });
 const allPacked = computed(() => props.orders.every((o) => o.pack));
+// Ticks live only on this screen until Packed is pressed.
+const leaveWarning = computed(() => {
+    const ticked = props.orders.filter((o) => !o.pack && state[o.id]?.checked.length);
+    if (!ticked.length) return null;
+    const who = ticked.length === 1 ? `${ticked[0].number} is` : `${ticked.length} orders are`;
+    return `${who} part-ticked on ${props.pickList.number}. Leave? Ticks are not saved until you press Packed.`;
+});
 </script>
 
 <template>
     <Head :title="`Pack ${pickList.number}`" />
-    <WarehouseLayout :title="`Pack ${pickList.number}`" :back="route('pick.work', pickList.id)">
+    <WarehouseLayout :leave-warning="leaveWarning">
         <InputError :message="errors.pick" class="mb-2" />
 
         <div v-for="o in orders" :key="o.id" class="mb-4 rounded-xl border p-3" :class="{ 'border-green-400': o.pack }">

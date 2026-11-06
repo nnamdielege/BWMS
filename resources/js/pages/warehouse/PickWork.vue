@@ -31,6 +31,11 @@ const index = ref(firstOpen());
 const line = computed<Line | undefined>(() => props.lines[index.value]);
 const done = computed(() => props.lines.filter((l) => l.picked_base !== null).length);
 const allDone = computed(() => done.value === props.lines.length);
+const leaveWarning = computed(() => {
+    const left = props.lines.length - done.value;
+    if (!left || !props.pickList.mine || props.pickList.status !== 'open') return null;
+    return `You still have ${left} ${left === 1 ? 'line' : 'lines'} to pick on ${props.pickList.number}. Leave? The list stays assigned to you.`;
+});
 
 // Scan state for the current line.
 const binCode = ref<string | null>(null);
@@ -119,12 +124,12 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 
 <template>
     <Head :title="pickList.number" />
-    <WarehouseLayout :title="`${pickList.number} · ${done}/${lines.length}`" :back="route('pick.queue')">
+    <WarehouseLayout :leave-warning="leaveWarning">
         <div v-if="!pickList.mine && pickList.status === 'open'" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
             {{ pickList.claimed_by ? `Being picked by ${pickList.claimed_by}.` : 'Not claimed.' }}
             <button class="ml-2 underline" @click="router.post(route('pick.claim', pickList.id), { take_over: true })">Take over</button>
         </div>
-        <p class="mb-2 text-sm text-muted-foreground">{{ pickList.run }}</p>
+        <p class="mb-2 text-sm text-muted-foreground">{{ done }}/{{ lines.length }} lines picked<template v-if="pickList.run"> · {{ pickList.run }}</template></p>
         <InputError :message="errors.pick" class="mb-2" />
 
         <template v-if="line && !allDone">

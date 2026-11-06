@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Warehouse;
 
+use App\Authorization\Permissions;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryRun;
@@ -41,6 +42,7 @@ class PickPackController extends Controller
             ->orderBy('run_date')->orderBy('delivery_area_id')->get();
 
         return Inertia::render('warehouse/PickQueue', [
+            'nav' => $this->nav($request, 'Pick queue', route('dashboard')),
             'today' => $today,
             'runs' => $runs->map(function (DeliveryRun $run) {
                 $lists = $run->pickLists()->where('status', PickList::STATUS_OPEN)->with('claimer:id,name')->withCount([
@@ -86,6 +88,7 @@ class PickPackController extends Controller
         $pickList->load(['deliveryRun.area', 'claimer:id,name']);
 
         return Inertia::render('warehouse/PickWork', [
+            'nav' => $this->nav($request, collect([$pickList->number, $pickList->deliveryRun?->label()])->filter()->implode(' · '), route('pick.queue')),
             'pickList' => [
                 'id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status,
                 'run' => $pickList->deliveryRun?->label(), 'run_id' => $pickList->delivery_run_id,
@@ -112,12 +115,13 @@ class PickPackController extends Controller
         return back();
     }
 
-    public function packPage(PickList $pickList): Response
+    public function packPage(Request $request, PickList $pickList): Response
     {
         $lines = $this->service->walkOrder($pickList);
         $packs = OrderPack::where('pick_list_id', $pickList->id)->with('packer:id,name')->get()->keyBy('order_id');
 
         return Inertia::render('warehouse/Pack', [
+            'nav' => $this->nav($request, "Pack {$pickList->number}", route('pick.work', $pickList)),
             'pickList' => ['id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status, 'run_id' => $pickList->delivery_run_id],
             'orders' => $lines->groupBy(fn ($l) => $l->orderLine->order_id)->map(function ($group) use ($packs) {
                 $order = $group->first()->orderLine->order;
@@ -173,12 +177,13 @@ class PickPackController extends Controller
         return response($body, 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => 'inline; filename="packing-slip-'.$order->number.'.pdf"']);
     }
 
-    public function manifest(DeliveryRun $run): Response
+    public function manifest(Request $request, DeliveryRun $run): Response
     {
         $run->load('area');
         $orders = $run->orders()->with(['customer', 'packs'])->orderBy('id')->get();
 
         return Inertia::render('warehouse/RunManifest', [
+            'nav' => $this->nav($request, $run->label(), route('pick.queue')),
             'run' => ['id' => $run->id, 'label' => $run->label(), 'status' => $run->status],
             'orders' => $orders->map(fn (Order $o) => [
                 'id' => $o->id, 'number' => $o->number, 'status' => $o->status->value, 'status_label' => $o->status->label(),
@@ -195,6 +200,31 @@ class PickPackController extends Controller
         $this->guard(fn () => $this->service->dispatchRun($run, $request->user()));
 
         return redirect()->route('pick.manifest', $run)->with('success', 'Run dispatched.');
+    }
+
+    /**
+     * The handheld nav bar: title, one level up, and the menu links this user
+     * can open. Permissions match the sidebar items in AppSidebar.vue.
+     *
+     * @return array{title: string, back: string, links: list<array{title: string, href: string}>}
+     */
+    private function nav(Request $request, string $title, string $back): array
+    {
+        $links = [
+            ['title' => 'Dashboard', 'href' => route('dashboard'), 'permission' => null],
+            ['title' => 'Pick queue', 'href' => route('pick.queue'), 'permission' => Permissions::PICKING_PERFORM],
+            ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index'), 'permission' => Permissions::PICKING_PERFORM],
+            ['title' => 'Orders', 'href' => route('orders.index'), 'permission' => Permissions::ORDERS_VIEW],
+        ];
+
+        return [
+            'title' => $title,
+            'back' => $back,
+            'links' => collect($links)
+                ->filter(fn (array $link) => $link['permission'] === null || $request->user()->can($link['permission']))
+                ->map(fn (array $link) => ['title' => $link['title'], 'href' => $link['href']])
+                ->values()->all(),
+        ];
     }
 
     /** @return array<string, mixed> */

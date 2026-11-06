@@ -35,7 +35,7 @@ const claim = (id: number, takeOver = false) => {
 
 <template>
     <Head title="Pick queue" />
-    <WarehouseLayout title="Pick queue">
+    <WarehouseLayout>
         <InputError :message="errors.pick" class="mb-3" />
 
         <section v-for="(runs, date) in groups" :key="date" class="mb-5">

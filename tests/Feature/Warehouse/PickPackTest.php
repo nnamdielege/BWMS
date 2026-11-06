@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
 use Inertia\Testing\AssertableInertia;
+use Spatie\Permission\Models\Role;
 use Tests\Support\OrderFixtures;
 use Tests\Support\StockFixtures;
 use Tests\TestCase;
@@ -184,6 +185,68 @@ class PickPackTest extends TestCase
         $this->assertSame(DeliveryRun::STATUS_DISPATCHED, $this->run_()->status);
         $this->actingAs($this->picker)->get(route('pick.manifest', $this->run_()))->assertInertia(fn (AssertableInertia $p) => $p
             ->component('warehouse/RunManifest')->where('orders.0.cartons', 2)->where('orders.0.packed', true));
+    }
+
+    public function test_every_pick_page_renders_the_nav_bar_with_a_route_one_level_up()
+    {
+        $list = $this->start();
+        $run = $this->run_();
+
+        $pages = [
+            [route('pick.queue'), 'warehouse/PickQueue', 'Pick queue', route('dashboard')],
+            [route('pick.work', $list), 'warehouse/PickWork', "{$list->number} · {$run->label()}", route('pick.queue')],
+            [route('pick.pack', $list), 'warehouse/Pack', "Pack {$list->number}", route('pick.work', $list)],
+            [route('pick.manifest', $run), 'warehouse/RunManifest', $run->label(), route('pick.queue')],
+        ];
+
+        foreach ($pages as [$url, $component, $title, $back]) {
+            $this->actingAs($this->picker)->get($url)->assertOk()->assertInertia(fn (AssertableInertia $p) => $p
+                ->component($component)
+                ->where('nav.title', $title)
+                ->where('nav.back', $back)
+                ->where('nav.links', [
+                    ['title' => 'Dashboard', 'href' => route('dashboard')],
+                    ['title' => 'Pick queue', 'href' => route('pick.queue')],
+                    ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index')],
+                    ['title' => 'Orders', 'href' => route('orders.index')],
+                ]));
+        }
+    }
+
+    public function test_nav_links_are_filtered_by_permission_like_the_sidebar()
+    {
+        // Every seeded role that can pick can also view orders, so this needs a narrower role.
+        Role::findOrCreate('picker_only', 'web')->givePermissionTo(Permissions::PICKING_PERFORM);
+        $pickerOnly = User::factory()->create();
+        $pickerOnly->assignRole('picker_only');
+
+        $list = $this->start();
+        $this->actingAs($pickerOnly)->get(route('pick.work', $list))->assertOk()->assertInertia(fn (AssertableInertia $p) => $p
+            ->where('nav.links', [
+                ['title' => 'Dashboard', 'href' => route('dashboard')],
+                ['title' => 'Pick queue', 'href' => route('pick.queue')],
+                ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index')],
+            ]));
+        $this->actingAs($pickerOnly)->get(route('orders.index'))->assertForbidden();
+    }
+
+    public function test_leaving_a_claimed_list_keeps_the_claim_and_take_over_still_works()
+    {
+        $list = $this->start();
+        $this->assertSame($this->picker->id, $list->claimed_by);
+        $claimedAt = $list->claimed_at;
+
+        foreach ([route('pick.queue'), route('dashboard'), route('pick-lists.index'), route('orders.index')] as $url) {
+            $this->actingAs($this->picker)->get($url)->assertOk();
+        }
+        $this->assertSame($this->picker->id, $list->fresh()->claimed_by);
+        $this->assertEquals($claimedAt, $list->fresh()->claimed_at);
+        $this->actingAs($this->picker)->get(route('pick.queue'))->assertInertia(fn (AssertableInertia $p) => $p
+            ->where('runs.0.lists.0.mine', true));
+
+        $other = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
+        $this->actingAs($other)->post(route('pick.claim', $list), ['take_over' => true])->assertRedirect(route('pick.work', $list));
+        $this->assertSame($other->id, $list->fresh()->claimed_by);
     }
 
     public function test_bin_labels_pdf_and_templates_stay_offline()
