@@ -4,7 +4,7 @@ import ScanInput from '@/components/ScanInput.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 type Line = {
     id: number;
@@ -44,10 +44,18 @@ const productCodes = ref<string[]>([]);
 const countBase = ref(0);
 const message = ref<{ kind: 'ok' | 'error'; text: string } | null>(null);
 const mode = ref<'scan' | 'manual' | 'short'>('scan');
-const manualQty = ref<number | null>(null);
+const manualQty = ref<number | '' | null>(null);
 const reason = ref<string>('');
 const saving = ref(false);
 const showList = ref(false);
+// Why a line couldn't be saved. Shown beside the button that was pressed: on a handheld the top of the page is off-screen.
+const problem = ref<string | null>(null);
+const problemBox = ref<HTMLElement | null>(null);
+const showProblem = (text: string) => {
+    problem.value = text;
+    buzz(false);
+    nextTick(() => problemBox.value?.scrollIntoView({ block: 'center' }));
+};
 
 const reset = () => {
     binCode.value = null;
@@ -56,10 +64,19 @@ const reset = () => {
     mode.value = 'scan';
     manualQty.value = null;
     reason.value = '';
+    problem.value = null;
 };
 watch(index, () => {
     reset();
     message.value = null;
+});
+watch([mode, manualQty, reason], () => (problem.value = null));
+// Back abandons what was typed: a reason chosen here mustn't carry into the next try unseen.
+watch(mode, (now) => {
+    if (now === 'scan') {
+        manualQty.value = null;
+        reason.value = '';
+    }
 });
 
 const buzz = (ok: boolean) => navigator.vibrate?.(ok ? 40 : [80, 60, 80]);
@@ -93,16 +110,45 @@ const onScan = (code: string) => {
 
 const manualBase = computed(() => {
     const l = line.value;
-    if (!l || manualQty.value === null) return null;
+    if (!l || typeof manualQty.value !== 'number' || !Number.isInteger(manualQty.value) || manualQty.value < 0) return null;
     return l.to_pick_base % l.pack.base_qty === 0 ? manualQty.value * l.pack.base_qty : manualQty.value;
 });
 const manualUnit = computed(() => (line.value && line.value.to_pick_base % line.value.pack.base_qty === 0 ? line.value.pack.name : line.value?.product.base_unit));
 const needsReason = computed(() => !(binCode.value && productCodes.value.length));
 
+const blockedBy = computed(() => {
+    const l = line.value;
+    if (!l) return null;
+    if (!props.pickList.mine && props.pickList.claimed_by) return `${props.pickList.claimed_by} is picking this list. Take it over first.`;
+    if (manualBase.value === null) return `Enter a whole number of ${manualUnit.value}.`;
+    if (manualBase.value > l.to_pick_base) return `Too many: only ${l.to_pick_label} needed.`;
+    if (needsReason.value && manualBase.value > 0 && !reason.value) return 'Choose why there was no scan.';
+    return null;
+});
+// Also what Enter on the number pad does, so it drops the keyboard, which would hide the answer.
+const confirmManual = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    if (blockedBy.value) return showProblem(blockedBy.value);
+    submit(manualBase.value as number);
+};
+
 const submit = (qtyBase: number) => {
     const l = line.value;
     if (!l) return;
     saving.value = true;
+    problem.value = null;
+    // Not validation errors: without these a 500, an expired session or lost signal looks like nothing happened.
+    const listeners = [
+        router.on('invalid', (event) => {
+            event.preventDefault();
+            const status = event.detail.response.status;
+            showProblem(status === 419 ? 'Your session expired, so this line was not saved. Reload the page.' : `The server had a problem (${status}), so this line was not saved. Try again.`);
+        }),
+        router.on('exception', (event) => {
+            event.preventDefault();
+            showProblem('No connection, so this line was not saved. Try again.');
+        }),
+    ];
     router.put(
         route('pick.record', [props.pickList.id, l.id]),
         { qty_picked_base: qtyBase, bin_barcode: binCode.value, product_barcodes: productCodes.value, override_reason: needsReason.value && qtyBase > 0 ? reason.value || null : null },
@@ -115,8 +161,11 @@ const submit = (qtyBase: number) => {
                 index.value = next >= 0 ? next : firstOpen();
                 reset();
             },
-            onError: () => buzz(false),
-            onFinish: () => (saving.value = false),
+            onError: (errors) => showProblem(Object.values(errors)[0] ?? 'This line was not saved.'),
+            onFinish: () => {
+                saving.value = false;
+                listeners.forEach((stop) => stop());
+            },
         },
     );
 };
@@ -131,7 +180,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
             <button class="ml-2 underline" @click="router.post(route('pick.claim', pickList.id), { take_over: true })">Take over</button>
         </div>
         <p class="mb-2 text-sm text-muted-foreground">{{ done }}/{{ lines.length }} lines picked<template v-if="pickList.run"> · {{ pickList.run }}</template></p>
-        <InputError :message="errors.pick" class="mb-2" />
+        <InputError :message="problem ? undefined : errors.pick" class="mb-2" />
 
         <template v-if="line && !allDone">
             <div class="rounded-xl border p-4">
@@ -162,6 +211,8 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                 {{ message.text }}
             </div>
 
+            <div v-if="problem && mode === 'scan'" ref="problemBox" role="alert" class="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-900 dark:bg-red-950 dark:text-red-200">{{ problem }}</div>
+
             <div v-if="mode === 'scan'" class="mt-3">
                 <ScanInput :placeholder="binCode ? 'Scan product' : 'Scan bin label'" :disabled="saving || !pickList.mine" @scan="onScan" />
                 <div class="mt-3 grid grid-cols-2 gap-2">
@@ -170,13 +221,13 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                 </div>
             </div>
 
-            <form v-else class="mt-3 space-y-3 rounded-xl border p-3" @submit.prevent="manualBase !== null && submit(manualBase)">
+            <form v-else class="mt-3 space-y-3 rounded-xl border p-3" novalidate @submit.prevent="confirmManual">
                 <div class="font-semibold">{{ mode === 'short' ? 'How many did you find?' : 'Quantity picked' }}</div>
                 <div class="flex items-center gap-2">
                     <input v-model.number="manualQty" type="number" inputmode="numeric" min="0" class="h-14 w-32 rounded-lg border bg-background px-3 text-2xl tabular-nums" autofocus />
                     <span>{{ manualUnit }}</span>
                 </div>
-                <div v-if="needsReason && (manualQty ?? 0) > 0">
+                <div v-if="needsReason && (manualBase ?? 0) > 0">
                     <div class="mb-1 text-sm">Why no scan?</div>
                     <div class="grid grid-cols-2 gap-2">
                         <button
@@ -192,12 +243,16 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                     </div>
                 </div>
                 <p v-if="mode === 'short'" class="text-xs text-muted-foreground">The rest follows the order's backorder/cancel rule at dispatch, and this bin gets a count task.</p>
+                <div v-if="problem" ref="problemBox" role="alert" class="rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-900 dark:bg-red-950 dark:text-red-200">
+                    {{ problem }}
+                    <button v-if="!pickList.mine && pickList.claimed_by" type="button" class="ml-1 underline" @click="router.post(route('pick.claim', pickList.id), { take_over: true })">Take over</button>
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                     <button type="button" class="h-12 rounded-lg border" @click="mode = 'scan'">Back</button>
                     <button
                         type="submit"
                         class="h-12 rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50"
-                        :disabled="saving || manualBase === null || manualBase > line.to_pick_base || (needsReason && (manualQty ?? 0) > 0 && !reason)"
+                        :disabled="saving"
                     >
                         Confirm
                     </button>
