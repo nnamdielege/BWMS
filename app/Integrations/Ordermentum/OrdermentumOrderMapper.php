@@ -2,6 +2,7 @@
 
 namespace App\Integrations\Ordermentum;
 
+use App\Support\BusinessDate;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
 
@@ -78,7 +79,7 @@ class OrdermentumOrderMapper
             'cancelled' => $cancelled,
             'retailer_id' => $this->stringOrNull($order['retailerId'] ?? data_get($order, 'retailer.id')),
             'retailer_name' => $this->stringOrNull(data_get($order, 'retailer.name') ?? data_get($order, 'retailerName')),
-            'delivery_date' => $this->date($order['deliveryDate'] ?? null),
+            'delivery_date' => $this->deliveryDate($order),
             'delivery' => array_filter([
                 'street' => trim(implode(' ', array_filter([data_get($order, 'address.number'), data_get($order, 'address.street1'), data_get($order, 'address.street2')]))) ?: null,
                 'suburb' => $this->stringOrNull(data_get($order, 'address.suburb')),
@@ -102,16 +103,10 @@ class OrdermentumOrderMapper
         }
     }
 
-    private function date(mixed $value): ?string
+    /** The date the café chose, in Brisbane. First configured field with a value wins; a value that can't be read is null. */
+    public function deliveryDate(array $order): ?string
     {
-        if (blank($value)) {
-            return null;
-        }
-        try {
-            return Carbon::parse($value)->setTimezone(config('bwms.business_timezone'))->toDateString();
-        } catch (\Throwable) {
-            return null;
-        }
+        return BusinessDate::parse($this->first($order, $this->map['delivery_date'] ?? ['deliveryDate']));
     }
 
     /** @param  list<string>  $paths */

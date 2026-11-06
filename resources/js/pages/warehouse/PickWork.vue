@@ -2,12 +2,13 @@
 import InputError from '@/components/InputError.vue';
 import ScanInput from '@/components/ScanInput.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
+import SourceBadge from '@/components/SourceBadge.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 type Line = {
     id: number;
-    order: { id: number; number: string; customer: string | null };
+    order: { id: number; number: string; customer: string | null; channel: string };
     bin: { code: string; path: string; barcode: string | null };
     product: { sku: string; name: string; chilled: boolean; base_unit: string };
     pack: { name: string; base_qty: number };
@@ -149,7 +150,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                 <div v-if="line.batch" class="mt-1 text-sm">Lot {{ line.batch.lot }} · BB {{ line.batch.best_before ?? '—' }}</div>
 
                 <div class="mt-3 text-3xl font-bold tabular-nums">Pick {{ line.to_pick_label }}</div>
-                <div class="text-sm text-muted-foreground">Scanned {{ inPacks(countBase, line) }} · {{ line.order.number }} {{ line.order.customer }}</div>
+                <div class="text-sm text-muted-foreground">Scanned {{ inPacks(countBase, line) }} · {{ line.order.number }} {{ line.order.customer }} <SourceBadge :channel="line.order.channel" /></div>
             </div>
 
             <div

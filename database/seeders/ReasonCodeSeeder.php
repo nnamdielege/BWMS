@@ -21,6 +21,7 @@ class ReasonCodeSeeder extends Seeder
             ['code' => 'INTERNAL', 'name' => 'Internal use', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
             ['code' => 'FOUND', 'name' => 'Found stock', 'movement_type' => 'adjustment', 'direction' => 'in', 'requires_note' => true],
             ['code' => 'LOST', 'name' => 'Lost / missing', 'movement_type' => 'adjustment', 'direction' => 'out', 'requires_note' => true],
+            ['code' => 'BATCH_ENABLE', 'name' => 'Batch tracking enabled', 'movement_type' => 'adjustment', 'direction' => 'both', 'requires_note' => false],
             ['code' => 'CORRECTION', 'name' => 'Data-entry correction', 'movement_type' => 'adjustment', 'direction' => 'both', 'requires_note' => true],
         ];
 

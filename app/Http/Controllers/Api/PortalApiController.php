@@ -17,6 +17,7 @@ use App\Services\Orders\ChannelOrderData;
 use App\Services\Orders\Exceptions\InsufficientAvailability;
 use App\Services\Orders\OrderService;
 use App\Services\Stock\Exceptions\InvalidMovement;
+use App\Support\BusinessDate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -91,7 +92,7 @@ class PortalApiController extends Controller
             'status' => [$withVersion ? 'required' : 'prohibited', 'in:confirmed,cancelled'],
             'customer.portal_user_id' => ['nullable', 'integer', 'min:1'],
             'customer.business_name' => ['nullable', 'string', 'max:255'],
-            'requested_delivery_date' => ['nullable', 'date_format:Y-m-d'],
+            'requested_delivery_date' => ['nullable', 'string', 'max:40'],
             'delivery.street' => ['nullable', 'string', 'max:255'],
             'delivery.suburb' => ['nullable', 'string', 'max:100'],
             'delivery.postcode' => ['nullable', 'regex:/^\d{4}$/'],
@@ -147,7 +148,7 @@ class PortalApiController extends Controller
                     'qty' => (int) $l['qty'],
                 ])->values()->all(),
                 customerId: $customer?->id,
-                requestedDeliveryDate: $data['requested_delivery_date'] ?? null,
+                requestedDeliveryDate: BusinessDate::parse($data['requested_delivery_date'] ?? null),
                 delivery: array_filter((array) ($data['delivery'] ?? []), fn ($v) => $v !== null && $v !== ''),
             ));
         } catch (InsufficientAvailability $e) {

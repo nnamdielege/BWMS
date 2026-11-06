@@ -39,6 +39,8 @@ Every mutating call is also stored in `integration_inbox` (channel `portal`).
 | `GET /orders/{ref}` | Returns `status`, `reservation_status`, and per line `reserved_qty` / `dispatched_qty`. |
 | `GET /stock?product_ids=…` | Returns available packs per mapped product, never below zero. |
 
+**`requested_delivery_date`** (optional, `YYYY-MM-DD`, or a timestamp, which takes its Brisbane date) on `POST /reservations` and `PUT /orders/{ref}` sets the order's delivery date. Without one, or with one BWMS can't read, the order takes the next run after the cutoff and is flagged "No delivery date from Portal". It's never refused for this. The portal's checkout already stores this date (for example `2026-09-07`), but the portal doesn't call BWMS yet: see `docs/portal-bwms-integration.md`.
+
 **Quantities on the wire are portal packs.** A portal product maps to one BWMS product and pack (`channel_listings`, channel `portal`), and BWMS converts to and from base units.
 - The pack is chosen at mapping time. `unit_quantity` × `unit` only describes the portal's sell unit, and the same unit can be written "1 × carton" or "12 × bottle".
 - **The check only runs when the portal sends `unit`:**

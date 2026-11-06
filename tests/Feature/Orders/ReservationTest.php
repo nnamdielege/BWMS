@@ -201,7 +201,7 @@ class ReservationTest extends TestCase
         $customer = Customer::factory()->create();
 
         $this->actingAs($this->manager)->post(route('orders.store'), [
-            'customer_id' => $customer->id, 'site_id' => $this->site()->id, 'short_ship_policy' => 'backorder',
+            'customer_id' => $customer->id, 'site_id' => $this->site()->id, 'short_ship_policy' => 'backorder', 'requested_delivery_date' => '2026-11-10',
             'lines' => [['product_id' => $p->id, 'product_unit_id' => $p->units()->value('id'), 'qty' => 9]],
         ])->assertSessionHasErrors('order');
 

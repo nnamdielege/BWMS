@@ -1,20 +1,25 @@
 <script setup lang="ts">
 import Pagination from '@/components/Pagination.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { dayGroups } from '@/lib/deliveryDays';
 import { type BreadcrumbItem, type Paginated } from '@/types';
 import { Head, Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 interface Row {
     id: number;
     number: string;
     site: string;
     status: string;
+    delivery_date: string | null;
+    run: string | null;
     lines: number;
     created_by: string;
     created_at: string;
 }
 
-defineProps<{ pickLists: Paginated<Row> }>();
+const props = defineProps<{ pickLists: Paginated<Row>; open: Row[]; today: string }>();
+const groups = computed(() => dayGroups(props.open, (p) => p.delivery_date, props.today));
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pick lists', href: '/pick-lists' }];
 const fmt = (iso: string) => new Date(iso).toLocaleString('en-AU', { timeZone: 'Australia/Brisbane' });
 </script>
@@ -27,20 +32,34 @@ const fmt = (iso: string) => new Date(iso).toLocaleString('en-AU', { timeZone: '
             <p class="text-sm text-muted-foreground">
                 Create a pick list by selecting orders on the <Link :href="route('orders.index')" class="underline">Orders</Link> page.
             </p>
+            <section v-for="group in groups" :key="group.key">
+                <h2 class="mb-1 text-xs font-semibold tracking-wide uppercase" :class="group.overdue ? 'text-red-700 dark:text-red-300' : 'text-muted-foreground'">{{ group.label }}</h2>
+                <ul class="divide-y rounded-lg border text-sm">
+                    <li v-for="p in group.items" :key="p.id" class="flex flex-wrap items-center gap-x-4 gap-y-1 p-2">
+                        <Link :href="route('pick-lists.show', p.id)" class="font-mono underline">{{ p.number }}</Link>
+                        <span>{{ p.run ?? p.site }}</span>
+                        <span v-if="group.overdue" class="text-muted-foreground">{{ p.delivery_date }}</span>
+                        <span class="text-muted-foreground">{{ p.lines }} line(s) · {{ p.created_by }}</span>
+                    </li>
+                </ul>
+            </section>
+
+            <h2 class="text-sm font-semibold">Dispatched and cancelled</h2>
             <table class="w-full text-left text-sm">
                 <thead class="border-b text-muted-foreground">
-                    <tr><th class="py-2">Number</th><th>Site</th><th>Status</th><th class="text-right">Lines</th><th>Created</th><th>By</th></tr>
+                    <tr><th class="py-2">Number</th><th>Site</th><th>Status</th><th>Delivery</th><th class="text-right">Lines</th><th>Created</th><th>By</th></tr>
                 </thead>
                 <tbody>
                     <tr v-for="p in pickLists.data" :key="p.id" class="border-b">
                         <td class="py-2"><Link :href="route('pick-lists.show', p.id)" class="font-mono underline">{{ p.number }}</Link></td>
                         <td>{{ p.site }}</td>
                         <td class="capitalize">{{ p.status }}</td>
+                        <td>{{ p.delivery_date ?? '' }}</td>
                         <td class="text-right">{{ p.lines }}</td>
                         <td>{{ fmt(p.created_at) }}</td>
                         <td>{{ p.created_by }}</td>
                     </tr>
-                    <tr v-if="!pickLists.data.length"><td colspan="6" class="py-6 text-center text-muted-foreground">No pick lists yet.</td></tr>
+                    <tr v-if="!pickLists.data.length"><td colspan="7" class="py-6 text-center text-muted-foreground">None yet.</td></tr>
                 </tbody>
             </table>
             <Pagination :links="pickLists.links" />

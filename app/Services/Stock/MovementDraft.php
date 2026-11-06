@@ -29,6 +29,8 @@ final class MovementDraft
         public readonly ?DateTimeInterface $occurredAt = null,
         public readonly ?string $note = null,
         public readonly bool $allowNegative = false,
+        /** Only BatchTrackingService: the leg out of the unbatched slot, on a product just turned batch-tracked. */
+        public readonly bool $leavesUnbatchedStock = false,
     ) {}
 
     public function batchKey(): int

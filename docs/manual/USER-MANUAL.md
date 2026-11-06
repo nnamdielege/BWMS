@@ -194,7 +194,7 @@ Each user has one or more roles. The menu on the left only shows what your roles
 |---|:-:|:-:|:-:|:-:|:-:|
 | See products, locations, stock, POs, orders | ✓ | ✓ | ✓ | ✓ | ✓ |
 | See suppliers, product costs, the Sync screen | ✓ | ✓ | | ✓ | ✓ |
-| Edit products, packs, costs; import products | ✓ | ✓ | | | |
+| Edit products, packs, costs; import products; turn on batch tracking | ✓ | ✓ | | | |
 | Edit locations and bins | ✓ | ✓ | | | |
 | Print bin labels | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Move stock between bins | ✓ | ✓ | ✓ | | |
@@ -376,6 +376,18 @@ A preview expires after 30 minutes. If it has expired, start the import again.
 **Import from the portal**
 
 The app can't read the portal catalogue directly. Export the portal's products to the template, then upload that file. The fields are listed in `docs/PORTAL.md` under "Importing portal products".
+
+### 4.8 Turn on batch tracking for stock on hand
+
+**Catalogue → Batch tracking** is for products that already hold stock, such as milks and juices after the stocktake. Admins and warehouse managers can use it. A product holding stock can't be switched on the product page: it links here instead.
+
+1. Add products: **Apply to whole range**, one product at a time, or from the import preview, where **Turn on batch tracking for N of these** brings across the products it skipped for having stock movements.
+2. For each bin, enter the best-before, or leave **Unknown** ticked. Unknown stock never expires and is picked first, so it clears before anything received later.
+3. Click **Turn on**.
+
+Each bin's stock goes into a batch with lot `UNKNOWN`, through stock movements with the reason **Batch tracking enabled**. **On-hand quantities don't change.** It's in the audit log. From then on, receiving asks for a lot and best-before as normal.
+
+A product is refused while it's on an open pick list or a stocktake in progress, or has a bin below zero. The rest of the selection still goes ahead, and you're told which ones didn't.
 
 ---
 
@@ -669,7 +681,7 @@ For managers and admins.
 
 1. Click **New order**.
 2. Choose the **Customer** and the **Fulfil from** site.
-3. Set a **Delivery date** if the customer asked for one. Leave it blank to get the next available run.
+3. Check the **Delivery date**. It's required, and fills in with the next delivery day for the customer's area once you choose the customer.
 4. Choose **If short at picking**: **Backorder the rest** or **Cancel the rest**.
 5. Search for each product and add it. Choose the pack, quantity and unit price.
 6. Tick **Accept even if not enough stock is available** only if you want the order anyway. It will be flagged oversold.
@@ -691,7 +703,7 @@ Order statuses: **Open** (reserved, waiting) → **Picking** (on a pick list) �
 ![Oversold order](img/71-order-oversold.png)
 
 - **Oversold:** the order was accepted beyond available stock. Decide: short-ship, substitute, or contact the customer.
-- **Review:** the channel changed the order while it was being picked, or reduced it below what was already dispatched. Check the pick list.
+- **Review:** the order page says why. For example, the channel changed the order while it was being picked, it was reduced below what was already dispatched, or its delivery date needs a look ([11.1](#111-how-an-order-gets-its-run)).
 
 When it's dealt with, click **Mark flags handled**.
 
@@ -699,7 +711,16 @@ When it's dealt with, click **Mark flags handled**.
 
 For managers and admins. Click **Cancel order** and give a reason. Undispatched stock is released.
 
-### 9.7 Customers
+### 9.7 Change a delivery date
+
+Managers click **Change** next to **Delivery date** on the order. The audit log records it.
+
+- **Not on a pick list yet:** the order moves to the run for the new date.
+- **Already picking or packed:** it stays where it is and is flagged for review, with the old and new dates.
+
+If the channel later sends a different date, that date wins. If it sends the same date as before, yours stays.
+
+### 9.8 Customers
 
 **Orders → Customers** lists customers. Managers and admins can add and edit them.
 
@@ -712,7 +733,9 @@ The delivery fields decide the delivery run:
 
 Also on the customer: **Ordermentum retailer ID** and **Portal user ID**, which link channel orders to the customer.
 
-### 9.8 Pick lists without scanning (desktop)
+### 9.9 Pick lists without scanning (desktop)
+
+A pick list covers one delivery day: the app refuses a selection that mixes days.
 
 Most picking is done on the handhelds ([10](#10-pick--pack-handheld)). There is also a desktop pick list:
 
@@ -742,13 +765,13 @@ The scan box has two buttons:
 
 ### 10.2 Pick queue
 
-Open **Pick & pack** from the menu. Runs are grouped by delivery day.
+Open **Pick & pack** from the menu. Runs are grouped by delivery day: **OVERDUE** in red at the top (anything before today, Brisbane time), then **Today**, **Tomorrow** and each later day. **Orders**, **Pick lists** and the pack screen show the day the same way, and each order has a badge for its source: Ordermentum, Portal or Manual.
 
 ![Pick queue](img/80-pick-queue.png)
 
 Each run shows how many orders it has and how many are waiting to pick.
 
-- **Pick N new order(s):** makes a pick list from the waiting orders and gives it to you.
+- **Pick N new order(s):** makes a pick list from the waiting orders on that run and day only, and gives it to you.
 - **Continue:** goes back to your own list.
 - **Take over:** takes someone else's list. You're asked to confirm, and it's recorded.
 - **Manifest:** the run's order list for dispatch ([10.6](#106-dispatch-the-run)).
@@ -849,8 +872,12 @@ Dispatch is refused until every order on the run's open pick lists is packed.
 A run is a **delivery date** plus a **delivery area**.
 
 1. **Area:** the customer's area override if set. Otherwise the postcode and suburb of the order's delivery address (Ordermentum and portal orders). Otherwise the customer's delivery address.
-2. **Date:** the requested delivery date if there is one. Otherwise the next run for that area after the cutoff.
+2. **Date:** the date from where the order came from: the café's choice on Ordermentum, the date chosen on the portal, or the date on the WMS order form. If the source sent none, or one that can't be read, it's the next run for that area after the cutoff, and the order is flagged "No delivery date from Ordermentum" (or Portal).
 3. **No match:** the order has no run and shows under **Orders without a run**.
+
+**A date the area doesn't run** is kept, never moved, and flagged "Not a delivery day for (area)". Change it on the order if it's wrong.
+
+**When the source changes the date:** an order not yet on a pick list moves to the new run. One already picking or packed, or on a run set by hand, stays where it is and is flagged with both dates.
 
 ### 11.2 Cutoff
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
@@ -17,12 +18,13 @@ type PackOrder = {
     id: number;
     number: string;
     customer: string | null;
+    channel: string;
     picking_done: boolean;
     lines: PackLine[];
     cartons: number | null;
     pack: { cartons: number; packed_by: string; packed_at: string } | null;
 };
-const props = defineProps<{ pickList: { id: number; number: string; status: string; run_id: number | null }; orders: PackOrder[] }>();
+const props = defineProps<{ pickList: { id: number; number: string; status: string; run_id: number | null; run: string | null }; orders: PackOrder[] }>();
 
 const errors = computed(() => usePage().props.errors as Record<string, string>);
 const state = reactive<Record<number, { checked: number[]; cartons: number | '' | null }>>({});
@@ -138,13 +140,14 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
 <template>
     <Head :title="`Pack ${pickList.number}`" />
     <WarehouseLayout>
+        <p v-if="pickList.run" class="mb-2 text-sm font-semibold">{{ pickList.run }}</p>
         <InputError :message="errors.pick" class="mb-2" />
         <InputError :message="saveError" class="sticky top-14 z-[5] mb-2 bg-background py-1" />
 
         <div v-for="o in orders" :key="o.id" class="mb-4 rounded-xl border p-3" :class="{ 'border-green-400': o.pack }">
             <div class="flex items-center justify-between">
                 <div>
-                    <div class="font-mono font-semibold">{{ o.number }}</div>
+                    <div class="font-mono font-semibold">{{ o.number }} <SourceBadge :channel="o.channel" /></div>
                     <div class="text-sm text-muted-foreground">{{ o.customer }}</div>
                 </div>
                 <a :href="route('pick.slip', [pickList.id, o.id])" target="_blank" class="rounded-md border px-3 py-2 text-sm">Packing slip</a>

@@ -84,6 +84,11 @@ class ProductRequest extends FormRequest
                     || Reservation::where('product_id', $product->id)->where('qty_base', '>', 0)->exists())) {
                 $validator->errors()->add('is_stock_tracked', 'This product has stock or reservations; clear them before marking it not stock-tracked.');
             }
+            // Existing stock has no batch, so the ledger would refuse to move it. That goes through Batch tracking.
+            if ($product && $this->boolean('is_batch_tracked') && ! $product->is_batch_tracked
+                && StockBalance::where('product_id', $product->id)->where('on_hand', '!=', 0)->exists()) {
+                $validator->errors()->add('is_batch_tracked', 'This product holds stock. Use Catalogue → Batch tracking to turn it on.');
+            }
             // Barcodes must be unique across all units, including within this request.
             $all = $units->pluck('barcodes')->flatten();
             if ($all->count() !== $all->unique()->count()) {

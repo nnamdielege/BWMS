@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import SourceBadge from '@/components/SourceBadge.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -13,6 +14,7 @@ interface Line {
     product: { id: number; sku: string; name: string; base_unit: string };
     batch: string | null;
     order: string;
+    channel: string;
     customer: string | null;
     pack: string;
     pack_qty: number;
@@ -21,7 +23,7 @@ interface Line {
 }
 
 const props = defineProps<{
-    pickList: { id: number; number: string; status: string; site: string; dispatched_at: string | null; lines: Line[] };
+    pickList: { id: number; number: string; status: string; site: string; run: string | null; dispatched_at: string | null; lines: Line[] };
     can: { pick: boolean };
 }>();
 
@@ -81,7 +83,7 @@ const packs = (l: Line, base: number) => (l.pack_qty > 1 ? `${Math.floor(base / 
                         <td class="py-2 font-mono">{{ l.location }}</td>
                         <td><span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}</td>
                         <td>{{ l.batch ?? '' }}</td>
-                        <td>{{ l.order }}<div class="text-xs text-muted-foreground">{{ l.customer }}</div></td>
+                        <td>{{ l.order }} <SourceBadge :channel="l.channel" /><div class="text-xs text-muted-foreground">{{ l.customer }}</div></td>
                         <td class="text-right tabular-nums">
                             {{ l.qty_to_pick_base }} {{ l.product.base_unit }}
                             <div class="text-xs text-muted-foreground">{{ packs(l, l.qty_to_pick_base) }}</div>

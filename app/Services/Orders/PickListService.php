@@ -53,6 +53,9 @@ class PickListService
                 $this->assert(in_array($order->status, [OrderStatus::Open, OrderStatus::PartiallyDispatched], true), "{$order->number} is {$order->status->label()}.");
             }
 
+            $days = $orders->map(fn (Order $o) => $o->delivery_date?->toDateString() ?? 'no date')->unique();
+            $this->assert($days->count() === 1, 'A pick list covers one delivery day. These orders are for '.$days->sort()->implode(', ').'.');
+
             $pickList = PickList::create(['number' => NumberSequence::next('pick_list', 'PK'), 'site_id' => $site->id, 'status' => PickList::STATUS_OPEN, 'created_by' => $actor->id]);
             $allocated = $this->openAllocations($site);
             $shortfalls = [];

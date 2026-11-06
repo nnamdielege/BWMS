@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import RangeSelector from '@/components/RangeSelector.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
 type Group = 'new' | 'update' | 'mapping' | 'conflict' | 'skipped';
@@ -122,6 +123,7 @@ const applyToRange = () => {
     });
     rangeResult.value = { range: selectedRange.value, applied: open.length, locked: rows.filter((r) => r.batch_locked) };
 };
+const toEnable = computed(() => rangeResult.value?.locked.filter((r) => r.product?.id && !r.wms_batch_tracked).map((r) => r.product!.id as number) ?? []);
 const batchDiffers = (r: Row) => r.product?.id && !r.batch_locked && draft[r.key]?.batch_tracked !== r.wms_batch_tracked;
 
 const recheck = () => props.preview && router.put(route('product-import.revise'), { token: props.preview.token, edits: edits() }, { preserveScroll: true });
@@ -207,21 +209,15 @@ onBeforeUnmount(() => clearInterval(poll));
                 </p>
 
                 <section class="flex flex-wrap items-end gap-3 rounded-lg border p-4 text-sm">
-                    <label class="flex flex-col gap-1">
-                        <span class="font-medium">Batch-tracked by range</span>
-                        <select v-model="selectedRange" class="h-9 rounded-md border border-input bg-background px-2">
-                            <option value="">Choose a range</option>
-                            <option v-for="[name, n] in rangeNames" :key="name" :value="name">{{ name }} ({{ n }})</option>
-                        </select>
-                    </label>
-                    <label class="flex flex-col gap-1">
-                        <span class="font-medium">Set to</span>
-                        <select v-model="rangeValue" class="h-9 rounded-md border border-input bg-background px-2">
-                            <option :value="true">Batch-tracked</option>
-                            <option :value="false">Not batch-tracked</option>
-                        </select>
-                    </label>
-                    <Button size="sm" variant="outline" :disabled="!selectedRange" @click="applyToRange">Apply to whole range</Button>
+                    <RangeSelector v-model="selectedRange" :options="rangeNames" label="Batch-tracked by range" @apply="applyToRange">
+                        <label class="flex flex-col gap-1">
+                            <span class="font-medium">Set to</span>
+                            <select v-model="rangeValue" class="h-9 rounded-md border border-input bg-background px-2">
+                                <option :value="true">Batch-tracked</option>
+                                <option :value="false">Not batch-tracked</option>
+                            </select>
+                        </label>
+                    </RangeSelector>
                     <span class="text-muted-foreground">Sets every row in the range, new and existing, and overwrites batch tracking only.</span>
                     <Button v-if="suggestions.length" size="sm" variant="outline" class="ml-auto" @click="acceptSuggestions">
                         Accept {{ suggestions.length }} suggested pack(s)
@@ -237,6 +233,9 @@ onBeforeUnmount(() => clearInterval(poll));
                                     <span class="font-mono">{{ r.sku }}</span> {{ r.name }} ({{ r.wms_batch_tracked ? 'batch-tracked' : 'not batch-tracked' }})
                                 </li>
                             </ul>
+                            <Link v-if="toEnable.length" :href="route('batch-tracking.index', { products: toEnable.join(',') })" class="mt-1 inline-block underline">
+                                Turn on batch tracking for {{ toEnable.length }} of these
+                            </Link>
                         </template>
                     </div>
                 </section>

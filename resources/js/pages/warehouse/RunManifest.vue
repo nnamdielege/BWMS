@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const props = defineProps<{
     run: { id: number; label: string; status: string };
-    orders: { id: number; number: string; status: string; status_label: string; customer: string | null; address: string; cartons: number; packed: boolean }[];
+    orders: { id: number; number: string; status: string; status_label: string; customer: string | null; channel: string; address: string; cartons: number; packed: boolean }[];
     openLists: { id: number; number: string }[];
 }>();
 
@@ -30,7 +31,7 @@ const dispatchRun = () => {
             <li v-for="o in orders" :key="o.id" class="flex items-start gap-3 p-3">
                 <div class="flex-1">
                     <div class="font-mono font-semibold">
-                        {{ o.number }} <span class="ml-1 text-xs font-normal text-muted-foreground">{{ o.status_label }}</span>
+                        {{ o.number }} <span class="ml-1 text-xs font-normal text-muted-foreground">{{ o.status_label }}</span> <SourceBadge :channel="o.channel" />
                     </div>
                     <div class="text-sm">{{ o.customer }}</div>
                     <div class="text-xs text-muted-foreground">{{ o.address || 'No address' }}</div>

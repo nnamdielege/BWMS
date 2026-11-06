@@ -19,6 +19,7 @@ use App\Support\BusinessDate;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -31,6 +32,8 @@ use Inertia\Response;
  */
 class PickPackController extends Controller
 {
+    private const ACTIVE = [OrderStatus::Open, OrderStatus::Picking, OrderStatus::PartiallyDispatched];
+
     public function __construct(private PickPackService $service) {}
 
     public function queue(Request $request): Response
@@ -38,8 +41,8 @@ class PickPackController extends Controller
         $today = BusinessDate::today();
         $runs = DeliveryRun::with('area')
             ->where('status', DeliveryRun::STATUS_OPEN)
-            ->where(fn ($q) => $q->whereBetween('run_date', [now()->subDays(7)->toDateString(), now()->addDays(7)->toDateString()])
-                ->orWhereHas('orders', fn ($o) => $o->whereIn('status', [OrderStatus::Open, OrderStatus::Picking, OrderStatus::PartiallyDispatched])))
+            ->where(fn ($q) => $q->whereBetween('run_date', [$today, Carbon::parse($today)->addDays(7)->toDateString()])
+                ->orWhereHas('orders', fn ($o) => $o->whereIn('status', self::ACTIVE)))
             ->orderBy('run_date')->orderBy('delivery_area_id')->get();
 
         return Inertia::render('warehouse/PickQueue', [
@@ -49,6 +52,7 @@ class PickPackController extends Controller
                 $lists = $run->pickLists()->where('status', PickList::STATUS_OPEN)->with('claimer:id,name')->withCount([
                     'lines', 'lines as lines_done_count' => fn ($q) => $q->whereNotNull('qty_picked_base'),
                 ])->get();
+                $active = $run->orders()->whereIn('status', self::ACTIVE)->with('customer:id,name')->orderBy('id')->get();
 
                 return [
                     'id' => $run->id,
@@ -56,7 +60,8 @@ class PickPackController extends Controller
                     'label' => $run->label(),
                     'area' => $run->area->name,
                     'waiting' => $this->service->waitingOrders($run)->count(),
-                    'active' => $run->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::Picking, OrderStatus::PartiallyDispatched])->count(),
+                    'active' => $active->count(),
+                    'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value])->values(),
                     'lists' => $lists->map(fn (PickList $l) => [
                         'id' => $l->id, 'number' => $l->number, 'claimed_by' => $l->claimer?->name,
                         'mine' => $l->claimed_by === request()->user()->id, 'lines' => $l->lines_count, 'done' => $l->lines_done_count,
@@ -64,8 +69,8 @@ class PickPackController extends Controller
                 ];
             })->values(),
             'unassigned' => Order::whereNull('delivery_run_id')->whereIn('status', [OrderStatus::Open, OrderStatus::PartiallyDispatched])
-                ->latest('id')->limit(30)->get(['id', 'number', 'delivery_postcode', 'delivery_suburb', 'customer_id'])->load('customer:id,name,delivery_postcode,delivery_suburb')
-                ->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name,
+                ->latest('id')->limit(30)->get(['id', 'number', 'channel', 'delivery_postcode', 'delivery_suburb', 'customer_id'])->load('customer:id,name,delivery_postcode,delivery_suburb')
+                ->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value,
                     'postcode' => $o->delivery_postcode ?? $o->customer?->delivery_postcode, 'suburb' => $o->delivery_suburb ?? $o->customer?->delivery_suburb]),
         ]);
     }
@@ -120,17 +125,18 @@ class PickPackController extends Controller
     {
         $lines = $this->service->walkOrder($pickList);
         $packs = OrderPack::where('pick_list_id', $pickList->id)->with('packer:id,name')->get()->keyBy('order_id');
+        $pickList->load('deliveryRun.area');
         $drafts = OrderPackDraft::where('pick_list_id', $pickList->id)->pluck('cartons', 'order_id');
 
         return Inertia::render('warehouse/Pack', [
             'nav' => $this->nav($request, "Pack {$pickList->number}", route('pick.work', $pickList)),
-            'pickList' => ['id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status, 'run_id' => $pickList->delivery_run_id],
+            'pickList' => ['id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status, 'run_id' => $pickList->delivery_run_id, 'run' => $pickList->deliveryRun?->label()],
             'orders' => $lines->groupBy(fn ($l) => $l->orderLine->order_id)->map(function ($group) use ($packs, $drafts) {
                 $order = $group->first()->orderLine->order;
                 $pack = $packs[$order->id] ?? null;
 
                 return [
-                    'id' => $order->id, 'number' => $order->number, 'customer' => $order->customer?->name,
+                    'id' => $order->id, 'number' => $order->number, 'customer' => $order->customer?->name, 'channel' => $order->channel->value,
                     'picking_done' => $group->every(fn ($l) => $l->qty_picked_base !== null),
                     'lines' => $group->map(fn (PickListLine $l) => $this->lineRow($l))->values(),
                     'cartons' => $pack?->cartons ?? $drafts[$order->id] ?? null,
@@ -204,7 +210,7 @@ class PickPackController extends Controller
             'run' => ['id' => $run->id, 'label' => $run->label(), 'status' => $run->status],
             'orders' => $orders->map(fn (Order $o) => [
                 'id' => $o->id, 'number' => $o->number, 'status' => $o->status->value, 'status_label' => $o->status->label(),
-                'customer' => $o->customer?->name,
+                'customer' => $o->customer?->name, 'channel' => $o->channel->value,
                 'address' => trim(($o->delivery_street ?? $o->customer?->delivery_street).' '.($o->delivery_suburb ?? $o->customer?->delivery_suburb).' '.($o->delivery_postcode ?? $o->customer?->delivery_postcode)),
                 'cartons' => (int) $o->packs->sum('cartons'), 'packed' => $o->packs->isNotEmpty(),
             ]),
@@ -252,7 +258,7 @@ class PickPackController extends Controller
 
         return [
             'id' => $l->id,
-            'order' => ['id' => $ol->order_id, 'number' => $ol->order->number, 'customer' => $ol->order->customer?->name],
+            'order' => ['id' => $ol->order_id, 'number' => $ol->order->number, 'customer' => $ol->order->customer?->name, 'channel' => $ol->order->channel->value],
             'bin' => ['code' => $l->location->code, 'path' => $l->location->path(), 'barcode' => $l->location->barcode],
             'product' => ['sku' => $l->product->sku, 'name' => $l->product->name, 'chilled' => $l->product->is_chilled, 'base_unit' => $l->product->base_unit],
             'pack' => ['name' => $ol->unit->name, 'base_qty' => $per],

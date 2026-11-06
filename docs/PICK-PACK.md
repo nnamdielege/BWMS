@@ -20,14 +20,21 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
 
 - **The postcode lists are a starter set.** Review them in Settings → Delivery areas, one entry per line: `4019` (the whole postcode) or `4019 Clontarf` (one suburb, for postcodes split across areas). A suburb entry beats a whole-postcode entry.
 - **Cutoff:** 1:00 pm (`BWMS_DELIVERY_CUTOFF`) on the **business day before** delivery. Business days are Mon–Fri. Public holidays aren't modelled yet.
-- **How an order gets its run:**
-  1. **Area:** the customer's area override, otherwise the postcode/suburb of the order's delivery address (Ordermentum and portal orders), otherwise the customer's.
-  2. **Date:** the requested delivery date if one is given, otherwise the **next eligible run after the cutoff**. An area's weekdays, or any weekday for next-day areas.
-  3. **No match:** an address that matches no area leaves the order **unassigned**. These orders are listed at the bottom of the pick queue; set the run on the order page ("Change"), or add the postcode to an area.
-- **Re-assignment:**
-  - Runs are re-worked when an order changes, and when a customer's address or area changes.
-  - A run **set by hand** sticks.
-  - An order already on a pick list keeps its run.
+- **Every order has one `delivery_date`:**
+  1. **From its source:** Ordermentum `deliveryDate` (`ORDERMENTUM_DELIVERY_DATE_FIELDS`), the portal's `requested_delivery_date`, or the date on the manual order form, which is required and defaults to the customer's next delivery day. A timestamp takes its Brisbane date.
+  2. **Fallback:** no date, or one that can't be read, takes the **next eligible run after the cutoff** and flags the order "No delivery date from <source>".
+  3. `requested_delivery_date` keeps what the source last sent. `delivery_date_origin` says where the effective date came from: `source`, `fallback` or `manager`.
+- **Run = `delivery_date` + area.** The area is the customer's override, otherwise the postcode/suburb of the order's delivery address, otherwise the customer's. An address that matches no area leaves the order **unassigned**, listed at the bottom of the pick queue: set the run on the order page ("Change"), or add the postcode in Settings → Delivery areas.
+- **A date the area doesn't run** stays, and is flagged "Not a delivery day for <area>". It is never moved.
+- **Moves:**
+  - Only a *change* in the source's date moves an order, so re-sending an unchanged order leaves a manager's date.
+  - Not yet on a pick list: moves to the new run.
+  - On a pick list (open or dispatched), or on a run set by hand: stays, flagged with both dates. A cancelled pick list doesn't count.
+  - A customer's new address or area moves their waiting orders to the right run on the same date.
+- **Managers** change the date on the order page, under the same rules. Both outcomes go in the audit log.
+- **Review reasons** are kept per order (`review_notes`). One that stops being true clears itself. One marked handled isn't raised again unless it changes.
+- **Pick lists never mix days.**
+- **Backfill:** `php artisan orders:backfill-delivery-dates --dry-run` shows open orders not yet on a pick list, with their current and source dates and what would move. Ordermentum dates are read again from the API (GET only). `--yes` applies the moves and audits them. Run it once after deploying.
 
 ## Setup before go-live
 
@@ -50,7 +57,8 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
 **Moving around:** every `/pick` screen has a one-row bar: Back goes up one level (pack → pick list → queue → dashboard, manifest → queue), and the menu links to the Dashboard, Pick queue, Pick lists and Orders, as the user's permissions allow, plus Log out. Leaving with unpicked lines on your own list asks first. Leaving never releases the claim; the list stays yours until someone takes it over. The Android/browser Back button goes straight back without asking; picked lines and pack ticks are already saved, so nothing is lost.
 
 1. **Pick queue:**
-   - Runs for the coming days, each with order counts and its open pick lists.
+   - Grouped by delivery day: OVERDUE in red (before today in Brisbane, only runs with active orders), Today, Tomorrow, then each later day. Within a day, runs in their existing order.
+   - Each run lists its orders with a source badge, plus its open pick lists.
    - **"Pick N new orders"** creates a pick list for the run's orders that are waiting, claimed by you.
    - **Continue** resumes your list. **Take over** reassigns another picker's list, and is audited.
 2. **Picking**, one line at a time:

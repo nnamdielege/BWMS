@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 type Line = { product: PickedProduct; product_unit_id: number; qty: number; unit_price: string | null };
 
@@ -31,6 +31,19 @@ const form = useForm({
     allow_backorder: false,
     lines: [] as Line[],
 });
+
+// The date defaults to the customer's next delivery day until someone picks one.
+const dateChosen = ref(false);
+const areaUnknown = ref(false);
+watch(
+    () => form.customer_id,
+    async (id) => {
+        if (!id || dateChosen.value) return;
+        const { date } = await (await fetch(route('orders.next-date', id), { headers: { Accept: 'application/json' } })).json();
+        areaUnknown.value = !date;
+        if (!dateChosen.value) form.requested_delivery_date = date ?? '';
+    },
+);
 
 const add = (p: PickedProduct) => {
     const unit = p.units.find((u) => u.default_sale && u.sellable) ?? p.units.find((u) => u.sellable) ?? p.units[0];
@@ -68,7 +81,12 @@ const submit = () =>
                         <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
                 </div>
-                <div class="grid gap-1"><Label>Delivery date</Label><Input v-model="form.requested_delivery_date" type="date" :min="today" /></div>
+                <div class="grid gap-1">
+                    <Label>Delivery date</Label>
+                    <Input v-model="form.requested_delivery_date" type="date" :min="today" required @input="dateChosen = true" />
+                    <p v-if="areaUnknown" class="text-xs text-muted-foreground">This customer's address matches no delivery area. Choose the date.</p>
+                    <InputError :message="form.errors.requested_delivery_date" />
+                </div>
                 <div class="grid gap-1">
                     <Label>If short at picking</Label>
                     <select v-model="form.short_ship_policy" class="h-9 rounded-md border bg-background px-2 text-sm">

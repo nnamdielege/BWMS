@@ -15,6 +15,7 @@ use App\Services\Orders\OrderService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Support\Audit;
 use App\Support\BusinessDate;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -34,6 +35,7 @@ class OrderController extends Controller
             'status' => ['nullable', Rule::in(array_merge(['active', 'all'], array_column(OrderStatus::cases(), 'value')))],
             'channel' => ['nullable', Rule::enum(OrderChannel::class)],
             'flag' => ['nullable', Rule::in(['oversold', 'review'])],
+            'delivery_date' => ['nullable', 'date_format:Y-m-d'],
         ]);
         $status = $filters['status'] ?? 'active';
 
@@ -41,24 +43,29 @@ class OrderController extends Controller
             ->withSum('lines as qty_base_total', 'qty_base')
             ->when($filters['q'] ?? null, fn ($q, $t) => $q->where(fn ($w) => $w->where('number', 'like', "%{$t}%")->orWhere('external_ref', 'like', "%{$t}%")))
             ->when($filters['channel'] ?? null, fn ($q, $c) => $q->where('channel', $c))
+            ->when($filters['delivery_date'] ?? null, fn ($q, $d) => $q->whereDate('delivery_date', $d))
             ->when(($filters['flag'] ?? null) === 'oversold', fn ($q) => $q->where('oversold', true))
             ->when(($filters['flag'] ?? null) === 'review', fn ($q) => $q->where('needs_review', true))
             ->when($status === 'active', fn ($q) => $q->whereIn('status', ['open', 'picking', 'partially_dispatched']))
             ->when(! in_array($status, ['active', 'all'], true), fn ($q) => $q->where('status', $status))
-            ->orderByRaw('requested_delivery_date IS NULL, requested_delivery_date')->latest('id')
+            ->with('deliveryRun.area:id,name,sort_order')
+            ->orderByRaw('delivery_date IS NULL, delivery_date')->latest('id')
             ->paginate(50)->withQueryString()
             ->through(fn (Order $o) => [
                 'id' => $o->id, 'number' => $o->number, 'channel' => $o->channel->value, 'external_ref' => $o->external_ref,
                 'customer' => $o->customer?->name, 'site' => $o->site->name, 'site_id' => $o->site_id,
                 'status' => $o->status->value, 'status_label' => $o->status->label(),
                 'oversold' => $o->oversold, 'needs_review' => $o->needs_review,
-                'requested_delivery_date' => $o->requested_delivery_date?->toDateString(),
+                'delivery_date' => $o->delivery_date?->toDateString(),
+                'run' => $o->deliveryRun?->area?->name,
+                'review_notes' => array_values($o->review_notes ?? []),
                 'created_at' => $o->created_at->toIso8601String(),
             ]);
 
         return Inertia::render('orders/Index', [
             'orders' => $orders,
-            'filters' => ['q' => $filters['q'] ?? '', 'status' => $status, 'channel' => $filters['channel'] ?? '', 'flag' => $filters['flag'] ?? ''],
+            'filters' => ['q' => $filters['q'] ?? '', 'status' => $status, 'channel' => $filters['channel'] ?? '', 'flag' => $filters['flag'] ?? '', 'delivery_date' => $filters['delivery_date'] ?? ''],
+            'today' => BusinessDate::today(),
             'statuses' => collect(OrderStatus::cases())->map(fn ($s) => ['value' => $s->value, 'label' => $s->label()]),
             'can' => ['manage' => $request->user()->can('orders.manage'), 'pick' => $request->user()->can('picking.perform')],
         ]);
@@ -78,7 +85,7 @@ class OrderController extends Controller
         $data = $request->validate([
             'customer_id' => ['required', 'integer', 'exists:customers,id'],
             'site_id' => ['required', 'integer', 'exists:locations,id'],
-            'requested_delivery_date' => ['nullable', 'date'],
+            'requested_delivery_date' => ['required', 'date_format:Y-m-d'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'short_ship_policy' => ['required', Rule::in(['backorder', 'cancel'])],
             'allow_backorder' => ['boolean'],
@@ -111,6 +118,9 @@ class OrderController extends Controller
                 'customer' => $order->customer?->only(['id', 'name', 'code']),
                 'site' => $order->site->name,
                 'requested_delivery_date' => $order->requested_delivery_date?->toDateString(),
+                'delivery_date' => $order->delivery_date?->toDateString(),
+                'delivery_date_origin' => $order->delivery_date_origin,
+                'review_notes' => array_values($order->review_notes ?? []),
                 'run' => $order->deliveryRun ? ['id' => $order->deliveryRun->id, 'label' => $order->deliveryRun->label(), 'area_id' => $order->deliveryRun->delivery_area_id, 'date' => $order->deliveryRun->run_date->toDateString()] : null,
                 'run_assignment' => $order->run_assignment,
                 'delivery_address' => trim(implode(' ', array_filter([$order->delivery_street ?? $order->customer?->delivery_street, $order->delivery_suburb ?? $order->customer?->delivery_suburb, $order->delivery_postcode ?? $order->customer?->delivery_postcode]))),
@@ -137,6 +147,26 @@ class OrderController extends Controller
         ]);
     }
 
+    /** The form's default date, for the customer just chosen. */
+    public function nextDate(Customer $customer, DeliveryScheduler $scheduler): JsonResponse
+    {
+        return response()->json(['date' => $scheduler->nextDateForCustomer($customer)]);
+    }
+
+    public function changeDeliveryDate(Request $request, Order $order): RedirectResponse
+    {
+        $data = $request->validate(['delivery_date' => ['required', 'date_format:Y-m-d']]);
+        try {
+            $moved = $this->orders->changeDeliveryDate($order, $data['delivery_date'], $request->user());
+        } catch (StockException $e) {
+            throw ValidationException::withMessages(['delivery_date' => $e->getMessage()]);
+        }
+
+        return $moved
+            ? back()->with('success', 'Delivery date changed.')
+            : back()->with('error', 'Already being picked, so it stays where it is. The order is flagged for review.');
+    }
+
     /** Staff choose the run (area + date) by hand; it sticks across later channel updates. */
     public function assignRun(Request $request, Order $order, DeliveryScheduler $scheduler): RedirectResponse
     {
@@ -146,6 +176,9 @@ class OrderController extends Controller
         ]);
         if (! $order->status->isActive()) {
             throw ValidationException::withMessages(['run' => "{$order->number} is {$order->status->label()}."]);
+        }
+        if ($data['run_date'] !== $order->delivery_date?->toDateString() && $scheduler->onPickList($order)) {
+            throw ValidationException::withMessages(['run' => "{$order->number} is already being picked, so its date can't change."]);
         }
         $scheduler->assignManually($order, DeliveryArea::findOrFail($data['delivery_area_id']), Carbon::parse($data['run_date'], config('bwms.business_timezone')));
         Audit::record('order_run_assigned', $order, meta: $data);

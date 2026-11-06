@@ -2,6 +2,7 @@
 
 namespace App\Services\Stock;
 
+use App\Models\Batch;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\StockBalance;
@@ -10,7 +11,8 @@ use App\Support\BusinessDate;
 /**
  * First-expired-first-out allocation of sellable stock. Used for pick
  * suggestions (step 5). Never allocates from quarantine, non-sellable or
- * inactive bins, or expired batches. Untracked stock (no batch) comes last.
+ * inactive bins, or expired batches. UNKNOWN batches with no date come first, so
+ * stock from before batch tracking clears first; untracked stock comes last.
  */
 class FefoAllocator
 {
@@ -34,7 +36,8 @@ class FefoAllocator
             ->where('locations.is_quarantine', false)
             ->where('locations.is_active', true)
             ->where(fn ($q) => $q->whereNull('batches.best_before')->orWhere('batches.best_before', '>=', BusinessDate::today()))
-            // Earliest best-before first; batches with no date and untracked stock last.
+            // Undated UNKNOWN stock, then earliest best-before; other batches with no date and untracked stock last.
+            ->orderByRaw('CASE WHEN batches.lot_code = ? AND batches.best_before IS NULL THEN 0 ELSE 1 END', [Batch::UNKNOWN_LOT])
             ->orderByRaw('batches.best_before IS NULL, batches.best_before ASC')
             ->orderBy('batches.received_on')
             ->orderBy('batches.id')

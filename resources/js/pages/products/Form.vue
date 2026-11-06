@@ -46,6 +46,7 @@ const props = defineProps<{
     product: ProductData | null;
     categories: { id: number; name: string }[];
     ranges: { id: number; name: string }[];
+    holdsStock?: boolean;
 }>();
 
 const can = useCan();
@@ -155,7 +156,9 @@ const unitErrors = computed(() =>
                 </div>
                 <div class="flex items-end gap-6">
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_active" /> Active</label>
-                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_batch_tracked" /> Track batches &amp; best-before</label>
+                    <Link v-if="holdsStock && !product?.is_batch_tracked" :href="route('batch-tracking.index', { products: product?.id })" class="text-sm underline">Turn on batch tracking</Link>
+                    <label v-else class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_batch_tracked" /> Track batches &amp; best-before</label>
+                    <InputError :message="form.errors.is_batch_tracked" />
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_stock_tracked" /> Stock-tracked (untick for services: no stock, stocktakes, picking or pushes)</label>
                     <InputError :message="form.errors.is_stock_tracked" />
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_chilled" /> Chilled (milks, juices, kombucha: picked last, no refrigerated transport)</label>

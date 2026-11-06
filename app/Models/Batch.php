@@ -14,6 +14,9 @@ class Batch extends Model
 {
     use HasFactory;
 
+    /** Stock that was on hand when batch tracking was turned on. With no date it is picked first and never expires. */
+    public const UNKNOWN_LOT = 'UNKNOWN';
+
     protected $fillable = ['product_id', 'lot_code', 'best_before', 'received_on', 'supplier_id'];
 
     protected function casts(): array

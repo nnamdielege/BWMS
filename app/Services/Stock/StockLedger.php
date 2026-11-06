@@ -252,7 +252,7 @@ class StockLedger
             throw new InvalidMovement("Stock can only be held in an active bin ({$d->location->code} is not).");
         }
 
-        if ($d->product->is_batch_tracked && ! $d->batch) {
+        if ($d->product->is_batch_tracked && ! $d->batch && ! ($d->leavesUnbatchedStock && $d->qty < 0)) {
             throw new InvalidMovement("{$sku} is batch-tracked: a batch (lot / best-before) is required.");
         }
         if (! $d->product->is_batch_tracked && $d->batch) {

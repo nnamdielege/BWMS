@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import SourceBadge from '@/components/SourceBadge.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
@@ -39,6 +40,9 @@ const props = defineProps<{
         customer: { id: number; name: string; code: string } | null;
         site: string;
         requested_delivery_date: string | null;
+        delivery_date: string | null;
+        delivery_date_origin: string | null;
+        review_notes: string[];
         run: { id: number; label: string; area_id: number; date: string } | null;
         run_assignment: string;
         delivery_address: string;
@@ -52,6 +56,10 @@ const props = defineProps<{
 const runForm = useForm({ delivery_area_id: props.order.run?.area_id ?? null, run_date: props.order.run?.date ?? '' });
 const editRun = ref(false);
 const saveRun = () => runForm.put(route('orders.run', props.order.id), { preserveScroll: true, onSuccess: () => (editRun.value = false) });
+
+const dateForm = useForm({ delivery_date: props.order.delivery_date ?? '' });
+const editDate = ref(false);
+const saveDate = () => dateForm.put(route('orders.delivery-date', props.order.id), { preserveScroll: true, onSuccess: () => (editDate.value = false) });
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Orders', href: '/orders' },
@@ -74,7 +82,8 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
             <header class="flex flex-wrap items-center gap-3">
                 <h1 class="font-mono text-xl font-semibold">{{ order.number }}</h1>
                 <span class="rounded bg-muted px-2 py-0.5 text-sm">{{ order.status_label }}</span>
-                <span class="text-sm capitalize text-muted-foreground">{{ order.channel }}<span v-if="order.external_ref"> · {{ order.external_ref }} (v{{ order.external_version }})</span></span>
+                <SourceBadge :channel="order.channel" />
+                <span v-if="order.external_ref" class="text-sm text-muted-foreground">{{ order.external_ref }} (v{{ order.external_version }})</span>
                 <div class="ml-auto flex gap-2">
                     <Button v-if="can.manage && (order.oversold || order.needs_review)" variant="outline" @click="clearFlags">Mark flags handled</Button>
                     <Button v-if="can.manage" variant="ghost" @click="cancel">Cancel order</Button>
@@ -86,13 +95,26 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
                 Accepted beyond available stock{{ order.oversold_at ? ` on ${fmt(order.oversold_at)}` : '' }}. Decide: short-ship, substitute or contact the customer.
             </div>
             <div v-if="order.needs_review" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:bg-amber-950">
-                The channel changed this order while it was being picked, or reduced it below what was already dispatched. Check the pick list.
+                <ul v-if="order.review_notes.length" class="list-disc pl-5">
+                    <li v-for="n in order.review_notes" :key="n">{{ n }}</li>
+                </ul>
+                <template v-else>The channel changed this order while it was being picked, or reduced it below what was already dispatched. Check the pick list.</template>
             </div>
 
             <div class="grid gap-4 text-sm sm:grid-cols-4">
                 <div><div class="text-muted-foreground">Customer</div>{{ order.customer?.name ?? '—' }}</div>
                 <div><div class="text-muted-foreground">Fulfil from</div>{{ order.site }}</div>
-                <div><div class="text-muted-foreground">Delivery date</div>{{ order.requested_delivery_date ?? '—' }}</div>
+                <div>
+                    <div class="text-muted-foreground">Delivery date</div>
+                    {{ order.delivery_date ?? '—' }}
+                    <span v-if="order.delivery_date_origin === 'manager'" class="text-xs text-muted-foreground">(set by a manager)</span>
+                    <button v-if="can.manage" class="ml-2 text-xs underline" @click="editDate = !editDate">Change</button>
+                    <form v-if="editDate" class="mt-2 flex items-center gap-2" @submit.prevent="saveDate">
+                        <input v-model="dateForm.delivery_date" type="date" required class="h-9 rounded-md border bg-background px-2" aria-label="New delivery date" />
+                        <button type="submit" class="h-9 rounded-md border px-3" :disabled="dateForm.processing">Save</button>
+                    </form>
+                    <InputError :message="dateForm.errors.delivery_date" />
+                </div>
                 <div><div class="text-muted-foreground">If short</div>{{ order.short_ship_policy === 'cancel' ? 'Cancel the rest' : 'Backorder' }}</div>
                 <div v-if="order.cancel_reason" class="sm:col-span-4"><span class="text-muted-foreground">Cancelled:</span> {{ order.cancel_reason }}</div>
                 <div class="sm:col-span-4">

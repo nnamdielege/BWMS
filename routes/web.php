@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\DeliveryAreaController;
 use App\Http\Controllers\Admin\InvitationController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\BatchTrackingController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
@@ -69,6 +70,10 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::put('revise', [ProductImportController::class, 'revise'])->name('revise');
         Route::post('apply', [ProductImportController::class, 'apply'])->name('apply');
     });
+
+    // Batch tracking for products already holding stock: admin and warehouse manager.
+    Route::get('batch-tracking', [BatchTrackingController::class, 'index'])->middleware('can:products.manage')->name('batch-tracking.index');
+    Route::post('batch-tracking', [BatchTrackingController::class, 'apply'])->middleware('can:products.manage')->name('batch-tracking.apply');
 
     Route::get('product-packs', [ProductPackController::class, 'index'])->middleware('can:products.view')->name('product-packs.index');
     Route::get('product-packs/export', [ProductPackController::class, 'export'])->middleware('can:products.view')->name('product-packs.export');
@@ -135,7 +140,9 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::get('orders', [OrderController::class, 'index'])->middleware('can:orders.view')->name('orders.index');
     Route::get('orders/create', [OrderController::class, 'create'])->middleware('can:orders.manage')->name('orders.create');
     Route::post('orders', [OrderController::class, 'store'])->middleware('can:orders.manage')->name('orders.store');
+    Route::get('orders/next-date/{customer}', [OrderController::class, 'nextDate'])->middleware('can:orders.manage')->name('orders.next-date');
     Route::get('orders/{order}', [OrderController::class, 'show'])->middleware('can:orders.view')->name('orders.show');
+    Route::put('orders/{order}/delivery-date', [OrderController::class, 'changeDeliveryDate'])->middleware('can:orders.manage')->name('orders.delivery-date');
     Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->middleware('can:orders.manage')->name('orders.cancel');
     Route::post('orders/{order}/clear-flags', [OrderController::class, 'clearFlags'])->middleware('can:orders.manage')->name('orders.clear-flags');
 

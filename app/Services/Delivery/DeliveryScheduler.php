@@ -7,6 +7,7 @@ use App\Models\DeliveryArea;
 use App\Models\DeliveryAreaPlace;
 use App\Models\DeliveryRun;
 use App\Models\Order;
+use App\Models\PickList;
 use App\Models\PickListLine;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -17,9 +18,17 @@ use Illuminate\Database\QueryException;
  * some areas also get next-day delivery on any weekday. Orders must be in by
  * the cutoff (13:00) on the business day before delivery. A run = date + area.
  *
- * An order's run comes from its delivery address (else its customer's), using
- * the requested date if one is given, otherwise the next eligible run after
- * the cutoff. Business days are Mon-Fri; public holidays are not modelled yet.
+ * Every order has one delivery_date: the date its source gave, otherwise the next
+ * eligible run after the cutoff, flagged for review. The source's date is never
+ * moved to suit the area: a date the area doesn't run is kept and flagged. The
+ * area comes from the customer's override, then the delivery address, then the
+ * customer's address. A run = delivery_date + area.
+ *
+ * Only a change to the source's date moves an order, so re-sending an unchanged
+ * order leaves a date a manager set. An order on a pick list, or on a run set by
+ * hand, never moves on its own: it is flagged with both dates instead.
+ *
+ * Business days are Mon-Fri; public holidays are not modelled yet.
  */
 class DeliveryScheduler
 {
@@ -65,37 +74,100 @@ class DeliveryScheduler
         return $date; // unreachable for an area with at least one weekday
     }
 
-    /**
-     * Assign (or re-assign) an order's run. Manual assignments and orders already
-     * being picked or dispatched keep their run.
-     */
-    public function assign(Order $order): void
+    /** Customer override, then the order's delivery address, then the customer's. */
+    public function areaForOrder(Order $order): ?DeliveryArea
     {
-        if ($order->run_assignment === 'manual' || $this->beingPicked($order)) {
-            return;
-        }
         $customer = $order->customer_id ? Customer::find($order->customer_id) : null;
         $postcode = $order->delivery_postcode ?: $customer?->delivery_postcode;
         $suburb = $order->delivery_postcode ? $order->delivery_suburb : $customer?->delivery_suburb;
-        $area = ($customer?->delivery_area_id ? DeliveryArea::find($customer->delivery_area_id) : null) ?? $this->areaFor($postcode, $suburb);
 
-        if (! $area) {
-            $order->forceFill(['delivery_run_id' => null, 'run_assignment' => 'unassigned'])->save();
+        return ($customer?->delivery_area_id ? DeliveryArea::find($customer->delivery_area_id) : null) ?? $this->areaFor($postcode, $suburb);
+    }
+
+    /** The form's default: the next delivery day for this customer's area, from now. */
+    public function nextDateForCustomer(Customer $customer): ?string
+    {
+        $area = $this->areaForOrder((new Order)->forceFill(['customer_id' => $customer->id]));
+
+        return $area ? $this->nextRunDate($area, now())->toDateString() : null;
+    }
+
+    /** Whether the area has a run on that date: its weekdays, or any business day if it is next-day. */
+    public function runsOn(DeliveryArea $area, CarbonImmutable $date): bool
+    {
+        return $area->deliversOn($date->dayOfWeekIso) || ($area->next_day_eligible && $this->isBusinessDay($date));
+    }
+
+    /** The date an order would get from this source date, written nowhere. */
+    public function dateFor(Order $order, ?string $sourceDate): ?string
+    {
+        if ($sourceDate) {
+            return $sourceDate;
+        }
+        $area = $this->areaForOrder($order);
+
+        return $area ? $this->nextRunDate($area, $order->created_at ?? now())->toDateString() : null;
+    }
+
+    /**
+     * Set an order's date and run, or flag why it stays.
+     *
+     * @param  bool  $dateChanged  the source sent a different date from the one it sent last
+     */
+    public function assign(Order $order, bool $dateChanged = false): void
+    {
+        $source = $order->requested_delivery_date?->toDateString();
+        $current = $order->delivery_date?->toDateString();
+
+        if ($order->run_assignment === 'manual' || $this->onPickList($order)) {
+            if ($dateChanged && $source && $source !== $current) {
+                $why = $this->onPickList($order) ? 'it is already being picked' : 'its run was set by hand';
+                $order->flag('date_changed', "{$order->channel->label()} changed the delivery date from {$current} to {$source}. It stays on {$current} because {$why}.");
+                $order->save();
+            }
 
             return;
         }
 
-        $date = $order->requested_delivery_date
-            ? CarbonImmutable::parse($order->requested_delivery_date->toDateString(), config('bwms.business_timezone'))
-            : $this->nextRunDate($area, $order->created_at ?? now());
+        $area = $this->areaForOrder($order);
+        if ($current && ! $dateChanged && $order->delivery_date_origin !== 'fallback') {
+            $this->place($order, $area, $current, $order->delivery_date_origin ?? 'source');
 
-        $order->forceFill(['delivery_run_id' => $this->run($order->site_id, $area, $date)->id, 'run_assignment' => 'auto'])->save();
+            return;
+        }
+        $this->place($order, $area, $this->dateFor($order, $source), $source ? 'source' : 'fallback');
+    }
+
+    /** A manager's date: same rules, and it stays until the source sends a different one. */
+    public function moveTo(Order $order, string $date): void
+    {
+        $area = $order->run_assignment === 'manual' ? $order->deliveryRun?->area : $this->areaForOrder($order);
+        $this->place($order, $area, $date, 'manager');
     }
 
     /** Staff override from the order page: sticks across later channel updates. */
     public function assignManually(Order $order, DeliveryArea $area, DateTimeInterface $date): void
     {
-        $order->forceFill(['delivery_run_id' => $this->run($order->site_id, $area, CarbonImmutable::instance($date))->id, 'run_assignment' => 'manual'])->save();
+        $order->forceFill(['run_assignment' => 'manual']);
+        $this->place($order, $area, CarbonImmutable::instance($date)->toDateString(), 'manager');
+    }
+
+    private function place(Order $order, ?DeliveryArea $area, ?string $date, string $origin): void
+    {
+        $day = $date ? CarbonImmutable::parse($date, config('bwms.business_timezone')) : null;
+        $manual = $order->run_assignment === 'manual';
+
+        $order->forceFill([
+            'delivery_date' => $date,
+            'delivery_date_origin' => $origin,
+            'delivery_run_id' => $area && $day ? $this->run($order->site_id, $area, $day)->id : null,
+            'run_assignment' => $manual ? 'manual' : ($area && $day ? 'auto' : 'unassigned'),
+        ]);
+
+        $origin === 'fallback' ? $order->flag('no_date', "No delivery date from {$order->channel->label()}") : $order->unflag('no_date');
+        $area && $day && ! $this->runsOn($area, $day) ? $order->flag('not_delivery_day', "Not a delivery day for {$area->name}") : $order->unflag('not_delivery_day');
+        $order->unflag('date_changed');
+        $order->save();
     }
 
     public function run(int $siteId, DeliveryArea $area, CarbonImmutable $date): DeliveryRun
@@ -111,9 +183,11 @@ class DeliveryScheduler
         }
     }
 
-    private function beingPicked(Order $order): bool
+    /** On a pick list that wasn't cancelled: already picking, packed or dispatched. */
+    public function onPickList(Order $order): bool
     {
-        return $order->exists && PickListLine::whereIn('order_line_id', $order->lines()->pluck('id'))->exists();
+        return $order->exists && PickListLine::whereIn('order_line_id', $order->lines()->pluck('id'))
+            ->whereHas('pickList', fn ($q) => $q->where('status', '!=', PickList::STATUS_CANCELLED))->exists();
     }
 
     private function isBusinessDay(CarbonImmutable $date): bool

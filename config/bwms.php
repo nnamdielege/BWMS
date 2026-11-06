@@ -72,6 +72,8 @@ return [
             // Paths seen holding the stock item ID on that live order. The Sync screen shows the
             // variant field as confirmed when the first configured path is one of these.
             'variant_confirmed' => ['variantId', 'variant.id'],
+            // On 700 live orders (2026-11-06) deliveryDate was always set and always 14:00:00Z: Brisbane midnight.
+            'delivery_date' => array_values(array_filter(explode(',', (string) (env('ORDERMENTUM_DELIVERY_DATE_FIELDS') ?: 'deliveryDate')))),
             'line_ref' => ['id', 'lineItemId'],
             'unit_price' => 'price',
             'sku' => ['sku', 'variant.sku', 'SKU'],

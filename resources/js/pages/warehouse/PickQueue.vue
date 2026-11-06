@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
+import { dayGroups } from '@/lib/deliveryDays';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -11,21 +13,17 @@ type Run = {
     area: string;
     waiting: number;
     active: number;
+    orders: { id: number; number: string; customer: string | null; channel: string }[];
     lists: { id: number; number: string; claimed_by: string | null; mine: boolean; lines: number; done: number }[];
 };
 const props = defineProps<{
     today: string;
     runs: Run[];
-    unassigned: { id: number; number: string; customer: string | null; postcode: string | null; suburb: string | null }[];
+    unassigned: { id: number; number: string; customer: string | null; channel: string; postcode: string | null; suburb: string | null }[];
 }>();
 
 const errors = computed(() => usePage().props.errors as Record<string, string>);
-const groups = computed(() => {
-    const out: Record<string, Run[]> = {};
-    for (const r of props.runs) (out[r.date] ??= []).push(r);
-    return out;
-});
-const dayLabel = (d: string) => (d === props.today ? 'Today' : new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' }));
+const groups = computed(() => dayGroups(props.runs, (r) => r.date, props.today));
 const start = (run: Run) => router.post(route('pick.start', run.id));
 const claim = (id: number, takeOver = false) => {
     if (takeOver && !confirm('Someone else is picking this list. Take it over?')) return;
@@ -38,16 +36,23 @@ const claim = (id: number, takeOver = false) => {
     <WarehouseLayout>
         <InputError :message="errors.pick" class="mb-3" />
 
-        <section v-for="(runs, date) in groups" :key="date" class="mb-5">
-            <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{{ dayLabel(String(date)) }}</h2>
-            <div v-for="run in runs" :key="run.id" class="mb-3 rounded-xl border p-3">
+        <section v-for="group in groups" :key="group.key" class="mb-5">
+            <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide" :class="group.overdue ? 'text-red-700 dark:text-red-300' : 'text-muted-foreground'">{{ group.label }}</h2>
+            <div v-for="run in group.items" :key="run.id" class="mb-3 rounded-xl border p-3">
                 <div class="flex items-start justify-between gap-2">
                     <div>
-                        <div class="text-base font-semibold">{{ run.area }}</div>
+                        <div class="text-base font-semibold">{{ group.overdue ? run.label : run.area }}</div>
                         <div class="text-sm text-muted-foreground">{{ run.active }} order(s) · {{ run.waiting }} waiting to pick</div>
                     </div>
                     <Link :href="route('pick.manifest', run.id)" class="rounded-md border px-3 py-2 text-sm">Manifest</Link>
                 </div>
+
+                <ul v-if="run.orders.length" class="mt-2 space-y-1 text-sm">
+                    <li v-for="o in run.orders" :key="o.id" class="flex items-center justify-between gap-2">
+                        <span class="min-w-0 truncate"><span class="font-mono">{{ o.number }}</span> {{ o.customer }}</span>
+                        <SourceBadge :channel="o.channel" />
+                    </li>
+                </ul>
 
                 <div v-for="l in run.lists" :key="l.id" class="mt-3 flex items-center justify-between gap-2 rounded-lg bg-muted/60 p-2">
                     <div class="text-sm">
@@ -66,7 +71,7 @@ const claim = (id: number, takeOver = false) => {
             </div>
         </section>
 
-        <p v-if="!runs.length" class="py-8 text-center text-muted-foreground">No runs waiting.</p>
+        <p v-if="!groups.length" class="py-8 text-center text-muted-foreground">No runs waiting.</p>
 
         <section v-if="unassigned.length" class="mt-6 rounded-xl border border-amber-300 p-3 dark:border-amber-800">
             <h2 class="mb-1 font-semibold text-amber-800 dark:text-amber-200">Orders without a run ({{ unassigned.length }})</h2>
@@ -74,7 +79,7 @@ const claim = (id: number, takeOver = false) => {
             <ul class="space-y-1 text-sm">
                 <li v-for="o in unassigned" :key="o.id">
                     <Link :href="route('orders.show', o.id)" class="font-mono underline">{{ o.number }}</Link>
-                    {{ o.customer }} <span class="text-muted-foreground">{{ o.suburb }} {{ o.postcode }}</span>
+                    {{ o.customer }} <span class="text-muted-foreground">{{ o.suburb }} {{ o.postcode }}</span> <SourceBadge :channel="o.channel" />
                 </li>
             </ul>
         </section>

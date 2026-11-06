@@ -7,6 +7,7 @@ use App\Models\Barcode;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Range;
+use App\Models\StockBalance;
 use App\Services\Catalogue\ProductService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -63,6 +64,7 @@ class ProductController extends Controller
     {
         return Inertia::render('products/Form', [
             'product' => $product->load('units.barcodes'),
+            'holdsStock' => StockBalance::where('product_id', $product->id)->where('on_hand', '!=', 0)->exists(),
             'categories' => Category::orderBy('name')->get(['id', 'name']),
             'ranges' => Range::orderBy('name')->get(['id', 'name']),
         ]);

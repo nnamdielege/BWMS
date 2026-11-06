@@ -82,6 +82,11 @@ Other inbound behaviour:
 - **Path token:** once one real event has verified, `ORDERMENTUM_WEBHOOK_REQUIRE_TOKEN=false` makes it optional. This only applies while enforcement is on. A token that is supplied must still match.
 - **Fetch-back:** every order is still re-fetched from the API before BWMS acts on it.
 
+**Delivery date** (checked on 700 live orders, 2026-11-06)
+- `deliveryDate` was set on all 700, and always at `14:00:00.000Z`, which is **midnight the next calendar day in Brisbane**: `2026-03-09T14:00:00.000Z` is 10 March. BWMS takes the Brisbane date. Reading the date part directly would be a day early.
+- `ORDERMENTUM_DELIVERY_DATE_FIELDS` can re-point it (comma-separated dot paths; the first with a value wins).
+- `dueAt` is the payment date, not delivery.
+
 **Line item fields** (confirmed on a live order, 2026-10-27)
 - `lineItems[].quantity` is an integer.
 - `lineItems[].variantId` (also `variant.id`) is the stock API item ID and matches the legacy mapping.

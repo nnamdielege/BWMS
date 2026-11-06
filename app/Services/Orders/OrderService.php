@@ -85,6 +85,7 @@ class OrderService
             $order = $this->newOrder($data->channel, $data->externalRef, $data->siteId, null);
         }
 
+        $dateChanged = $order->requested_delivery_date?->toDateString() !== $data->requestedDeliveryDate;
         $order->fill(['customer_id' => $data->customerId, 'requested_delivery_date' => $data->requestedDeliveryDate, 'notes' => $data->notes]);
         if ($data->delivery !== []) {
             $order->forceFill(collect(['street', 'suburb', 'postcode', 'lat', 'lng', 'instructions'])
@@ -102,13 +103,43 @@ class OrderService
 
         $this->writeLines($order, $data->lines);
         if ($onOpenPickList) {
-            $order->forceFill(['needs_review' => true])->save();
+            $order->flag('changed_while_picking', "{$data->channel->label()} changed this order while it was being picked. Check the pick list.", always: true);
+            $order->save();
         }
 
         $this->reservations->syncOrder($order->refresh(), $data->channel->alwaysAccept());
-        $this->scheduler->assign($order->refresh());
+        $this->scheduler->assign($order->refresh(), $dateChanged);
 
         return $order->refresh();
+    }
+
+    /**
+     * A manager's new date, under the same rules as a channel's. On a pick list the
+     * order stays and is flagged with both dates. The audit log records either.
+     *
+     * @return bool whether it moved
+     */
+    public function changeDeliveryDate(Order $order, string $date, User $actor): bool
+    {
+        return DB::transaction(function () use ($order, $date, $actor) {
+            $order = Order::lockForUpdate()->findOrFail($order->id);
+            $this->assert($order->status->isActive(), "{$order->number} is {$order->status->label()}.");
+            $old = $order->delivery_date?->toDateString();
+            if ($old === $date) {
+                return true;
+            }
+
+            $moved = ! $this->scheduler->onPickList($order);
+            if ($moved) {
+                $this->scheduler->moveTo($order, $date);
+            } else {
+                $order->flag('date_changed', "{$actor->name} asked to change the delivery date from {$old} to {$date}. It stays on {$old} because it is already being picked.");
+                $order->save();
+            }
+            Audit::record($moved ? 'order_delivery_date_changed' : 'order_delivery_date_change_held', $order, ['delivery_date' => $old], ['delivery_date' => $moved ? $date : $old], ['requested' => $date], $actor->id);
+
+            return $moved;
+        });
     }
 
     /** Cancels the undispatched remainder and releases its reservation. Removes unposted pick lines. */
@@ -177,7 +208,8 @@ class OrderService
 
             $line = $existing[$ref] ?? $order->lines()->make(['line_ref' => $ref]);
             if ($line->exists && $qtyBase < $line->qty_dispatched_base) {
-                $order->forceFill(['needs_review' => true])->save();
+                $order->flag('reduced_below_dispatched', 'A line was reduced below what was already dispatched.', always: true);
+                $order->save();
             }
             $line->forceFill([
                 'product_id' => $product->id,
