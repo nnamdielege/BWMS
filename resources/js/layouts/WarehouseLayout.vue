@@ -13,13 +13,13 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { type SharedData, type WarehouseNav } from '@/types';
 import type { PendingVisit } from '@inertiajs/core';
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { ChevronLeft, LayoutGrid, ListChecks, LogOut, Menu, ScanLine, ShoppingCart } from 'lucide-vue-next';
+import { Barcode, ChevronLeft, LayoutGrid, ListChecks, LogOut, Menu, ScanLine, ShoppingCart } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const props = defineProps<{ leaveWarning?: string | null }>();
 const page = usePage<SharedData>();
 const nav = computed(() => page.props.nav as WarehouseNav);
-const icons = { Dashboard: LayoutGrid, 'Pick queue': ScanLine, 'Pick lists (desktop)': ListChecks, Orders: ShoppingCart };
+const icons = { Dashboard: LayoutGrid, 'Pick & pack (phone/handheld)': ScanLine, 'Capture barcodes': Barcode, 'Pick lists (desktop)': ListChecks, Orders: ShoppingCart };
 
 const menuOpen = ref(false);
 const pending = ref<PendingVisit | null>(null);

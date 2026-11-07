@@ -38,7 +38,7 @@ const claim = (id: number, takeOver = false) => {
 </script>
 
 <template>
-    <Head title="Pick queue" />
+    <Head title="Pick & pack (phone/handheld)" />
     <WarehouseLayout>
         <InputError :message="errors.pick" class="mb-3" />
 

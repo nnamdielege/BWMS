@@ -28,7 +28,7 @@ const props = defineProps<{
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Pick lists', href: '/pick-lists' },
+    { title: 'Pick lists (desktop)', href: '/pick-lists' },
     { title: props.pickList.number, href: '#' },
 ];
 const errors = computed(() => usePage().props.errors as Record<string, string>);

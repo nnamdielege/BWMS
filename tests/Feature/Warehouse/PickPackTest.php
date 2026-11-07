@@ -400,7 +400,7 @@ class PickPackTest extends TestCase
         $run = $this->run_();
 
         $pages = [
-            [route('pick.queue'), 'warehouse/PickQueue', 'Pick queue', route('dashboard')],
+            [route('pick.queue'), 'warehouse/PickQueue', 'Pick & pack (phone/handheld)', route('dashboard')],
             [route('pick.work', $list), 'warehouse/PickWork', "{$list->number} · {$run->label()}", route('pick.queue')],
             [route('pick.pack', $list), 'warehouse/Pack', "Pack {$list->number}", route('pick.work', $list)],
             [route('pick.manifest', $run), 'warehouse/RunManifest', $run->label(), route('pick.queue')],
@@ -413,7 +413,7 @@ class PickPackTest extends TestCase
                 ->where('nav.back', $back)
                 ->where('nav.links', [
                     ['title' => 'Dashboard', 'href' => route('dashboard')],
-                    ['title' => 'Pick queue', 'href' => route('pick.queue')],
+                    ['title' => 'Pick & pack (phone/handheld)', 'href' => route('pick.queue')],
                     ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index')],
                     ['title' => 'Orders', 'href' => route('orders.index')],
                 ]));
@@ -431,7 +431,7 @@ class PickPackTest extends TestCase
         $this->actingAs($pickerOnly)->get(route('pick.work', $list))->assertOk()->assertInertia(fn (AssertableInertia $p) => $p
             ->where('nav.links', [
                 ['title' => 'Dashboard', 'href' => route('dashboard')],
-                ['title' => 'Pick queue', 'href' => route('pick.queue')],
+                ['title' => 'Pick & pack (phone/handheld)', 'href' => route('pick.queue')],
                 ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index')],
             ]));
         $this->actingAs($pickerOnly)->get(route('orders.index'))->assertForbidden();

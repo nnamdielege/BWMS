@@ -16,7 +16,7 @@ This manual describes the app as it is built today. The screenshots use made-up 
 - [7. Stock](#7-stock)
 - [8. Stocktakes and count tasks](#8-stocktakes-and-count-tasks)
 - [9. Orders](#9-orders)
-- [10. Pick & pack (handheld)](#10-pick--pack-handheld)
+- [10. Pick & pack (phone/handheld)](#10-pick--pack-phonehandheld)
 - [11. Delivery runs and areas](#11-delivery-runs-and-areas)
 - [12. Sync screen (Ordermentum and portal)](#12-sync-screen-ordermentum-and-portal)
 - [13. Admin](#13-admin)
@@ -41,7 +41,7 @@ This manual describes the app as it is built today. The screenshots use made-up 
 
 | Task | Where | Section |
 |---|---|---|
-| Pick a run on the handheld | **Pick & pack** → run → **Pick N new order(s)** or **Continue** | [10](#10-pick--pack-handheld) |
+| Pick a run on the handheld | **Pick & pack (phone/handheld)** → run → **Pick N new order(s)** or **Continue** | [10](#10-pick--pack-phonehandheld) |
 | Pack orders and print packing slips | Finish picking → **Go to packing** | [10.5](#105-pack) |
 | Dispatch a run | **Manifest** → **Dispatch run** | [10.6](#106-dispatch-the-run) |
 | Receive a delivery against a PO | **Purchase orders** → PO → **Receive** | [6.4](#64-receive-a-delivery) |
@@ -205,7 +205,7 @@ Each user has one or more roles. The menu on the left only shows what your roles
 | Receive deliveries | ✓ | ✓ | ✓ | | |
 | Accept an over-receipt | ✓ | ✓ | | (✓)¹ | |
 | Create orders and customers; cancel orders; change runs | ✓ | ✓ | | | |
-| Pick & pack, pick lists, dispatch | ✓ | ✓ | ✓ | | |
+| Pick & pack (phone/handheld), Pick lists (desktop), dispatch | ✓ | ✓ | ✓ | | |
 | Sync actions (push, retry, replay, map, enable) | ✓ | ✓ | | | |
 | See users and the audit log | ✓ | ✓ | | | |
 | Invite users, change roles or email, deactivate, reset 2FA | ✓ | | | | |
@@ -229,7 +229,7 @@ The dashboard is the first page after you log in. Each tile shows only if your r
 
 | Tile | What it means | What to do |
 |---|---|---|
-| **Orders awaiting pick** | Orders that are open or partly dispatched. | Click it to open **Orders**. Pick them from **Pick & pack**. |
+| **Orders awaiting pick** | Orders that are open or partly dispatched. | Click it to open **Orders**. Pick them from **Pick & pack (phone/handheld)**. |
 | **Overdue purchase orders** | POs sent (or partly received) whose "Required by" date has passed. Red when above 0. | Chase the supplier, receive what arrived, or close the PO short ([6.5](#65-close-short-or-cancel)). |
 | **Sync failures (last 24 h)** | Ordermentum and portal stock pushes or order fetches that failed in the last 24 hours. Red when above 0. Shown if you can see the Sync screen. | Click it to open **Sync** and check **Push failures** and **Inbound events** ([12](#12-sync-screen-ordermentum-and-portal)). |
 | **Stock lines awaiting put-away** | Stock sitting in a receiving bin that isn't sellable. Only shows if your site receives into such a bin. | Move it to a sellable bin ([7.4](#74-move-stock-between-bins)). |
@@ -767,11 +767,11 @@ The delivery fields decide the delivery run:
 
 Also on the customer: **Ordermentum retailer ID** and **Portal user ID**, which link channel orders to the customer.
 
-### 9.10 Pick lists without scanning (desktop)
+### 9.10 Pick lists (desktop)
 
 A pick list covers one delivery day: the app refuses a selection that mixes days.
 
-Most picking is done on the handhelds ([10](#10-pick--pack-handheld)). There is also a desktop pick list:
+Most picking is done on the handhelds ([10](#10-pick--pack-phonehandheld)). There is also a desktop pick list:
 
 1. On **Orders**, tick orders from the same site and click **Create pick list**.
 2. The pick list opens, sorted by bin, earliest best-before first. **Print** prints it.
@@ -780,11 +780,11 @@ Most picking is done on the handhelds ([10](#10-pick--pack-handheld)). There is 
 
 **Status reads the same here and on the handheld:** Not started, Picking 2/5, Picked, Packed, Dispatched or Cancelled, whichever screen did the work. A list made here also shows on the handheld queue. Open lists show by default, and dispatched and cancelled ones are under **History**. Both screens refresh every 30 seconds and when you come back to the window.
 
-**Cancel** puts the orders back to ready-to-pick. All pick lists are under **Orders → Pick lists**.
+**Cancel** puts the orders back to ready-to-pick. All pick lists are under **Orders → Pick lists (desktop)**.
 
 ---
 
-## 10. Pick & pack (handheld)
+## 10. Pick & pack (phone/handheld)
 
 For warehouse staff, managers and admins. Built for Android handhelds with a built-in scanner.
 
@@ -799,9 +799,9 @@ The scan box has two buttons:
 - **⌨** shows the phone's keyboard, if you need to type.
 - **📷** uses the camera as a scanner. It only appears on phones and browsers that support it, and needs https.
 
-### 10.2 Pick queue
+### 10.2 The queue
 
-Open **Pick & pack** from the menu. Runs are grouped by delivery day: **OVERDUE** in red at the top (anything before today, Brisbane time), then **Today**, **Tomorrow** and each later day. **Orders**, **Pick lists** and the pack screen show the day the same way, and each order has a badge for its source: Ordermentum, Portal or Manual.
+Open **Pick & pack (phone/handheld)** from the menu. Runs are grouped by delivery day: **OVERDUE** in red at the top (anything before today, Brisbane time), then **Today**, **Tomorrow** and each later day. **Orders**, **Pick lists** and the pack screen show the day the same way, and each order has a badge for its source: Ordermentum, Portal or Manual.
 
 ![Pick queue](img/80-pick-queue.png)
 

@@ -127,7 +127,7 @@ As `manager@local.test` on the PC, then `picker@local.test` on the handheld.
 |---|---|---|
 | 1 | Note one product's figures on **Stock on hand** (search its SKU), for example a cold brew with a Case ×15. | On hand, Sellable, Reserved 0, Available. |
 | 2 | **Orders → New order**: a customer whose postcode is in a delivery area, **If short at picking = Backorder the rest**, 2 cases of that product plus 1 of another. **Create order & reserve stock**. | Order **Open**, with a run "‹date› · ‹area›". On **Stock on hand**, Reserved is up and Available down by 2 cases' worth of units. |
-| 3 | Handheld: **Pick & pack** → that run → **Pick 1 new order(s)**. | The pick list opens on the first line, in walk order (chilled lines last). |
+| 3 | Handheld: **Pick & pack (phone/handheld)** → that run → **Pick 1 new order(s)**. | The pick list opens on the first line, in walk order (chilled lines last). |
 | 4 | Scan a **wrong** bin label. | Red message "That is bin …; this line is in …", double buzz. |
 | 5 | Scan the right bin, then the product barcode once per case. | "Bin ✓", then the count goes up; the line confirms itself when it matches. |
 | 6 | On the second line, tap **Short / not found** and enter fewer than asked. | Next line, or "All lines picked". **Dashboard → Bins to count** lists that bin. |

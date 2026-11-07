@@ -13,7 +13,7 @@ final class WarehouseNav
     {
         $links = [
             ['title' => 'Dashboard', 'href' => route('dashboard'), 'permission' => null],
-            ['title' => 'Pick queue', 'href' => route('pick.queue'), 'permission' => Permissions::PICKING_PERFORM],
+            ['title' => 'Pick & pack (phone/handheld)', 'href' => route('pick.queue'), 'permission' => Permissions::PICKING_PERFORM],
             ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index'), 'permission' => Permissions::PICKING_PERFORM],
             ['title' => 'Orders', 'href' => route('orders.index'), 'permission' => Permissions::ORDERS_VIEW],
             ['title' => 'Capture barcodes', 'href' => route('barcode-capture.index'), 'permission' => Permissions::PRODUCTS_MANAGE],

@@ -46,7 +46,7 @@ class PickPackController extends Controller
             ->orderBy('run_date')->orderBy('delivery_area_id')->get();
 
         return Inertia::render('warehouse/PickQueue', [
-            'nav' => WarehouseNav::for($request, 'Pick queue', route('dashboard')),
+            'nav' => WarehouseNav::for($request, 'Pick & pack (phone/handheld)', route('dashboard')),
             'today' => $today,
             'runs' => $runs->map(function (DeliveryRun $run) {
                 $lists = $run->openPickLists()->with('claimer:id,name')->withCount('lines')->get();

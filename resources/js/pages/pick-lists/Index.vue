@@ -23,12 +23,12 @@ interface Row {
 const props = defineProps<{ view: 'open' | 'history'; open: Row[]; history: Paginated<Row> | null; today: string }>();
 useAutoRefresh(['open', 'history']);
 const groups = computed(() => dayGroups(props.open, (p) => p.delivery_date, props.today));
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pick lists', href: '/pick-lists' }];
+const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pick lists (desktop)', href: '/pick-lists' }];
 const fmt = (iso: string) => new Date(iso).toLocaleString('en-AU', { timeZone: 'Australia/Brisbane' });
 </script>
 
 <template>
-    <Head title="Pick lists" />
+    <Head title="Pick lists (desktop)" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="space-y-4 p-4">

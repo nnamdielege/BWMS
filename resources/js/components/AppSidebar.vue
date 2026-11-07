@@ -40,8 +40,8 @@ const navGroups: NavGroup[] = [
         items: [
             { title: 'Orders', href: '/orders', icon: ShoppingCart, permission: 'orders.view' },
             { title: 'Consolidate', href: '/orders/consolidate', icon: Combine, permission: 'orders.manage' },
-            { title: 'Pick & pack', href: '/pick', icon: ScanLine, permission: 'picking.perform' },
-            { title: 'Pick lists', href: '/pick-lists', icon: ListChecks, permission: 'picking.perform' },
+            { title: 'Pick & pack (phone/handheld)', href: '/pick', icon: ScanLine, permission: 'picking.perform' },
+            { title: 'Pick lists (desktop)', href: '/pick-lists', icon: ListChecks, permission: 'picking.perform' },
             { title: 'Customers', href: '/customers', icon: Store, permission: 'orders.view' },
         ],
     },
