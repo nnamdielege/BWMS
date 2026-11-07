@@ -231,7 +231,7 @@ Idempotency-Key: portal:order:ORD-7K2M9XQ4LP1A:v1
 
 **Version.** Add `orders.bwms_version`, default 0 (a reservation counts as 0). Increment it and save it with the change, then queue the call. After a 409 on an edit, BWMS keeps its old state and a person decides. No automatic cancellation.
 
-**Payment.** BWMS has no payment state. Sending a `PUT` on payment is harmless but changes nothing: see [Open items](#open-items).
+**Payment.** BWMS has no payment state, so sending a `PUT` on payment changes nothing there. An unpaid Stripe order is reserved and live in BWMS until the portal cancels it: see [Stripe orders](#stripe-orders-the-30-minute-window).
 
 ## 7. Cancel
 
@@ -271,6 +271,29 @@ BWMS releases everything not yet dispatched and removes it from any open pick li
 `reservation_status` always reads `confirmed`, even on a cancelled order. Ignore it after the first reservation.
 
 **Every path that ends an order must send this.** See [12](#12-changes-in-the-portal-code).
+
+### Stripe orders: the 30-minute window
+
+**Decided 2026-11-07.** A Stripe order reserves at checkout like any other order. It's released if payment fails, or isn't confirmed within 30 minutes.
+
+| Stripe outcome | Portal does | BWMS sees |
+|---|---|---|
+| Paid within the window | Confirms as today | Nothing changes. Stock stays reserved. |
+| Payment fails (`checkout.session.async_payment_failed`) | `release()` to `payment_failed` | Cancel |
+| Not paid when the session expires (`checkout.session.expired`) | `release()` to `cancelled` | Cancel |
+
+A declined card isn't a failure yet: the shopper can retry until the session expires, which is what the 30 minutes covers.
+
+**The portal doesn't work this way today.** Stripe sessions last 24 hours and the sweep waits 25. To make the window real:
+1. **Set `expires_at` on the checkout session** in `placeOrder()` to 31 minutes from now. Stripe refuses anything under 30 minutes after creation, so don't pass exactly 30.
+2. **Tighten the sweep:** in `ReleaseAbandonedStripeOrders`, change `MIN_AGE_HOURS` (25) to 40 minutes, and run it every 5 minutes instead of hourly. It stays the safety net behind the webhook.
+3. **Send the cancel from `StripeOrderPaymentService::release()`** ([12](#12-changes-in-the-portal-code)), so all of the above reach BWMS.
+
+Payment arriving after the release goes down the existing late-payment path: `confirmPaid()` alerts admins and a person refunds or re-places it. The reservation doesn't come back.
+
+**During the window the order can be picked.** If goods leave before the release, the cancel answers `422` or a partial result ([7](#7-cancel)): alert staff.
+
+Payment-link orders aren't covered by this window: see [Open items](#open-items).
 
 ## 8. Outbox and retries
 
@@ -384,25 +407,32 @@ X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
 | 4xx | **Doesn't retry.** The event is logged in BWMS and lost to you. Use [9](#9-reading-from-bwms) to recover. |
 
 > **Work out what shipped from the quantities, not the event name.**
-> - **One order can get several events.** Portal orders are backordered by default, so `short_shipped` means the rest is still reserved and may ship later. Add each event's `qty` per line.
 > - **A `dispatched` event doesn't prove the order is complete.** It compares picked against what was planned, and a line with no stock when the pick list was made is never planned. That line is simply missing from `lines`.
-> - **A missing line means nothing shipped for it in this dispatch.**
+> - **A line missing from the event counts as 0 dispatched.**
+> - **The exception:** a product BWMS doesn't stock-track, such as a service, never appears in events even though it ships. Don't map one to a portal product.
 
 **On each event:**
-1. Add `qty` to a shipped total per order line.
-2. Shipped total ≥ ordered on every line: set the order to `dispatched`.
-3. Otherwise: mark it part-shipped, and show staff what's outstanding. `GET /orders/{ref}` is the source of truth for `bwms_status` and `dispatched_qty`.
+1. Add each line's `qty` to that order line's `dispatched_qty`.
+2. Work out **ordered − `dispatched_qty`** for every line of the order, including lines missing from the event.
+3. **Nothing short:** set the order to `dispatched`. Done.
+4. **Anything short:** credit it, then cancel the remainder, as below. Set the order to `dispatched`.
 
 **BWMS doesn't send events for:** an order cancelled in BWMS, a delivery date changed in BWMS, or delivery itself. Run a daily job over open orders that calls `GET /orders/{ref}` and flags any difference for staff.
 
-### Short shipments (decided 2026-10-27)
+### Short shipments (decided 2026-11-07)
 
-The portal **invoices shipped quantities only**.
-- **Not yet charged** (invoice, COD, wallet not yet captured): invoice and charge shipped quantities.
-- **Already charged** (Stripe captured, or a Xero invoice raised): issue a Xero credit note and/or a Stripe partial refund for (ordered − shipped) × unit price, including GST, and email the customer what was short and what was credited.
+**Credit at dispatch, from the dispatch event, for ordered − `dispatched_qty` per line.** Don't wait to see whether the rest ships. This replaces the 2026-10-27 decision on timing. The portal still invoices shipped quantities only.
+
+For an order of 3 with `{"line_ref":"501","qty":1}` in the event, credit 2. A line of 4 missing from the event credits 4.
+
+- **Not yet charged** (invoice, COD, wallet not yet captured): invoice and charge the dispatched quantities only.
+- **Already charged** (Stripe captured, or a Xero invoice raised): issue a Xero credit note and/or a Stripe partial refund for (ordered − `dispatched_qty`) × unit price, including GST, and email the customer what was short and what was credited.
 - Record the credit note or refund reference on the order.
+- It runs **once per event**: a redelivered event must never credit twice. Dedupe on the `Idempotency-Key` first.
 
-See [Open items](#open-items) for when to credit.
+**Then cancel the remainder in BWMS.** Portal orders backorder by default, so without this BWMS keeps the rest reserved and could ship goods the customer has just been refunded for. After crediting, queue the cancel in [7](#7-cancel), with `lines: []` and the next `version`. Expect `200` with `"bwms_status":"dispatched"`: what left stays left, and the remainder is released.
+
+**If a later event arrives anyway** (the remainder went out before the cancel landed), add its quantities, don't credit again, and alert staff: that customer has been credited for goods they received.
 
 ## 12. Changes in the portal code
 
@@ -414,6 +444,9 @@ Line numbers are as of commit `6bccbc2`.
 3. Act on the response ([5](#5-handling-the-response-at-checkout)). Add `orders.reservation_status`, nullable: `confirmed`, `unconfirmed`, `reservation_failed`.
 4. Keep the `stock_qty` decrement. It's now only a display cache, and BWMS's push overwrites it. If it throws after a 201, queue a cancel ([5](#5-handling-the-response-at-checkout)).
 5. Add `orders.bwms_version`, default 0.
+6. Set the Stripe session's `expires_at` ([Stripe orders](#stripe-orders-the-30-minute-window)).
+
+**`order_items`:** add `dispatched_qty`, decimal, default 0, for [11](#11-post-apibwmsv1order-events-dispatch-events).
 
 **Send a cancel ([7](#7-cancel)) from every path that ends an order:**
 
@@ -421,7 +454,7 @@ Line numbers are as of commit `6bccbc2`.
 |---|---|
 | `OrderAdminService::cancel()` | ~130 |
 | `Api/OrderController` | ~88 |
-| `StripeOrderPaymentService::release()`, which covers `ReleaseAbandonedStripeOrders` and `PaymentLinkService` | ~83 |
+| `StripeOrderPaymentService::release()`, which covers `ReleaseAbandonedStripeOrders`, `PaymentLinkService` and the Stripe webhooks | ~83 |
 
 Check for any other move to `cancelled`, `payment_failed` or an expired state.
 
@@ -459,12 +492,15 @@ Build tests for these against a stub of BWMS:
 - [ ] Calls to the two inbound routes without a valid signature get 401.
 - [ ] A stock push with an older `as_of` is ignored, and an unknown product ID still gets 200.
 - [ ] A redelivered order event changes nothing and credits nothing.
-- [ ] Two events for one order add up. The order is only `dispatched` once every line has shipped in full.
-- [ ] A `dispatched` event missing a line leaves the order part-shipped.
+- [ ] A short event credits ordered − `dispatched_qty` per line, then queues a cancel of the remainder.
+- [ ] A `dispatched` event missing a line credits that line in full.
+- [ ] A later event for a credited order adds its quantities, credits nothing, and alerts staff.
+- [ ] An unpaid checkout order is released and cancelled in BWMS about 30 minutes after placing.
+- [ ] A `payment_failed` order is cancelled in BWMS.
+- [ ] A payment-link order isn't released at 30 minutes.
 
 ## Open items
 
-Decisions for the owner. **Don't work around these without asking.**
+A decision for the owner. **Don't work around this without asking.**
 
-1. **Unpaid Stripe orders can be picked.** BWMS creates the order at reservation and has no payment state, so an `awaiting_payment` order is pickable until the portal cancels it. The portal's own run sheets leave those orders out. Either reserve only once paid, losing the hold during payment, or give BWMS a hold state.
-2. **When to credit a short shipment.** Portal orders backorder by default, so the rest may still ship after a `short_shipped` event. Crediting straight away, as decided on 2026-10-27, then needs a re-charge if it ships. Until this is decided: on `short_shipped`, flag it for staff and **don't credit automatically** while `GET /orders/{ref}` shows `partially_dispatched`. Credit once the order is `dispatched` or the remainder is cancelled.
+1. **Payment-link orders can be picked before they're paid.** Staff-entered Stripe orders have their own pay-by deadline (`payment_due_at`), which can be days away, so the 30-minute window doesn't apply to them. They reserve at placement and stay pickable in BWMS until paid or released at that deadline, and the portal's own run sheets leave them out. Build them as a normal reservation until this is decided.
