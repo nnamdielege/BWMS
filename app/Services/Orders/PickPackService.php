@@ -200,7 +200,7 @@ class PickPackService
     /** Hand-off: dispatch every open pick list of the run once each of its orders is packed. */
     public function dispatchRun(DeliveryRun $run, User $actor): DeliveryRun
     {
-        $lists = $run->pickLists()->where('status', PickList::STATUS_OPEN)->get();
+        $lists = $run->openPickLists()->get();
         $this->assert($lists->isNotEmpty(), 'Nothing on this run is picked and waiting to go.');
 
         foreach ($lists as $list) {
@@ -212,10 +212,6 @@ class PickPackService
             $this->picks->dispatch($list, $actor);
         }
 
-        $stillActive = $run->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::Picking, OrderStatus::PartiallyDispatched])->exists();
-        if (! $stillActive) {
-            $run->forceFill(['status' => DeliveryRun::STATUS_DISPATCHED, 'dispatched_at' => now()])->save();
-        }
         Audit::record('run_dispatched', null, meta: ['run' => $run->id, 'pick_lists' => $lists->pluck('number')->all()]);
 
         return $run->fresh();

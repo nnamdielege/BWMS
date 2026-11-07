@@ -49,6 +49,33 @@ class PickList extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * How far along this list is: the one status every screen shows, whichever
+     * screen did the work. `status` alone only knows open, dispatched or cancelled.
+     *
+     * @return array{key: string, label: string}
+     */
+    public function stage(): array
+    {
+        if ($this->status !== self::STATUS_OPEN) {
+            return ['key' => $this->status, 'label' => ucfirst($this->status)];
+        }
+
+        $lines = $this->lines()->count();
+        $done = $this->lines()->whereNotNull('qty_picked_base')->count();
+        if ($done === 0) {
+            return ['key' => 'not_started', 'label' => 'Not started'];
+        }
+        if ($done < $lines) {
+            return ['key' => 'picking', 'label' => "Picking {$done}/{$lines}"];
+        }
+
+        $orders = $this->lines()->join('order_lines', 'order_lines.id', '=', 'pick_list_lines.order_line_id')->distinct()->count('order_lines.order_id');
+        $packed = OrderPack::where('pick_list_id', $this->id)->count();
+
+        return $packed >= $orders ? ['key' => 'packed', 'label' => 'Packed, ready to dispatch'] : ['key' => 'picked', 'label' => 'Picked, ready to pack'];
+    }
+
     public function isOpen(): bool
     {
         return $this->status === self::STATUS_OPEN;

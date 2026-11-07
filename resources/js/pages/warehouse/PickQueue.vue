@@ -5,6 +5,7 @@ import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { dayGroups } from '@/lib/deliveryDays';
+import { useAutoRefresh } from '@/lib/useAutoRefresh';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -17,13 +18,15 @@ type Run = {
     active: number;
     orders: { id: number; number: string; customer: string | null; channel: string; moved_from: string | null; hold: Hold | null }[];
     held: number;
-    lists: { id: number; number: string; claimed_by: string | null; mine: boolean; lines: number; done: number }[];
+    lists: { id: number; number: string; claimed_by: string | null; mine: boolean; lines: number; stage: { key: string; label: string } }[];
 };
 const props = defineProps<{
     today: string;
     runs: Run[];
     unassigned: { id: number; number: string; customer: string | null; channel: string; postcode: string | null; suburb: string | null }[];
 }>();
+
+useAutoRefresh(['runs', 'unassigned']);
 
 const errors = computed(() => usePage().props.errors as Record<string, string>);
 const groups = computed(() => dayGroups(props.runs, (r) => r.date, props.today));
@@ -60,7 +63,7 @@ const claim = (id: number, takeOver = false) => {
 
                 <div v-for="l in run.lists" :key="l.id" class="mt-3 flex items-center justify-between gap-2 rounded-lg bg-muted/60 p-2">
                     <div class="text-sm">
-                        <span class="font-mono">{{ l.number }}</span> · {{ l.done }}/{{ l.lines }} lines
+                        <span class="font-mono">{{ l.number }}</span> · {{ l.stage.label }}
                         <div class="text-xs text-muted-foreground">{{ l.claimed_by ? (l.mine ? 'You' : l.claimed_by) : 'Not claimed' }}</div>
                     </div>
                     <button v-if="!l.claimed_by || l.mine" class="h-12 rounded-lg bg-primary px-4 font-semibold text-primary-foreground" @click="claim(l.id)">

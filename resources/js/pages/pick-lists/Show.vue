@@ -23,7 +23,7 @@ interface Line {
 }
 
 const props = defineProps<{
-    pickList: { id: number; number: string; status: string; site: string; run: string | null; dispatched_at: string | null; lines: Line[] };
+    pickList: { id: number; number: string; status: string; stage: { key: string; label: string }; site: string; run: string | null; dispatched_at: string | null; lines: Line[] };
     can: { pick: boolean };
 }>();
 
@@ -58,7 +58,7 @@ const packs = (l: Line, base: number) => (l.pack_qty > 1 ? `${Math.floor(base / 
         <div class="space-y-4 p-4">
             <header class="flex flex-wrap items-center gap-3">
                 <h1 class="font-mono text-xl font-semibold">{{ pickList.number }}</h1>
-                <span class="rounded bg-muted px-2 py-0.5 text-sm capitalize">{{ pickList.status }}</span>
+                <span class="rounded bg-muted px-2 py-0.5 text-sm">{{ pickList.stage.label }}</span>
                 <span class="text-sm">{{ pickList.site }}</span>
                 <div class="ml-auto flex gap-2 print:hidden">
                     <Button variant="outline" @click="print">Print</Button>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -38,6 +39,16 @@ class DeliveryRun extends Model
     public function pickLists(): HasMany
     {
         return $this->hasMany(PickList::class);
+    }
+
+    /**
+     * Open lists holding this run's orders. By order, not by delivery_run_id: a list
+     * made on the desktop can cover more than one run.
+     */
+    public function openPickLists(): Builder
+    {
+        return PickList::where('status', PickList::STATUS_OPEN)
+            ->whereHas('lines.orderLine.order', fn ($q) => $q->where('delivery_run_id', $this->id));
     }
 
     public function label(): string

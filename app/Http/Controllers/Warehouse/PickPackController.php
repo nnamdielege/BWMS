@@ -49,9 +49,7 @@ class PickPackController extends Controller
             'nav' => WarehouseNav::for($request, 'Pick queue', route('dashboard')),
             'today' => $today,
             'runs' => $runs->map(function (DeliveryRun $run) {
-                $lists = $run->pickLists()->where('status', PickList::STATUS_OPEN)->with('claimer:id,name')->withCount([
-                    'lines', 'lines as lines_done_count' => fn ($q) => $q->whereNotNull('qty_picked_base'),
-                ])->get();
+                $lists = $run->openPickLists()->with('claimer:id,name')->withCount('lines')->get();
                 $active = $run->orders()->whereIn('status', self::ACTIVE)->with('customer:id,name')->orderBy('id')->get();
 
                 return [
@@ -65,7 +63,7 @@ class PickPackController extends Controller
                     'held' => $active->where('payment_hold', true)->count(),
                     'lists' => $lists->map(fn (PickList $l) => [
                         'id' => $l->id, 'number' => $l->number, 'claimed_by' => $l->claimer?->name,
-                        'mine' => $l->claimed_by === request()->user()->id, 'lines' => $l->lines_count, 'done' => $l->lines_done_count,
+                        'mine' => $l->claimed_by === request()->user()->id, 'lines' => $l->lines_count, 'stage' => $l->stage(),
                     ]),
                 ];
             })->values(),
@@ -211,7 +209,7 @@ class PickPackController extends Controller
             'nav' => WarehouseNav::for($request, $run->label(), route('pick.queue')),
             'run' => ['id' => $run->id, 'label' => $run->label(), 'status' => $run->status, 'date' => $run->run_date->toDateString(), 'trip' => $run->trip_label],
             'orders' => $orders->map(fn (Order $o) => $this->manifestRow($o)),
-            'openLists' => $run->pickLists()->where('status', PickList::STATUS_OPEN)->get(['id', 'number']),
+            'openLists' => $run->openPickLists()->get(['id', 'number']),
         ]);
     }
 

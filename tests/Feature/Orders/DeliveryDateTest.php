@@ -409,8 +409,8 @@ class DeliveryDateTest extends TestCase
         app(PickListService::class)->cancel($dispatched);
 
         $this->actingAs($this->manager)->get(route('pick-lists.index'))->assertInertia(fn (AssertableInertia $p) => $p
-            ->where('open', fn ($rows) => collect($rows)->map(fn ($r) => [$r['id'], $r['delivery_date']])->all() === [[$sooner->id, '2026-11-09'], [$later->id, '2026-11-16']])
-            ->where('pickLists.data.0.id', $dispatched->id));
+            ->where('open', fn ($rows) => collect($rows)->map(fn ($r) => [$r['id'], $r['delivery_date']])->all() === [[$sooner->id, '2026-11-09'], [$later->id, '2026-11-16']]));
+        $this->actingAs($this->manager)->get(route('pick-lists.index', ['view' => 'history']))->assertInertia(fn (AssertableInertia $p) => $p->where('history.data.0.id', $dispatched->id));
     }
 
     private function legacy(Order $order, array $values): Order

@@ -20,23 +20,28 @@ class PickListController extends Controller
 {
     public function __construct(private PickListService $picks) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $view = $request->validate(['view' => ['nullable', 'in:open,history']])['view'] ?? 'open';
         $lists = PickList::with(['site:id,name', 'creator:id,name', 'deliveryRun.area:id,name'])->withCount('lines')
             ->addSelect(['delivery_date' => OrderLine::query()->join('orders', 'orders.id', '=', 'order_lines.order_id')
                 ->join('pick_list_lines', 'pick_list_lines.order_line_id', '=', 'order_lines.id')
                 ->whereColumn('pick_list_lines.pick_list_id', 'pick_lists.id')->selectRaw('MIN(orders.delivery_date)')]);
         $row = fn (PickList $p) => [
-            'id' => $p->id, 'number' => $p->number, 'site' => $p->site->name, 'status' => $p->status,
+            'id' => $p->id, 'number' => $p->number, 'site' => $p->site->name, 'status' => $p->status, 'stage' => $p->stage(),
             'delivery_date' => $p->delivery_date, 'run' => $p->deliveryRun?->area?->name,
             'lines' => $p->lines_count, 'created_by' => $p->creator->name, 'created_at' => $p->created_at->toIso8601String(),
         ];
 
         return Inertia::render('pick-lists/Index', [
             'today' => BusinessDate::today(),
-            // Open lists are the work, by delivery day. Closed ones are history.
-            'open' => (clone $lists)->where('status', PickList::STATUS_OPEN)->orderByRaw('delivery_date IS NULL, delivery_date')->orderBy('delivery_run_id')->get()->map($row)->values(),
-            'pickLists' => $lists->where('status', '!=', PickList::STATUS_OPEN)->latest('id')->paginate(30)->through($row),
+            'view' => $view,
+            'open' => $view === 'open'
+                ? (clone $lists)->where('status', PickList::STATUS_OPEN)->orderByRaw('delivery_date IS NULL, delivery_date')->orderBy('delivery_run_id')->get()->map($row)->values()
+                : [],
+            'history' => $view === 'history'
+                ? $lists->where('status', '!=', PickList::STATUS_OPEN)->latest('id')->paginate(30)->withQueryString()->through($row)
+                : null,
         ]);
     }
 
@@ -68,7 +73,7 @@ class PickListController extends Controller
 
         return Inertia::render('pick-lists/Show', [
             'pickList' => [
-                'id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status, 'site' => $pickList->site->name,
+                'id' => $pickList->id, 'number' => $pickList->number, 'status' => $pickList->status, 'stage' => $pickList->stage(), 'site' => $pickList->site->name,
                 'dispatched_at' => $pickList->dispatched_at?->toIso8601String(),
                 'run' => $pickList->deliveryRun?->label(),
                 // Walk order: by bin, then earliest best-before.

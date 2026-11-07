@@ -6,6 +6,7 @@ use App\Enums\MovementType;
 use App\Enums\OrderStatus;
 use App\Events\OrderDispatched;
 use App\Models\CountTask;
+use App\Models\DeliveryRun;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\PickList;
@@ -86,6 +87,11 @@ class PickListService
 
             $this->assert($pickList->lines()->exists(), 'Nothing can be picked: no sellable stock for these orders at this site.');
 
+            $runs = $orders->pluck('delivery_run_id')->unique();
+            if ($runs->count() === 1 && $runs->first() !== null) {
+                $pickList->forceFill(['delivery_run_id' => $runs->first()])->save();
+            }
+
             return ['pickList' => $pickList, 'shortfalls' => $shortfalls];
         });
     }
@@ -159,11 +165,22 @@ class PickListService
             }
 
             $pickList->forceFill(['status' => PickList::STATUS_DISPATCHED, 'dispatched_by' => $actor->id, 'dispatched_at' => now()])->save();
+            $this->closeFinishedRuns($orders);
             $this->flagNegativeBins($pickList, $lines);
             OrderDispatched::dispatch($pickList->id, $orders->pluck('id')->all());
 
             return $pickList;
         });
+    }
+
+    /** A run is done when nothing on it is left to go, by whichever screen dispatched it. */
+    private function closeFinishedRuns($orders): void
+    {
+        foreach (DeliveryRun::whereIn('id', $orders->pluck('delivery_run_id')->filter()->unique())->where('status', DeliveryRun::STATUS_OPEN)->get() as $run) {
+            if (! $run->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::Picking, OrderStatus::PartiallyDispatched])->exists()) {
+                $run->forceFill(['status' => DeliveryRun::STATUS_DISPATCHED, 'dispatched_at' => now()])->save();
+            }
+        }
     }
 
     public function cancel(PickList $pickList): PickList

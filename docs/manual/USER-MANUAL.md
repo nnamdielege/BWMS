@@ -778,6 +778,8 @@ Most picking is done on the handhelds ([10](#10-pick--pack-handheld)). There is 
 3. Enter the quantity picked on each line. Less than asked is a short pick.
 4. Click **Dispatch** when every line is confirmed. **Mark all picked** fills every line you haven't entered yet with the full quantity.
 
+**Status reads the same here and on the handheld:** Not started, Picking 2/5, Picked, Packed, Dispatched or Cancelled, whichever screen did the work. A list made here also shows on the handheld queue. Open lists show by default, and dispatched and cancelled ones are under **History**. Both screens refresh every 30 seconds and when you come back to the window.
+
 **Cancel** puts the orders back to ready-to-pick. All pick lists are under **Orders → Pick lists**.
 
 ---
