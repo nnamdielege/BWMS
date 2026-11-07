@@ -212,6 +212,8 @@ class OrderService
             'external_ref' => $externalRef,
             'status' => OrderStatus::Open,
             'created_by' => $actor?->id,
+            // The portal credits a short at dispatch, so what didn't go isn't kept on backorder.
+            'short_ship_policy' => $channel === OrderChannel::Portal ? 'cancel' : 'backorder',
         ])->save();
 
         return $order;

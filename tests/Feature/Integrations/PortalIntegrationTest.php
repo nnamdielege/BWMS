@@ -3,6 +3,7 @@
 namespace Tests\Feature\Integrations;
 
 use App\Authorization\Permissions;
+use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Integrations\Portal\PortalClient;
 use App\Integrations\Portal\PortalSignature;
@@ -17,6 +18,8 @@ use App\Models\IntegrationInbox;
 use App\Models\Order;
 use App\Models\Product;
 use App\Services\Orders\AvailabilityService;
+use App\Services\Orders\ChannelOrderData;
+use App\Services\Orders\OrderService;
 use App\Services\Orders\PickListService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -246,6 +249,36 @@ class PortalIntegrationTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->method() === 'POST' && $r->url() === 'https://portal.test/api/bwms/v1/order-events'
             && $r['order_ref'] === 'P-1001' && $r['event'] === 'short_shipped' && $r['lines'] === [['line_ref' => 'L1', 'qty' => 1]]
             && $r->header('Idempotency-Key')[0] === "bwms:order-event:P-1001:{$list->id}");
+    }
+
+    public function test_a_portal_order_cancels_the_rest_of_a_short_pick_at_dispatch()
+    {
+        Queue::fake([SendPortalOrderEvent::class]);
+        $this->reserve([['line_ref' => 'L1', 'portal_product_id' => 501, 'qty' => 2]])->assertCreated();
+        $order = Order::sole();
+        $this->assertSame('cancel', $order->short_ship_policy);
+        $picker = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
+        $list = app(PickListService::class)->create($picker, $this->site(), [$order->id])['pickList'];
+
+        $this->actingAs($picker)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => 12]])->assertSessionHasNoErrors(); // 1 of 2 cartons
+        $this->actingAs($picker)->post(route('pick-lists.dispatch', $list))->assertSessionHasNoErrors();
+
+        $order->refresh();
+        $line = $order->lines()->sole();
+        $this->assertSame(OrderStatus::Dispatched, $order->status, 'Nothing left to backorder');
+        $this->assertSame([12, 12], [$line->qty_dispatched_base, $line->qty_cancelled_base]);
+        $this->assertSame(48, $this->available(), 'The rest is released, not held for a later run');
+        $this->signed('GET', '/api/portal/v1/orders/P-1001')->assertJson(['bwms_status' => 'dispatched', 'lines' => [['reserved_qty' => 0, 'dispatched_qty' => 1]]]);
+    }
+
+    public function test_other_channels_keep_their_backorder_default()
+    {
+        $order = app(OrderService::class)->upsertFromChannel(new ChannelOrderData(
+            channel: OrderChannel::Ordermentum, externalRef: 'om-1', version: 1, status: 'confirmed', siteId: $this->site()->id,
+            lines: [['line_ref' => '1', 'product_id' => $this->product->id, 'product_unit_id' => $this->product->units()->value('id'), 'qty' => 1]],
+        ));
+
+        $this->assertSame('backorder', $order->short_ship_policy);
     }
 
     public function test_bulk_mapping_command()

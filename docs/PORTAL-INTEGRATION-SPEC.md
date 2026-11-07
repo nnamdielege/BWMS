@@ -362,7 +362,7 @@ For reconciliation and support. Both calls are signed, with an empty body and no
 |---|---|
 | `open` | Reserved, waiting to be picked |
 | `picking` | On a pick list |
-| `partially_dispatched` | Some has left. The rest is still reserved. |
+| `partially_dispatched` | Some has left. The rest is still reserved. Portal orders don't normally reach this: see [11](#11-post-apibwmsv1order-events-dispatch-events). |
 | `dispatched` | Finished |
 | `cancelled` | Cancelled |
 
@@ -440,7 +440,7 @@ X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
 1. Add each line's `qty` to that order line's `dispatched_qty`.
 2. Work out **ordered − `dispatched_qty`** for every line of the order, including lines missing from the event.
 3. **Nothing short:** set the order to `dispatched`. Done.
-4. **Anything short:** credit it, then cancel the remainder, as below. Set the order to `dispatched`.
+4. **Anything short:** credit it, as below. Set the order to `dispatched`.
 
 **BWMS doesn't send events for:** an order cancelled in BWMS, a delivery date changed in BWMS, or delivery itself. Run a daily job over open orders that calls `GET /orders/{ref}` and flags any difference for staff.
 
@@ -455,9 +455,9 @@ For an order of 3 with `{"line_ref":"501","qty":1}` in the event, credit 2. A li
 - Record the credit note or refund reference on the order.
 - It runs **once per event**: a redelivered event must never credit twice. Dedupe on the `Idempotency-Key` first.
 
-**Then cancel the remainder in BWMS.** Portal orders backorder by default, so without this BWMS keeps the rest reserved and could ship goods the customer has just been refunded for. After crediting, queue the cancel in [7](#7-cancel), with `lines: []` and the next `version`. Expect `200` with `"bwms_status":"dispatched"`: what left stays left, and the remainder is released.
+**The remainder is already gone.** BWMS sets every portal order to cancel the rest of a short pick, so at dispatch it cancels what didn't leave and releases that stock. There's no backorder and no second event, and **the portal sends no cancel after a credit**. `GET /orders/{ref}` then shows `bwms_status: dispatched`, with `reserved_qty` 0.
 
-**If a later event arrives anyway** (the remainder went out before the cancel landed), add its quantities, don't credit again, and alert staff: that customer has been credited for goods they received.
+This covers lines with no stock when the pick list was made too: they're cancelled in the same step, which is why a line missing from the event is credited in full.
 
 ## 12. Changes in the portal code
 
@@ -520,9 +520,8 @@ Build tests for these against a stub of BWMS:
 - [ ] Calls to the two inbound routes without a valid signature get 401.
 - [ ] A stock push with an older `as_of` is ignored, and an unknown product ID still gets 200.
 - [ ] A redelivered order event changes nothing and credits nothing.
-- [ ] A short event credits ordered − `dispatched_qty` per line, then queues a cancel of the remainder.
+- [ ] A short event credits ordered − `dispatched_qty` per line and sends nothing back to BWMS.
 - [ ] A `dispatched` event missing a line credits that line in full.
-- [ ] A later event for a credited order adds its quantities, credits nothing, and alerts staff.
 - [ ] An unpaid checkout order is released and cancelled in BWMS about 30 minutes after placing.
 - [ ] A `payment_failed` order is cancelled in BWMS.
 - [ ] A payment-link order isn't released at 30 minutes.
