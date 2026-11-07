@@ -9,7 +9,7 @@ The contract the portal (`localSelection`, shop.localselection.com.au) implement
 - The portal owns prices, payment, invoices and the shopper.
 - Each side calls the other. Both directions are signed the same way.
 
-**Contents:** [1 Config](#1-config) · [2 Signing](#2-signing-both-directions) · [3 Idempotency](#3-idempotency-keys) · [4 Reserve at checkout](#4-post-reservations-reserve-at-checkout) · [5 Refusals at checkout](#5-handling-the-response-at-checkout) · [6 Update](#6-put-ordersref-full-state-update) · [7 Cancel](#7-cancel) · [8 Outbox and retries](#8-outbox-and-retries) · [9 Reading from BWMS](#9-reading-from-bwms) · [10 Stock from BWMS](#10-put-apibwmsv1stock-stock-from-bwms) · [11 Dispatch events](#11-post-apibwmsv1order-events-dispatch-events) · [12 Portal changes](#12-changes-in-the-portal-code) · [13 Go-live](#13-go-live) · [14 Acceptance](#14-acceptance-checks)
+**Contents:** [1 Config](#1-config) · [2 Signing](#2-signing-both-directions) · [3 Idempotency](#3-idempotency-keys) · [4 Reserve at checkout](#4-post-reservations-reserve-at-checkout) · [5 Refusals at checkout](#5-handling-the-response-at-checkout) · [6 Update](#6-put-ordersref-full-state-update) · [7 Cancel](#7-cancel) · [8 Outbox and retries](#8-outbox-and-retries) · [9 Reading from BWMS](#9-reading-from-bwms) · [10 Stock from BWMS](#10-put-apibwmsv1stock-stock-from-bwms) · [11 Order events](#11-post-apibwmsv1order-events-order-events) · [12 Portal changes](#12-changes-in-the-portal-code) · [13 Go-live](#13-go-live) · [14 Acceptance](#14-acceptance-checks)
 
 ## 1. Config
 
@@ -61,7 +61,7 @@ $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
 | 503 | `{"error":"portal_api_disabled"}` | BWMS has the API switched off |
 | 429 | | More than 300 requests a minute. Honour `Retry-After`. |
 
-**When the portal verifies calls from BWMS** ([10](#10-put-apibwmsv1stock-stock-from-bwms), [11](#11-post-apibwmsv1order-events-dispatch-events)), apply the same rules. Answer 401 for an unknown key, a timestamp more than 300 seconds off, or a signature that doesn't match. Compare with `hash_equals`, over the raw request body (`$request->getContent()`).
+**When the portal verifies calls from BWMS** ([10](#10-put-apibwmsv1stock-stock-from-bwms), [11](#11-post-apibwmsv1order-events-order-events)), apply the same rules. Answer 401 for an unknown key, a timestamp more than 300 seconds off, or a signature that doesn't match. Compare with `hash_equals`, over the raw request body (`$request->getContent()`).
 
 ## 3. Idempotency keys
 
@@ -261,7 +261,7 @@ BWMS releases everything not yet dispatched and removes it from any open pick li
 | Situation | Response | Then |
 |---|---|---|
 | Nothing dispatched yet | 200, `"status":"cancelled"` | Done. `reserved_qty` is 0. |
-| **Part already dispatched** | 200, `"status":"confirmed","bwms_status":"dispatched"` | The remainder is cancelled. Goods that left stay left. **Read `bwms_status`, not `status`.** Handle what shipped as in [11](#11-post-apibwmsv1order-events-dispatch-events). |
+| **Part already dispatched** | 200, `"status":"confirmed","bwms_status":"dispatched"` | The remainder is cancelled. Goods that left stay left. **Read `bwms_status`, not `status`.** Handle what shipped as in [11](#11-post-apibwmsv1order-events-order-events). |
 | Already cancelled | 422 `{"status":"invalid","message":"… is Cancelled."}` | Treat as done. |
 | Already fully dispatched | 422 `{"status":"invalid","message":"…"}` | Too late. Alert staff: the goods have left. |
 | BWMS never saw the order | 404 `{"status":"unknown_order","message":"…"}` | Treat as done. Make sure no reservation for it is still waiting in the outbox ([8](#8-outbox-and-retries)). |
@@ -365,7 +365,7 @@ For reconciliation and support. Both calls are signed, with an empty body and no
 |---|---|
 | `open` | Reserved, waiting to be picked |
 | `picking` | On a pick list |
-| `partially_dispatched` | Some has left. The rest is still reserved. Portal orders don't normally reach this: see [11](#11-post-apibwmsv1order-events-dispatch-events). |
+| `partially_dispatched` | Some has left. The rest is still reserved. Portal orders don't normally reach this: see [11](#11-post-apibwmsv1order-events-order-events). |
 | `dispatched` | Finished |
 | `cancelled` | Cancelled |
 
@@ -405,9 +405,9 @@ The body is a bare JSON array, up to 100 items:
 
 BWMS's timeouts are 5 seconds to connect and 15 total.
 
-## 11. `POST /api/bwms/v1/order-events`: dispatch events
+## 11. `POST /api/bwms/v1/order-events`: order events
 
-BWMS calls the portal once per order, per pick list, when goods leave.
+BWMS calls the portal when goods leave, once per order, per pick list, and when staff cancel an order in BWMS.
 
 ```
 POST {PORTAL}/api/bwms/v1/order-events
@@ -422,7 +422,7 @@ X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
 
 | Field | Meaning |
 |---|---|
-| `event` | `dispatched`, or `short_shipped` if less was picked than was planned on this pick list |
+| `event` | `dispatched`, or `short_shipped` if less was picked than was planned on this pick list. `cancelled` has [its own rules](#cancelled-staff-cancelled-in-bwms). |
 | `lines[].qty` | Sell units that left **in this dispatch**. Can be a decimal, or 0. |
 | `at` | When it left, UTC |
 
@@ -439,13 +439,13 @@ X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
 > - **A line missing from the event counts as 0 dispatched.**
 > - **The exception:** a product BWMS doesn't stock-track, such as a service, never appears in events even though it ships. Don't map one to a portal product.
 
-**On each event:**
+**On each `dispatched` or `short_shipped` event:**
 1. Add each line's `qty` to that order line's `dispatched_qty`.
 2. Work out **ordered − `dispatched_qty`** for every line of the order, including lines missing from the event.
 3. **Nothing short:** set the order to `dispatched`. Done.
 4. **Anything short:** credit it, as below. Set the order to `dispatched`.
 
-**BWMS doesn't send events for:** an order cancelled in BWMS, a delivery date changed in BWMS, or delivery itself. Run a daily job over open orders that calls `GET /orders/{ref}` and flags any difference for staff.
+**BWMS doesn't send events for:** a delivery date changed in BWMS, or delivery itself. Run a daily job over open orders that calls `GET /orders/{ref}` and flags any difference for staff.
 
 ### Short shipments (decided 2026-11-07)
 
@@ -455,12 +455,45 @@ For an order of 3 with `{"line_ref":"501","qty":1}` in the event, credit 2. A li
 
 - **Not yet charged** (invoice, COD, wallet not yet captured): invoice and charge the dispatched quantities only.
 - **Already charged** (Stripe captured, or a Xero invoice raised): issue a Xero credit note and/or a Stripe partial refund for (ordered − `dispatched_qty`) × unit price, including GST, and email the customer what was short and what was credited.
-- Record the credit note or refund reference on the order.
+- Add what you credited to `order_items.credited_qty`, and record the credit note or refund reference on the order.
 - It runs **once per event**: a redelivered event must never credit twice. Dedupe on the `Idempotency-Key` first.
 
 **The remainder is already gone.** BWMS sets every portal order to cancel the rest of a short pick, so at dispatch it cancels what didn't leave and releases that stock. There's no backorder and no second event, and **the portal sends no cancel after a credit**. `GET /orders/{ref}` then shows `bwms_status: dispatched`, with `reserved_qty` 0.
 
 This covers lines with no stock when the pick list was made too: they're cancelled in the same step, which is why a line missing from the event is credited in full.
+
+### `cancelled`: staff cancelled in BWMS
+
+**Decided 2026-11-07.** When staff use **Cancel order** or **Cancel rest** on a portal order in BWMS, BWMS tells the portal what was cancelled, and the portal credits from it.
+
+```
+POST {PORTAL}/api/bwms/v1/order-events
+Idempotency-Key: bwms:order-event:ORD-7K2M9XQ4LP1A:cancelled
+```
+
+```json
+{"order_ref":"ORD-7K2M9XQ4LP1A","event":"cancelled","reason":"No stock","lines":[{"line_ref":"501","qty":3}],"at":"2026-11-08T23:00:00Z"}
+```
+
+| Field | Meaning |
+|---|---|
+| `reason` | What staff entered. For staff, not for the customer. |
+| `lines[].qty` | Sell units cancelled **by this cancel**, not the line's total. Can be a decimal. Lines with nothing cancelled are left out. |
+| `at` | When it was cancelled, UTC |
+
+Delivery and retries are the same as the table in [11](#11-post-apibwmsv1order-events-order-events). A retry sends exactly the same body. An order is only cancelled once, so there's one of these per order at most.
+
+**On a `cancelled` event:**
+1. Dedupe on the `Idempotency-Key`.
+2. For each line, work out **credit = the smaller of `qty` and (ordered − `dispatched_qty` − `credited_qty`)**. The cap stops a second credit on anything already credited at dispatch, which can happen with an order placed before portal orders cancelled the rest.
+3. **Not yet charged:** invoice the dispatched quantities only, and credit nothing. If nothing was dispatched, there's no invoice.
+4. **Already charged:** credit as in [Short shipments](#short-shipments-decided-2026-11-07).
+5. **Unpaid and held:** nothing to credit. Close the order and stop any payment link, so the customer can't pay for it.
+6. Set the order to `cancelled` if nothing was dispatched, otherwise `dispatched`, and email the customer.
+
+**Don't send a cancel back.** BWMS has already cancelled it, and would answer `422`. Skip the [7](#7-cancel) `PUT` on this path. If one of the portal's own cancels crosses with this event, its `422` still means done.
+
+**BWMS sends no `cancelled` event for:** the portal's own cancel, or the rest of a short pick cancelled at dispatch, which the dispatch event already covers.
 
 ## 12. Changes in the portal code
 
@@ -475,7 +508,7 @@ Line numbers are as of commit `6bccbc2`.
 6. Add `orders.bwms_version`, default 0.
 7. Set the Stripe session's `expires_at` ([Stripe orders](#stripe-orders-the-30-minute-window)).
 
-**`order_items`:** add `dispatched_qty`, decimal, default 0, for [11](#11-post-apibwmsv1order-events-dispatch-events).
+**`order_items`:** add `dispatched_qty` and `credited_qty`, decimal, default 0, for [11](#11-post-apibwmsv1order-events-order-events).
 
 **Send a cancel ([7](#7-cancel)) from every path that ends an order:**
 
@@ -491,7 +524,7 @@ Check for any other move to `cancelled`, `payment_failed` or an expired state.
 
 **Add two routes** in `routes/api.php`, outside the `auth` and `throttle` groups, stateless, with a middleware that verifies the signature ([2](#2-signing-both-directions)):
 - `PUT /api/bwms/v1/stock` ([10](#10-put-apibwmsv1stock-stock-from-bwms))
-- `POST /api/bwms/v1/order-events` ([11](#11-post-apibwmsv1order-events-dispatch-events))
+- `POST /api/bwms/v1/order-events` ([11](#11-post-apibwmsv1order-events-order-events))
 
 **The HTTP client:** one service, used for checkout and the outbox. It signs, sets the timeouts, and never logs secrets.
 
@@ -523,6 +556,9 @@ Build tests for these against a stub of BWMS:
 - [ ] Calls to the two inbound routes without a valid signature get 401.
 - [ ] A stock push with an older `as_of` is ignored, and an unknown product ID still gets 200.
 - [ ] A redelivered order event changes nothing and credits nothing.
+- [ ] A `cancelled` event credits `qty` per line, and sends no cancel back.
+- [ ] A `cancelled` event on a line already credited at dispatch credits nothing more.
+- [ ] A `cancelled` event on an unpaid order credits nothing and stops its payment link.
 - [ ] A short event credits ordered − `dispatched_qty` per line and sends nothing back to BWMS.
 - [ ] A `dispatched` event missing a line credits that line in full.
 - [ ] An unpaid checkout order is released and cancelled in BWMS about 30 minutes after placing.

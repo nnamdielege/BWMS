@@ -4,6 +4,8 @@ namespace App\Services\Orders;
 
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
+use App\Events\OrderCancelledByStaff;
+use App\Jobs\SendsPortalOrderEvent;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\PickListLine;
@@ -184,8 +186,13 @@ class OrderService
             PickListLine::whereIn('order_line_id', $order->lines()->pluck('id'))
                 ->whereHas('pickList', fn ($q) => $q->where('status', 'open'))->delete();
 
+            $cancelled = [];
             foreach ($order->lines as $line) {
-                $line->forceFill(['qty_cancelled_base' => $line->qty_cancelled_base + $line->outstandingBase()])->save();
+                $outstanding = $line->outstandingBase();
+                if ($outstanding > 0) {
+                    $cancelled[] = ['line_ref' => $line->line_ref, 'qty' => SendsPortalOrderEvent::packs($outstanding, $line->base_qty_per_unit)];
+                }
+                $line->forceFill(['qty_cancelled_base' => $line->qty_cancelled_base + $outstanding])->save();
             }
             $anyDispatched = $order->lines->sum('qty_dispatched_base') > 0;
             $order->forceFill([
@@ -195,6 +202,10 @@ class OrderService
 
             $this->reservations->syncOrder($order, true);
             Audit::record('order_cancelled', $order, meta: ['reason' => $reason]);
+            // A channel already knows about its own cancel.
+            if ($actor) {
+                OrderCancelledByStaff::dispatch($order->id, $cancelled, $reason, now()->utc()->format('Y-m-d\TH:i:s\Z'));
+            }
 
             return $order;
         });

@@ -821,7 +821,7 @@ An order line with no stock in any bin goes on the pick list as **No stock — s
 **Pick N new order(s)** only counts orders with something to pick now. An order with nothing to pick shows under **Waiting for stock** on its run, in the queue and on **Orders**, with the lines it's short of.
 
 - **It's ready to pick by itself** once stock is received or adjusted: it moves back into **Pick N new order(s)**. Someone still taps it.
-- **Cancel rest** (managers) cancels what hasn't been dispatched and releases it.
+- **Cancel rest** (managers) cancels what hasn't been dispatched and releases it. For a portal order, the portal is told what was cancelled and credits the customer. The same goes for **Cancel order**.
 
 ### 10.3 Pick a line
 

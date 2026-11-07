@@ -57,6 +57,7 @@ Portal customers are matched by `portal_user_id`. One is created as `P-{id}` on 
   - It works like the Ordermentum push: any stock change flags the product's enabled portal listings and queues one debounced run (`PushPortalStock`).
   - `available = max(0, floor(available_base / pack))`. An unchanged figure is skipped for up to 24h.
   - A 5xx or timeout keeps the items pending and retries. A 4xx is shown on the Sync screen.
+- **Cancelled by staff:** **Cancel order** or **Cancel rest** on a portal order sends a `cancelled` order event with the lines and quantities cancelled, by the same queued job and retries as dispatch events, so the portal can credit it. The key is `bwms:order-event:{ref}:cancelled`. The portal's own cancels aren't echoed back.
 - **Short picks:** portal orders default to cancelling the rest at dispatch, so nothing stays on backorder after the portal credits it.
 - **Dispatch:** `POST {portal}/api/bwms/v1/order-events` with `{order_ref, event: dispatched | short_shipped, lines:[{line_ref, qty}], at}`.
   - Sent once per dispatched pick list per portal order, from a queued job.
