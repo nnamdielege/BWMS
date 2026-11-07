@@ -9,6 +9,7 @@ use App\Models\CountTask;
 use App\Models\DeliveryRun;
 use App\Models\Location;
 use App\Models\Order;
+use App\Models\OrderLine;
 use App\Models\PickList;
 use App\Models\PickListLine;
 use App\Models\Product;
@@ -20,6 +21,7 @@ use App\Services\Stock\MovementDraft;
 use App\Services\Stock\StockLedger;
 use App\Support\Audit;
 use App\Support\NumberSequence;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -79,13 +81,17 @@ class PickListService
                         $allocated[$line->product_id][$key] = ($allocated[$line->product_id][$key] ?? 0) + $alloc['qty'];
                     }
                     if ($result['shortfall'] > 0) {
+                        // On the list with no bin, so the picker sees it and confirms it short.
+                        $pickList->lines()->create([
+                            'order_line_id' => $line->id, 'product_id' => $line->product_id, 'no_stock' => true, 'qty_to_pick_base' => $result['shortfall'],
+                        ]);
                         $shortfalls[] = ['order' => $order->number, 'sku' => $line->product->sku, 'short' => $result['shortfall']];
                     }
                 }
                 $order->forceFill(['status' => OrderStatus::Picking])->save();
             }
 
-            $this->assert($pickList->lines()->exists(), 'Nothing can be picked: no sellable stock for these orders at this site.');
+            $this->assert($pickList->lines()->where('no_stock', false)->exists(), 'Nothing can be picked: no sellable stock for these orders at this site.');
 
             $runs = $orders->pluck('delivery_run_id')->unique();
             if ($runs->count() === 1 && $runs->first() !== null) {
@@ -96,12 +102,62 @@ class PickListService
         });
     }
 
+    /**
+     * Which orders have something to pick right now, worked out the way create()
+     * allocates: oldest first, with stock on open lists and earlier orders taken off.
+     * The rest wait for stock, with the lines they're short of.
+     *
+     * @return array{ready: Collection<int, Order>, waiting: list<array{order: Order, lines: list<array{sku: string, name: string, short: string}>}>}
+     */
+    public function readiness(Collection $orders, Location $site): array
+    {
+        $allocated = $this->openAllocations($site);
+        $ready = collect();
+        $waiting = [];
+
+        foreach ($orders->sortBy('id') as $order) {
+            $found = false;
+            $short = [];
+            foreach ($order->lines as $line) {
+                $need = $line->product->is_stock_tracked ? $line->outstandingBase() : 0;
+                if ($need <= 0) {
+                    continue;
+                }
+                $result = $this->fefo->allocate($line->product, $need, $site, $allocated[$line->product_id] ?? []);
+                foreach ($result['lines'] as $alloc) {
+                    $b = $alloc['balance'];
+                    $key = "{$b->location_id}-{$b->batch_key}";
+                    $allocated[$line->product_id][$key] = ($allocated[$line->product_id][$key] ?? 0) + $alloc['qty'];
+                    $found = true;
+                }
+                if ($result['shortfall'] > 0) {
+                    $short[] = ['sku' => $line->product->sku, 'name' => $line->product->name, 'short' => $this->shortLabel($line, $result['shortfall'])];
+                }
+            }
+            if ($found) {
+                $ready->push($order);
+            } elseif ($short !== []) {
+                $waiting[] = ['order' => $order, 'lines' => $short];
+            }
+        }
+
+        return ['ready' => $ready, 'waiting' => $waiting];
+    }
+
+    private function shortLabel(OrderLine $line, int $base): string
+    {
+        $per = max(1, $line->base_qty_per_unit);
+
+        return $base % $per === 0 ? intdiv($base, $per).' '.$line->unit->name : "{$base} {$line->product->base_unit}";
+    }
+
     /** @param  array<int, int>  $picked  pick_list_line_id => qty picked */
     public function recordPicked(PickList $pickList, array $picked): void
     {
         $this->assert($pickList->isOpen(), "{$pickList->number} is {$pickList->status}.");
         foreach ($pickList->lines()->whereIn('id', array_keys($picked))->get() as $line) {
             $qty = (int) $picked[$line->id];
+            $this->assert(! $line->no_stock || $qty === 0, 'That line has no stock to pick.');
             $this->assert($qty >= 0 && $qty <= $line->qty_to_pick_base, "Picked quantity must be between 0 and {$line->qty_to_pick_base}.");
             $line->forceFill(['qty_picked_base' => $qty])->save();
         }
@@ -206,7 +262,7 @@ class PickListService
     private function openAllocations(Location $site): array
     {
         $out = [];
-        PickListLine::query()
+        PickListLine::query()->where('no_stock', false)
             ->whereHas('pickList', fn ($q) => $q->where('status', PickList::STATUS_OPEN)->where('site_id', $site->id))
             ->get(['product_id', 'location_id', 'batch_key', 'qty_to_pick_base'])
             ->each(function ($l) use (&$out) {
@@ -220,7 +276,7 @@ class PickListService
     /** Dispatch is never blocked; a bin it took below zero is logged and gets a count task. */
     private function flagNegativeBins(PickList $pickList, $lines): void
     {
-        foreach ($lines as $line) {
+        foreach ($lines->where('no_stock', false) as $line) {
             $onHand = (int) DB::table('stock_balances')->where('product_id', $line->product_id)
                 ->where('location_id', $line->location_id)->where('batch_key', $line->batch_key)->value('on_hand');
             if ($onHand < 0) {

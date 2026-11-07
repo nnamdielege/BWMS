@@ -42,7 +42,7 @@ class BatchTrackingService
             $product->is_batch_tracked => 'Already batch-tracked.',
             ! $product->is_stock_tracked => 'Not stock-tracked.',
             $this->balances($product)->contains(fn (StockBalance $b) => $b->on_hand < 0) => 'A bin is below zero. Count it first.',
-            PickListLine::where('product_id', $product->id)->whereHas('pickList', fn ($q) => $q->where('status', 'open'))->exists() => 'On an open pick list. Dispatch or cancel it first.',
+            PickListLine::where('product_id', $product->id)->where('no_stock', false)->whereHas('pickList', fn ($q) => $q->where('status', 'open'))->exists() => 'On an open pick list. Dispatch or cancel it first.',
             StocktakeLine::where('product_id', $product->id)->whereHas('stocktake', fn ($q) => $q->where('status', Stocktake::STATUS_COUNTING))->exists() => 'On a stocktake in progress.',
             default => null,
         };

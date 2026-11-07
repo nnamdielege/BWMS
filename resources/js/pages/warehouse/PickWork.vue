@@ -10,7 +10,8 @@ import { computed, nextTick, ref, watch } from 'vue';
 type Line = {
     id: number;
     order: { id: number; number: string; customer: string | null; channel: string };
-    bin: { code: string; path: string; barcode: string | null };
+    no_stock: boolean;
+    bin: { code: string; path: string; barcode: string | null } | null;
     product: { sku: string; name: string; chilled: boolean; base_unit: string };
     pack: { name: string; base_qty: number };
     barcodes: { code: string; base_qty: number }[];
@@ -93,13 +94,13 @@ const inPacks = (base: number, l: Line) => (base % l.pack.base_qty === 0 ? `${ba
 const onScan = (code: string) => {
     const l = line.value;
     if (!l || props.pickList.status !== 'open') return;
-    if (l.bin.barcode && code === l.bin.barcode) {
+    if (l.bin?.barcode && code === l.bin.barcode) {
         binCode.value = code;
         return say('ok', `Bin ${l.bin.code} ✓`);
     }
     const match = l.barcodes.find((b) => b.code === code);
     if (match) {
-        if (!binDone.value) return say('error', `Scan bin ${l.bin.code} first`);
+        if (!binDone.value) return say('error', `Scan bin ${l.bin?.code} first`);
         if (countBase.value + match.base_qty > l.to_pick_base) return say('error', `Too many: only ${l.to_pick_label} needed`);
         productCodes.value.push(code);
         countBase.value += match.base_qty;
@@ -107,8 +108,8 @@ const onScan = (code: string) => {
         if (countBase.value === l.to_pick_base) submit(countBase.value);
         return;
     }
-    const otherBin = props.lines.find((x) => x.bin.barcode === code);
-    if (otherBin) return say('error', `That is bin ${otherBin.bin.code}; this line is in ${l.bin.code}`);
+    const otherBin = props.lines.find((x) => x.bin?.barcode === code);
+    if (otherBin) return say('error', `That is bin ${otherBin.bin?.code}; this line is in ${l.bin?.code}`);
     say('error', `Not this product: ${code}`);
 };
 
@@ -177,12 +178,15 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 
         <template v-if="line && !allDone">
             <div class="rounded-xl border p-4">
-                <div class="text-xs uppercase tracking-wide text-muted-foreground">Bin</div>
-                <div class="flex items-center gap-2">
-                    <span class="font-mono text-4xl font-bold">{{ line.bin.code }}</span>
-                    <span v-if="binCode" class="rounded bg-green-100 px-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">✓</span>
-                </div>
-                <div class="text-xs text-muted-foreground">{{ line.bin.path }}</div>
+                <template v-if="line.bin">
+                    <div class="text-xs uppercase tracking-wide text-muted-foreground">Bin</div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-4xl font-bold">{{ line.bin.code }}</span>
+                        <span v-if="binCode" class="rounded bg-green-100 px-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">✓</span>
+                    </div>
+                    <div class="text-xs text-muted-foreground">{{ line.bin.path }}</div>
+                </template>
+                <div v-else class="text-2xl font-bold text-red-700 dark:text-red-300">No stock — short</div>
 
                 <div class="mt-3 flex items-center gap-2 text-lg font-semibold">
                     {{ line.product.name }}
@@ -191,8 +195,8 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                 <div class="font-mono text-sm text-muted-foreground">{{ line.product.sku }}</div>
                 <div v-if="line.batch" class="mt-1 text-sm">Lot {{ line.batch.lot }} · BB {{ line.batch.best_before ?? '—' }}</div>
 
-                <div class="mt-3 text-3xl font-bold tabular-nums">Pick {{ line.to_pick_label }}</div>
-                <div class="text-sm text-muted-foreground">Scanned {{ inPacks(countBase, line) }} · {{ line.order.number }} {{ line.order.customer }} <SourceBadge :channel="line.order.channel" /></div>
+                <div class="mt-3 text-3xl font-bold tabular-nums">{{ line.no_stock ? 'Short' : 'Pick' }} {{ line.to_pick_label }}</div>
+                <div class="text-sm text-muted-foreground"><template v-if="!line.no_stock">Scanned {{ inPacks(countBase, line) }} · </template>{{ line.order.number }} {{ line.order.customer }} <SourceBadge :channel="line.order.channel" /></div>
             </div>
 
             <div
@@ -206,7 +210,12 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 
             <div v-if="problem && mode === 'scan'" ref="problemBox" role="alert" class="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-900 dark:bg-red-950 dark:text-red-200">{{ problem }}</div>
 
-            <div v-if="mode === 'scan'" class="mt-3">
+            <div v-if="line.no_stock" class="mt-3">
+                <p class="mb-2 text-sm text-muted-foreground">There's nothing to pick for this line. The rest follows the order's short-pick rule at dispatch.</p>
+                <button class="h-12 w-full rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50" :disabled="saving || !pickList.mine" @click="submit(0)">Confirm short</button>
+            </div>
+
+            <div v-else-if="mode === 'scan'" class="mt-3">
                 <ScanInput :placeholder="binDone ? 'Scan product' : 'Scan bin label'" :disabled="saving || !pickList.mine" @scan="onScan" />
                 <div class="mt-3 grid grid-cols-2 gap-2">
                     <button class="h-12 rounded-lg border text-sm" @click="mode = 'manual'">Enter quantity</button>
@@ -261,7 +270,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
         <button class="mt-4 text-sm underline" @click="showList = !showList">{{ showList ? 'Hide' : 'Show' }} all lines</button>
         <ol v-if="showList" class="mt-2 divide-y rounded-lg border text-sm">
             <li v-for="(l, i) in lines" :key="l.id" class="flex items-center gap-2 p-2" :class="{ 'bg-muted': i === index }" @click="index = i">
-                <span class="w-16 font-mono">{{ l.bin.code }}</span>
+                <span class="w-16 font-mono">{{ l.bin?.code ?? 'None' }}</span>
                 <span class="flex-1 truncate">{{ l.product.name }}</span>
                 <span v-if="l.product.chilled" class="text-xs text-sky-700 dark:text-sky-300">chilled</span>
                 <span class="tabular-nums">{{ l.picked_base === null ? l.to_pick_label : l.picked_base < l.to_pick_base ? 'short' : '✓' }}</span>

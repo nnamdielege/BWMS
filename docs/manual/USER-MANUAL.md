@@ -814,6 +814,15 @@ Each run shows how many orders it has and how many are waiting to pick.
 
 **Orders without a run** at the bottom are orders whose address matches no delivery area. A manager sets the run on the order, or an admin adds the postcode to an area ([11](#11-delivery-runs-and-areas)).
 
+### 10.2a Waiting for stock
+
+An order line with no stock in any bin goes on the pick list as **No stock — short**. Tap **Confirm short**: there's nothing to walk to, and no scan or reason is needed. These lines come last, and don't need ticking when you pack.
+
+**Pick N new order(s)** only counts orders with something to pick now. An order with nothing to pick shows under **Waiting for stock** on its run, in the queue and on **Orders**, with the lines it's short of.
+
+- **It's ready to pick by itself** once stock is received or adjusted: it moves back into **Pick N new order(s)**. Someone still taps it.
+- **Cancel rest** (managers) cancels what hasn't been dispatched and releases it.
+
 ### 10.3 Pick a line
 
 Admins can turn off **Require bin scan when picking** in **Company settings**. The product scan alone then confirms the line. The bin still shows in large letters, so walk to it first.

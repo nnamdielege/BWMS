@@ -48,8 +48,10 @@ class PickPackController extends Controller
         return Inertia::render('warehouse/PickQueue', [
             'nav' => WarehouseNav::for($request, 'Pick & pack (phone/handheld)', route('dashboard')),
             'today' => $today,
+            'canCancel' => $request->user()->can('orders.manage'),
             'runs' => $runs->map(function (DeliveryRun $run) {
                 $lists = $run->openPickLists()->with('claimer:id,name')->withCount('lines')->get();
+                $readiness = $this->service->readiness($run);
                 $active = $run->orders()->whereIn('status', self::ACTIVE)->with('customer:id,name')->orderBy('id')->get();
 
                 return [
@@ -57,7 +59,8 @@ class PickPackController extends Controller
                     'date' => $run->run_date->toDateString(),
                     'label' => $run->label(),
                     'area' => $run->area->name,
-                    'waiting' => $this->service->waitingOrders($run)->count(),
+                    'waiting' => $readiness['ready']->count(),
+                    'waiting_stock' => $this->service->stockRows($readiness['waiting']),
                     'active' => $active->count(),
                     'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(), 'hold' => $o->holdSummary()])->values(),
                     'held' => $active->where('payment_hold', true)->count(),
@@ -260,7 +263,8 @@ class PickPackController extends Controller
         return [
             'id' => $l->id,
             'order' => ['id' => $ol->order_id, 'number' => $ol->order->number, 'customer' => $ol->order->customer?->name, 'channel' => $ol->order->channel->value],
-            'bin' => ['code' => $l->location->code, 'path' => $l->location->path(), 'barcode' => $l->location->barcode],
+            'no_stock' => $l->no_stock,
+            'bin' => $l->location ? ['code' => $l->location->code, 'path' => $l->location->path(), 'barcode' => $l->location->barcode] : null,
             'product' => ['sku' => $l->product->sku, 'name' => $l->product->name, 'chilled' => $l->product->is_chilled, 'base_unit' => $l->product->base_unit],
             'pack' => ['name' => $ol->unit->name, 'base_qty' => $per],
             'barcodes' => $l->product->units->flatMap(fn ($u) => $u->barcodes->map(fn ($b) => ['code' => $b->barcode, 'base_qty' => $u->base_qty]))->values(),

@@ -53,10 +53,25 @@ class PickPackService
         });
     }
 
-    /** Open orders of the run with nothing on a pick list yet. Orders held for payment wait. */
+    /** Open orders of the run with nothing on a pick list yet and something to pick. Orders held for payment wait. */
     public function waitingOrders(DeliveryRun $run): Collection
     {
-        return $run->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::PartiallyDispatched])->where('site_id', $run->site_id)->where('payment_hold', false)->get();
+        return $this->readiness($run)['ready'];
+    }
+
+    /** @return array{ready: Collection<int, Order>, waiting: list<array{order: Order, lines: list<array{sku: string, name: string, short: string}>}>} */
+    public function readiness(DeliveryRun $run): array
+    {
+        $orders = $run->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::PartiallyDispatched])->where('site_id', $run->site_id)
+            ->where('payment_hold', false)->with(['customer:id,name', 'lines.product', 'lines.unit'])->get();
+
+        return $this->picks->readiness($orders, $run->site);
+    }
+
+    /** @param  list<array{order: Order, lines: array}>  $waiting */
+    public function stockRows(array $waiting): array
+    {
+        return array_map(fn (array $w) => ['id' => $w['order']->id, 'number' => $w['order']->number, 'customer' => $w['order']->customer?->name, 'lines' => $w['lines']], $waiting);
     }
 
     public function claim(PickList $pickList, User $picker, bool $takeOver = false): PickList
@@ -81,9 +96,10 @@ class PickPackService
             ->with(['product.units.barcodes', 'location.parent', 'batch', 'orderLine.order.customer', 'orderLine.unit'])
             ->get()
             ->sortBy(fn (PickListLine $l) => [
+                $l->no_stock ? 1 : 0, // nothing to walk to, so they come last
                 $l->product->is_chilled ? 1 : 0,
-                $l->location->walk_seq,
-                $l->location->code,
+                $l->location?->walk_seq,
+                $l->location?->code,
                 $l->batch?->best_before?->format('Y-m-d') ?? '9999-12-31',
                 $l->id,
             ])->values();
@@ -103,6 +119,12 @@ class PickPackService
             $list = $line->pickList;
             $this->assert($list->isOpen(), "{$list->number} is {$list->status}.");
             $this->assert($list->claimed_by === null || $list->claimed_by === $picker->id, "{$list->number} is being picked by someone else; take it over first.");
+            if ($line->no_stock) {
+                $this->assert($qtyBase === 0, 'That line has no stock to pick. Confirm it short.');
+                $line->forceFill(['qty_picked_base' => 0, 'picked_by' => $picker->id, 'picked_at' => now()])->save();
+
+                return $line;
+            }
             $this->assert($qtyBase >= 0 && $qtyBase <= $line->qty_to_pick_base, "Picked quantity must be between 0 and {$line->qty_to_pick_base}.");
 
             $binOk = false;
@@ -185,7 +207,7 @@ class PickPackService
                 return $existing;
             }
             $this->assert($lines->every(fn ($l) => $l->qty_picked_base !== null), 'Finish picking every line of this order first.');
-            $this->assert($lines->every(fn ($l) => $l->ticked_at !== null), 'Tick every line as packed.');
+            $this->assert($lines->every(fn ($l) => $l->ticked_at !== null || $l->no_stock), 'Tick every line as packed.');
             $picked = (int) $lines->sum('qty_picked_base');
             $this->assert($picked === 0 || $cartons >= 1, 'Enter how many cartons.');
 

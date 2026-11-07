@@ -11,6 +11,7 @@ import { computed, reactive } from 'vue';
 interface Line {
     id: number;
     location: string;
+    no_stock: boolean;
     product: { id: number; sku: string; name: string; base_unit: string };
     batch: string | null;
     order: string;
@@ -40,7 +41,7 @@ const save = (values: Record<number, number | null>) =>
     router.put(route('pick-lists.record', props.pickList.id), { picked: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== null && v !== undefined)) }, { preserveScroll: true, preserveState: true });
 const saveLine = (l: Line) => picked[l.id] !== null && picked[l.id] !== l.qty_picked_base && save({ [l.id]: picked[l.id] });
 const markAllPicked = () => {
-    props.pickList.lines.forEach((l) => (picked[l.id] = picked[l.id] ?? l.qty_to_pick_base));
+    props.pickList.lines.forEach((l) => (picked[l.id] = picked[l.id] ?? (l.no_stock ? 0 : l.qty_to_pick_base)));
     save({ ...picked });
 };
 const dispatch = () =>
@@ -80,7 +81,7 @@ const packs = (l: Line, base: number) => (l.pack_qty > 1 ? `${Math.floor(base / 
                 </thead>
                 <tbody>
                     <tr v-for="l in pickList.lines" :key="l.id" class="border-b" :class="{ 'bg-amber-50 dark:bg-amber-950': l.qty_picked_base !== null && l.qty_picked_base < l.qty_to_pick_base }">
-                        <td class="py-2 font-mono">{{ l.location }}</td>
+                        <td class="py-2 font-mono" :class="{ 'text-red-700 dark:text-red-300': l.no_stock }">{{ l.location }}</td>
                         <td><span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}</td>
                         <td>{{ l.batch ?? '' }}</td>
                         <td>{{ l.order }} <SourceBadge :channel="l.channel" /><div class="text-xs text-muted-foreground">{{ l.customer }}</div></td>
@@ -92,6 +93,7 @@ const packs = (l: Line, base: number) => (l.pack_qty > 1 ? `${Math.floor(base / 
                             <Input
                                 v-if="can.pick"
                                 v-model.number="picked[l.id]"
+                                :readonly="l.no_stock"
                                 type="number"
                                 min="0"
                                 :max="l.qty_to_pick_base"

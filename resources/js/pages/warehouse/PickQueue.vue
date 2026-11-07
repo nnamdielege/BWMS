@@ -3,6 +3,7 @@ import HeldBadge, { type Hold } from '@/components/HeldBadge.vue';
 import InputError from '@/components/InputError.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
+import WaitingForStock, { type StockWait } from '@/components/WaitingForStock.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { dayGroups } from '@/lib/deliveryDays';
 import { useAutoRefresh } from '@/lib/useAutoRefresh';
@@ -18,10 +19,12 @@ type Run = {
     active: number;
     orders: { id: number; number: string; customer: string | null; channel: string; moved_from: string | null; hold: Hold | null }[];
     held: number;
+    waiting_stock: StockWait[];
     lists: { id: number; number: string; claimed_by: string | null; mine: boolean; lines: number; stage: { key: string; label: string } }[];
 };
 const props = defineProps<{
     today: string;
+    canCancel: boolean;
     runs: Run[];
     unassigned: { id: number; number: string; customer: string | null; channel: string; postcode: string | null; suburb: string | null }[];
 }>();
@@ -40,7 +43,7 @@ const claim = (id: number, takeOver = false) => {
 <template>
     <Head title="Pick & pack (phone/handheld)" />
     <WarehouseLayout>
-        <InputError :message="errors.pick" class="mb-3" />
+        <InputError :message="errors.pick || errors.order" class="mb-3" />
 
         <section v-for="group in groups" :key="group.key" class="mb-5">
             <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide" :class="group.overdue ? 'text-red-700 dark:text-red-300' : 'text-muted-foreground'">{{ group.label }}</h2>
@@ -71,6 +74,8 @@ const claim = (id: number, takeOver = false) => {
                     </button>
                     <button v-else class="h-12 rounded-lg border px-4 text-sm" @click="claim(l.id, true)">Take over</button>
                 </div>
+
+                <WaitingForStock :orders="run.waiting_stock" :can-cancel="canCancel" class="mt-3" />
 
                 <button v-if="run.waiting" class="mt-3 h-12 w-full rounded-lg bg-primary font-semibold text-primary-foreground" @click="start(run)">
                     Pick {{ run.waiting }} new order(s)

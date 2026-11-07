@@ -77,10 +77,11 @@ class PickListController extends Controller
                 'dispatched_at' => $pickList->dispatched_at?->toIso8601String(),
                 'run' => $pickList->deliveryRun?->label(),
                 // Walk order: by bin, then earliest best-before.
-                'lines' => $pickList->lines->sortBy([fn ($l) => $l->location->path(), fn ($l) => $l->batch?->best_before?->timestamp ?? PHP_INT_MAX])->values()
+                'lines' => $pickList->lines->sortBy([fn ($l) => $l->location?->path() ?? "\u{FFFF}", fn ($l) => $l->batch?->best_before?->timestamp ?? PHP_INT_MAX])->values()
                     ->map(fn (PickListLine $l) => [
                         'id' => $l->id,
-                        'location' => $l->location->path(),
+                        'location' => $l->location?->path() ?? 'No stock — short',
+                        'no_stock' => $l->no_stock,
                         'product' => $l->product,
                         'batch' => $l->batch?->label(),
                         'order' => $l->orderLine->order->number,

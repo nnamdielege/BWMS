@@ -4,6 +4,7 @@ import InputError from '@/components/InputError.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
 import Pagination from '@/components/Pagination.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
+import WaitingForStock, { type StockWait } from '@/components/WaitingForStock.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -36,6 +37,7 @@ const props = defineProps<{
     orders: Paginated<Row>;
     filters: { q: string; status: string; channel: string; flag: string; delivery_date: string };
     today: string;
+    waitingForStock: { run: string; orders: StockWait[] }[];
     statuses: { value: string; label: string }[];
     can: { manage: boolean; pick: boolean };
 }>();
@@ -89,7 +91,11 @@ const groups = computed(() => dayGroups(props.orders.data, (o) => o.delivery_dat
                 </div>
             </div>
             <p v-if="siteConflict" class="text-sm text-red-600">Selected orders are for different sites; a pick list covers one site.</p>
-            <InputError :message="errors.pick" />
+            <InputError :message="errors.pick || errors.order" />
+            <div v-for="w in waitingForStock" :key="w.run">
+                <h2 class="mb-1 text-sm font-semibold">{{ w.run }}</h2>
+                <WaitingForStock :orders="w.orders" :can-cancel="can.manage" />
+            </div>
 
             <table class="w-full text-left text-sm">
                 <thead class="border-b text-muted-foreground">

@@ -7,11 +7,13 @@ use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\DeliveryArea;
+use App\Models\DeliveryRun;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\OrderLine;
 use App\Services\Delivery\DeliveryScheduler;
 use App\Services\Orders\OrderService;
+use App\Services\Orders\PickPackService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Support\Audit;
 use App\Support\BusinessDate;
@@ -26,7 +28,7 @@ use Inertia\Response;
 
 class OrderController extends Controller
 {
-    public function __construct(private OrderService $orders) {}
+    public function __construct(private OrderService $orders, private PickPackService $pickPack) {}
 
     public function index(Request $request): Response
     {
@@ -68,9 +70,20 @@ class OrderController extends Controller
             'orders' => $orders,
             'filters' => ['q' => $filters['q'] ?? '', 'status' => $status, 'channel' => $filters['channel'] ?? '', 'flag' => $filters['flag'] ?? '', 'delivery_date' => $filters['delivery_date'] ?? ''],
             'today' => BusinessDate::today(),
+            'waitingForStock' => $this->waitingForStock(),
             'statuses' => collect(OrderStatus::cases())->map(fn ($s) => ['value' => $s->value, 'label' => $s->label()]),
             'can' => ['manage' => $request->user()->can('orders.manage'), 'pick' => $request->user()->can('picking.perform')],
         ]);
+    }
+
+    /** Per open run, the orders that can't be picked until stock arrives. */
+    private function waitingForStock(): array
+    {
+        $runs = DeliveryRun::where('status', DeliveryRun::STATUS_OPEN)->with('area')->orderBy('run_date')
+            ->whereHas('orders', fn ($q) => $q->whereIn('status', [OrderStatus::Open, OrderStatus::PartiallyDispatched]))->get();
+
+        return $runs->map(fn (DeliveryRun $run) => ['run' => $run->label(), 'orders' => $this->pickPack->stockRows($this->pickPack->readiness($run)['waiting'])])
+            ->filter(fn (array $r) => $r['orders'] !== [])->values()->all();
     }
 
     public function create(): Response

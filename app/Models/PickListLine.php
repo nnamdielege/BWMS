@@ -12,6 +12,7 @@ class PickListLine extends Model
     protected function casts(): array
     {
         return [
+            'no_stock' => 'boolean',
             'qty_to_pick_base' => 'integer',
             'qty_picked_base' => 'integer',
             'bin_scanned_at' => 'datetime',

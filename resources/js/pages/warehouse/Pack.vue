@@ -13,6 +13,7 @@ type PackLine = {
     to_pick_label: string;
     picked_base: number | null;
     ticked: boolean;
+    no_stock: boolean;
 };
 type PackOrder = {
     id: number;
@@ -130,7 +131,7 @@ onBeforeUnmount(() => {
 
 const packed = (l: PackLine) =>
     l.picked_base === null ? '—' : l.picked_base % l.pack.base_qty === 0 ? `${l.picked_base / l.pack.base_qty} ${l.pack.name}` : `${l.picked_base} ${l.product.base_unit}`;
-const ready = (o: PackOrder) => o.picking_done && s(o).checked.length === o.lines.length && validCartons(s(o).cartons);
+const ready = (o: PackOrder) => o.picking_done && s(o).checked.length === o.lines.filter((l) => !l.no_stock).length && validCartons(s(o).cartons);
 const save = async (o: PackOrder) => {
     if (await flush()) router.post(route('pick.pack.store', [props.pickList.id, o.id]), { cartons: s(o).cartons }, { preserveScroll: true });
 };
@@ -157,7 +158,14 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
 
             <ul class="mt-2 divide-y">
                 <li v-for="l in o.lines" :key="l.id">
-                    <label class="flex min-h-12 items-center gap-3 py-2">
+                    <div v-if="l.no_stock" class="flex min-h-12 items-center gap-3 py-2">
+                        <span class="flex-1">
+                            {{ l.product.name }}
+                            <span class="block font-mono text-xs text-muted-foreground">{{ l.product.sku }}</span>
+                        </span>
+                        <span class="text-right text-sm text-red-700 dark:text-red-300">No stock — short</span>
+                    </div>
+                    <label v-else class="flex min-h-12 items-center gap-3 py-2">
                         <input type="checkbox" class="size-6" :checked="!!o.pack || s(o).checked.includes(l.id)" :disabled="!!o.pack" @change="toggle(o, l.id)" />
                         <span class="flex-1">
                             {{ l.product.name }}

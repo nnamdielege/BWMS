@@ -435,7 +435,7 @@ X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
 | 4xx | **Doesn't retry.** The event is logged in BWMS and lost to you. Use [9](#9-reading-from-bwms) to recover. |
 
 > **Work out what shipped from the quantities, not the event name.**
-> - **A `dispatched` event doesn't prove the order is complete.** It compares picked against what was planned, and a line with no stock when the pick list was made is never planned. That line is simply missing from `lines`.
+> - **A `dispatched` event doesn't prove the order is complete.** It compares picked against what was planned, and a line BWMS couldn't find any stock for may be listed with `qty` 0, or not at all.
 > - **A line missing from the event counts as 0 dispatched.**
 > - **The exception:** a product BWMS doesn't stock-track, such as a service, never appears in events even though it ships. Don't map one to a portal product.
 
