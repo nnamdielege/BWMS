@@ -155,6 +155,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     });
     Route::get('orders/next-date/{customer}', [OrderController::class, 'nextDate'])->middleware('can:orders.manage')->name('orders.next-date');
     Route::get('orders/{order}', [OrderController::class, 'show'])->middleware('can:orders.view')->name('orders.show');
+    Route::post('orders/{order}/release-hold', [OrderController::class, 'releaseHold'])->middleware('can:orders.manage')->name('orders.release-hold');
     Route::put('orders/{order}/delivery-date', [OrderController::class, 'changeDeliveryDate'])->middleware('can:orders.manage')->name('orders.delivery-date');
     Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->middleware('can:orders.manage')->name('orders.cancel');
     Route::post('orders/{order}/clear-flags', [OrderController::class, 'clearFlags'])->middleware('can:orders.manage')->name('orders.clear-flags');

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HeldBadge, { type Hold } from '@/components/HeldBadge.vue';
 import InputError from '@/components/InputError.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
@@ -21,6 +22,7 @@ type Row = {
     moved_from: string | null;
     pick_list: string | null;
     needs_review: boolean;
+    hold: Hold | null;
     warnings: string[];
     packs: number;
     value: string | null;
@@ -190,6 +192,7 @@ const errors = computed(() => usePage().props.errors as Record<string, string>);
                                 <span class="min-w-40">{{ o.customer }} <span class="ml-1 text-muted-foreground">{{ o.suburb }}</span></span>
                                 <SourceBadge :channel="o.channel" />
                                 <MovedBadge :from="o.moved_from" />
+                                <HeldBadge :hold="o.hold" />
                                 <span class="tabular-nums">{{ o.packs }} pack(s)</span>
                                 <span class="tabular-nums">{{ money(o.value) }}</span>
                                 <span v-if="o.pick_list" class="text-muted-foreground">On {{ o.pick_list }}</span>

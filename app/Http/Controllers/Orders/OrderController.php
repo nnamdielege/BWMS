@@ -58,6 +58,7 @@ class OrderController extends Controller
                 'oversold' => $o->oversold, 'needs_review' => $o->needs_review,
                 'delivery_date' => $o->delivery_date?->toDateString(),
                 'moved_from' => $o->original_delivery_date?->toDateString(),
+                'hold' => $o->holdSummary(),
                 'run' => $o->deliveryRun?->area?->name,
                 'review_notes' => array_values($o->review_notes ?? []),
                 'created_at' => $o->created_at->toIso8601String(),
@@ -122,6 +123,7 @@ class OrderController extends Controller
                 'delivery_date' => $order->delivery_date?->toDateString(),
                 'delivery_date_origin' => $order->delivery_date_origin,
                 'moved_from' => $order->original_delivery_date?->toDateString(),
+                'hold' => $order->holdSummary(),
                 'on_pick_list' => $scheduler->onPickList($order),
                 'review_notes' => array_values($order->review_notes ?? []),
                 'run' => $order->deliveryRun ? ['id' => $order->deliveryRun->id, 'label' => $order->deliveryRun->label(), 'area_id' => $order->deliveryRun->delivery_area_id, 'date' => $order->deliveryRun->run_date->toDateString()] : null,
@@ -145,9 +147,23 @@ class OrderController extends Controller
                     'pick_lists' => $l->pickLines->map(fn ($p) => $p->pickList->only(['id', 'number', 'status']))->unique('id')->values(),
                 ]),
             ],
-            'can' => ['manage' => $request->user()->can('orders.manage') && $order->status->isActive()],
+            'can' => [
+                'manage' => $request->user()->can('orders.manage') && $order->status->isActive(),
+                'release_hold' => $request->user()->can('orders.manage') && $order->payment_hold && $order->status->isActive(),
+            ],
             'deliveryAreas' => DeliveryArea::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
         ]);
+    }
+
+    public function releaseHold(Request $request, Order $order): RedirectResponse
+    {
+        try {
+            $this->orders->releaseHold($order, $request->user());
+        } catch (StockException $e) {
+            throw ValidationException::withMessages(['order' => $e->getMessage()]);
+        }
+
+        return back()->with('success', "{$order->number} released to pick.");
     }
 
     /** The form's default date, for the customer just chosen. */

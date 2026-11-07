@@ -112,7 +112,7 @@ class ConsolidationController extends Controller
             'suburb' => $order->delivery_suburb ?? $order->customer?->delivery_suburb,
             'channel' => $order->channel->value, 'date' => $order->delivery_date->toDateString(), 'area' => $order->deliveryRun->area->name,
             'moved_from' => $order->original_delivery_date?->toDateString(), 'pick_list' => $lists[$order->id] ?? null,
-            'needs_review' => $order->needs_review,
+            'needs_review' => $order->needs_review, 'hold' => $order->holdSummary(),
             'warnings' => isset($lists[$order->id]) || $order->delivery_date->toDateString() === $target ? [] : $this->consolidation->stockWarnings($order, $target),
         ] + $this->consolidation->size($order);
     }

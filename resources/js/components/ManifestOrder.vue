@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HeldBadge, { type Hold } from '@/components/HeldBadge.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 
@@ -10,6 +11,7 @@ export type ManifestRow = {
     customer: string | null;
     channel: string;
     moved_from: string | null;
+    hold: Hold | null;
     address: string;
     cartons: number;
     packed: boolean;
@@ -27,6 +29,7 @@ defineProps<{ order: ManifestRow }>();
             <div class="text-sm">{{ order.customer }}</div>
             <div class="text-xs text-muted-foreground">{{ order.address || 'No address' }}</div>
             <MovedBadge :from="order.moved_from" />
+            <HeldBadge :hold="order.hold" />
         </div>
         <div class="text-right text-sm">
             <div class="tabular-nums">{{ order.cartons }} ctn</div>

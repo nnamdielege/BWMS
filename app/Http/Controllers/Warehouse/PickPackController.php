@@ -61,7 +61,8 @@ class PickPackController extends Controller
                     'area' => $run->area->name,
                     'waiting' => $this->service->waitingOrders($run)->count(),
                     'active' => $active->count(),
-                    'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString()])->values(),
+                    'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(), 'hold' => $o->holdSummary()])->values(),
+                    'held' => $active->where('payment_hold', true)->count(),
                     'lists' => $lists->map(fn (PickList $l) => [
                         'id' => $l->id, 'number' => $l->number, 'claimed_by' => $l->claimer?->name,
                         'mine' => $l->claimed_by === request()->user()->id, 'lines' => $l->lines_count, 'done' => $l->lines_done_count,
@@ -239,7 +240,7 @@ class PickPackController extends Controller
     {
         return [
             'id' => $o->id, 'number' => $o->number, 'status' => $o->status->value, 'status_label' => $o->status->label(),
-            'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(),
+            'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(), 'hold' => $o->holdSummary(),
             'address' => trim(($o->delivery_street ?? $o->customer?->delivery_street).' '.($o->delivery_suburb ?? $o->customer?->delivery_suburb).' '.($o->delivery_postcode ?? $o->customer?->delivery_postcode)),
             'cartons' => (int) $o->packs->sum('cartons'), 'packed' => $o->packs->isNotEmpty(),
         ];

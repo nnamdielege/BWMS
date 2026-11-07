@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HeldBadge, { type Hold } from '@/components/HeldBadge.vue';
 import InputError from '@/components/InputError.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
 import Pagination from '@/components/Pagination.vue';
@@ -25,6 +26,7 @@ interface Row {
     needs_review: boolean;
     delivery_date: string | null;
     moved_from: string | null;
+    hold: Hold | null;
     run: string | null;
     review_notes: string[];
     created_at: string;
@@ -44,7 +46,7 @@ const search = () => router.get(route('orders.index'), { ...form }, { preserveSt
 
 // Pick-list creation from selected orders (one site per pick list).
 const selected = ref<number[]>([]);
-const pickable = (o: Row) => ['open', 'partially_dispatched'].includes(o.status);
+const pickable = (o: Row) => ['open', 'partially_dispatched'].includes(o.status) && !o.hold;
 const selectedRows = computed(() => props.orders.data.filter((o) => selected.value.includes(o.id)));
 const siteConflict = computed(() => new Set(selectedRows.value.map((o) => o.site_id)).size > 1);
 const createPickList = () =>
@@ -105,6 +107,7 @@ const groups = computed(() => dayGroups(props.orders.data, (o) => o.delivery_dat
                             <Link :href="route('orders.show', o.id)" class="font-mono underline">{{ o.number }}</Link>
                             <div v-if="o.external_ref" class="text-xs text-muted-foreground">{{ o.external_ref }}</div>
                             <MovedBadge :from="o.moved_from" />
+                            <HeldBadge :hold="o.hold" />
                         </td>
                         <td><SourceBadge :channel="o.channel" /></td>
                         <td>{{ o.customer ?? '—' }}</td>

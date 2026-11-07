@@ -717,6 +717,14 @@ Order statuses: **Open** (reserved, waiting) â†’ **Picking** (on a pick list) â†
 
 When it's dealt with, click **Mark flags handled**.
 
+### 9.5a Orders held for payment
+
+A portal order can arrive unpaid, for example on a payment link with a pay-by date. Its stock is reserved, but it's held out of picking: it has a **HELD** badge on the order and in the queue, and **Pick N new order(s)** skips it.
+
+- **When the portal says it's paid,** the hold lifts by itself.
+- **If it isn't paid by the pay-by date,** the portal cancels it and the stock is released. If that doesn't happen, the badge reads **pay-by passed**, and the order stays held until someone decides.
+- **Release to pick** on the order lets a manager send it for picking unpaid. It's recorded in the audit log, and a later message from the portal won't put the hold back.
+
 ### 9.6 Cancel an order
 
 For managers and admins. Click **Cancel order** and give a reason. Undispatched stock is released.

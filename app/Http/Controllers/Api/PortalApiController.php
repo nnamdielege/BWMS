@@ -93,6 +93,8 @@ class PortalApiController extends Controller
             'customer.portal_user_id' => ['nullable', 'integer', 'min:1'],
             'customer.business_name' => ['nullable', 'string', 'max:255'],
             'requested_delivery_date' => ['nullable', 'string', 'max:40'],
+            'payment_status' => ['nullable', 'in:awaiting_payment,paid'],
+            'pay_by' => ['nullable', 'date'],
             'delivery.street' => ['nullable', 'string', 'max:255'],
             'delivery.suburb' => ['nullable', 'string', 'max:100'],
             'delivery.postcode' => ['nullable', 'regex:/^\d{4}$/'],
@@ -150,6 +152,8 @@ class PortalApiController extends Controller
                 customerId: $customer?->id,
                 requestedDeliveryDate: BusinessDate::parse($data['requested_delivery_date'] ?? null),
                 delivery: array_filter((array) ($data['delivery'] ?? []), fn ($v) => $v !== null && $v !== ''),
+                paymentStatus: $data['payment_status'] ?? null,
+                payBy: $data['pay_by'] ?? null,
             ));
         } catch (InsufficientAvailability $e) {
             $byRef = $lines->keyBy('line_ref');
@@ -238,7 +242,7 @@ class PortalApiController extends Controller
                 'reserved_qty' => $packs((int) ($l->reservation->qty_base ?? 0), $l->base_qty_per_unit),
                 'dispatched_qty' => $withDispatched ? $packs((int) $l->qty_dispatched_base, $l->base_qty_per_unit) : null,
             ], fn ($v) => $v !== null))->values()->all(),
-        ];
+        ] + ($order->payment_hold ? ['payment_hold' => true] : []);
     }
 
     private function rememberUnmapped(string $portalProductId): void

@@ -112,6 +112,8 @@ X-BWMS-Signature: …
 | `customer.portal_user_id` | Integer. Send it: without it the order has no customer. | `orders.retailer_id` |
 | `customer.business_name` | String, max 255. Only used the first time BWMS sees this user. | The buyer's business name |
 | `requested_delivery_date` | `YYYY-MM-DD`, Brisbane date. **Always send it.** | The value `placeOrder()` stores in `orders.requested_delivery_date` |
+| `payment_status` | Optional: `awaiting_payment` or `paid`. See [Payment-link orders](#payment-link-orders-held-until-paid). | |
+| `pay_by` | Optional timestamp, sent with `awaiting_payment` | `orders.payment_due_at` |
 | `delivery.street` | String, max 255 | `delivery_address['street']` |
 | `delivery.suburb` | String, max 100 | `delivery_address['city']`, if not empty |
 | `delivery.postcode` | **Exactly 4 digits, or leave it out** | See below |
@@ -231,7 +233,7 @@ Idempotency-Key: portal:order:ORD-7K2M9XQ4LP1A:v1
 
 **Version.** Add `orders.bwms_version`, default 0 (a reservation counts as 0). Increment it and save it with the change, then queue the call. After a 409 on an edit, BWMS keeps its old state and a person decides. No automatic cancellation.
 
-**Payment.** BWMS has no payment state, so sending a `PUT` on payment changes nothing there. An unpaid Stripe order is reserved and live in BWMS until the portal cancels it: see [Stripe orders](#stripe-orders-the-30-minute-window).
+**Payment.** BWMS only tracks payment for orders sent as `awaiting_payment`: see [Payment-link orders](#payment-link-orders-held-until-paid). Leaving `payment_status` out of a `PUT` changes nothing about the hold.
 
 ## 7. Cancel
 
@@ -293,7 +295,30 @@ Payment arriving after the release goes down the existing late-payment path: `co
 
 **During the window the order can be picked.** If goods leave before the release, the cancel answers `422` or a partial result ([7](#7-cancel)): alert staff.
 
-Payment-link orders aren't covered by this window: see [Open items](#open-items).
+Payment-link orders aren't covered by this window.
+
+### Payment-link orders: held until paid
+
+Staff-entered Stripe orders have their own pay-by date, which can be days away. BWMS reserves their stock but holds them out of picking.
+
+**At placement,** send these on the reservation as well:
+
+```json
+{ "payment_status": "awaiting_payment", "pay_by": "2026-11-12T07:00:00Z" }
+```
+
+The 201 then includes `"payment_hold": true`, and so does every later response while the order is held.
+
+| What happens | Portal sends | BWMS does |
+|---|---|---|
+| Paid (`confirmPaid()`) | `PUT` with `"payment_status": "paid"` and the next `version` | Lifts the hold. The order can be picked. |
+| Pay-by reached, unpaid (`release()`) | The cancel in [7](#7-cancel) | Releases the stock |
+| New pay-by date | `PUT` with `"payment_status": "awaiting_payment"` and `pay_by` | Updates the date. Stays held. |
+
+- **Only the first call sets a hold.** Sending `awaiting_payment` later doesn't hold an order that's already live, so a manager's **Release to pick** in BWMS stays released.
+- **BWMS never cancels on its own at pay-by.** The portal decides, because it can see a last-minute payment. If no cancel arrives, the order stays held and is marked overdue for staff.
+- **If a manager releases it by hand,** the order is picked and delivered unpaid. Later responses drop `payment_hold`. Keep collecting payment as normal.
+- A `PUT` with `paid` on an order that isn't held changes nothing.
 
 ## 8. Outbox and retries
 
@@ -439,12 +464,13 @@ For an order of 3 with `{"line_ref":"501","qty":1}` in the event, credit 2. A li
 Line numbers are as of commit `6bccbc2`.
 
 **`app/Services/CheckoutService.php`, `placeOrder()`:**
-1. **Mint `reference` before the transaction.** Today it's created inside `Order::create()` (~line 519), but BWMS needs it first.
-2. **Call BWMS after every local check and before `DB::transaction()` (~line 505).** Both `confirm()` and `placeOnBehalf()` go through here, so staff-entered orders are covered.
-3. Act on the response ([5](#5-handling-the-response-at-checkout)). Add `orders.reservation_status`, nullable: `confirmed`, `unconfirmed`, `reservation_failed`.
-4. Keep the `stock_qty` decrement. It's now only a display cache, and BWMS's push overwrites it. If it throws after a 201, queue a cancel ([5](#5-handling-the-response-at-checkout)).
-5. Add `orders.bwms_version`, default 0.
-6. Set the Stripe session's `expires_at` ([Stripe orders](#stripe-orders-the-30-minute-window)).
+1. **Send `payment_status` and `pay_by`** for payment-link orders ([held until paid](#payment-link-orders-held-until-paid)), from `placeOnBehalf()`.
+2. **Mint `reference` before the transaction.** Today it's created inside `Order::create()` (~line 519), but BWMS needs it first.
+3. **Call BWMS after every local check and before `DB::transaction()` (~line 505).** Both `confirm()` and `placeOnBehalf()` go through here, so staff-entered orders are covered.
+4. Act on the response ([5](#5-handling-the-response-at-checkout)). Add `orders.reservation_status`, nullable: `confirmed`, `unconfirmed`, `reservation_failed`.
+5. Keep the `stock_qty` decrement. It's now only a display cache, and BWMS's push overwrites it. If it throws after a 201, queue a cancel ([5](#5-handling-the-response-at-checkout)).
+6. Add `orders.bwms_version`, default 0.
+7. Set the Stripe session's `expires_at` ([Stripe orders](#stripe-orders-the-30-minute-window)).
 
 **`order_items`:** add `dispatched_qty`, decimal, default 0, for [11](#11-post-apibwmsv1order-events-dispatch-events).
 
@@ -457,6 +483,8 @@ Line numbers are as of commit `6bccbc2`.
 | `StripeOrderPaymentService::release()`, which covers `ReleaseAbandonedStripeOrders`, `PaymentLinkService` and the Stripe webhooks | ~83 |
 
 Check for any other move to `cancelled`, `payment_failed` or an expired state.
+
+**Send `paid` from `StripeOrderPaymentService::confirmPaid()`** for payment-link orders, once the order is confirmed.
 
 **Add two routes** in `routes/api.php`, outside the `auth` and `throttle` groups, stateless, with a middleware that verifies the signature ([2](#2-signing-both-directions)):
 - `PUT /api/bwms/v1/stock` ([10](#10-put-apibwmsv1stock-stock-from-bwms))
@@ -498,9 +526,5 @@ Build tests for these against a stub of BWMS:
 - [ ] An unpaid checkout order is released and cancelled in BWMS about 30 minutes after placing.
 - [ ] A `payment_failed` order is cancelled in BWMS.
 - [ ] A payment-link order isn't released at 30 minutes.
-
-## Open items
-
-A decision for the owner. **Don't work around this without asking.**
-
-1. **Payment-link orders can be picked before they're paid.** Staff-entered Stripe orders have their own pay-by deadline (`payment_due_at`), which can be days away, so the 30-minute window doesn't apply to them. They reserve at placement and stay pickable in BWMS until paid or released at that deadline, and the portal's own run sheets leave them out. Build them as a normal reservation until this is decided.
+- [ ] A payment-link order is sent as `awaiting_payment` with `pay_by`, and paying it sends `paid`.
+- [ ] Reaching pay-by unpaid sends the cancel.

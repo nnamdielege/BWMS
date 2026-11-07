@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HeldBadge, { type Hold } from '@/components/HeldBadge.vue';
 import InputError from '@/components/InputError.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
@@ -44,6 +45,7 @@ const props = defineProps<{
         delivery_date: string | null;
         delivery_date_origin: string | null;
         moved_from: string | null;
+        hold: Hold | null;
         on_pick_list: boolean;
         review_notes: string[];
         run: { id: number; label: string; area_id: number; date: string } | null;
@@ -53,7 +55,7 @@ const props = defineProps<{
         created_by: string | null;
         lines: Line[];
     };
-    can: { manage: boolean };
+    can: { manage: boolean; release_hold: boolean };
     deliveryAreas: { id: number; name: string }[];
 }>();
 const runForm = useForm({ delivery_area_id: props.order.run?.area_id ?? null, run_date: props.order.run?.date ?? '' });
@@ -64,6 +66,7 @@ const dateForm = useForm({ delivery_date: props.order.delivery_date ?? '' });
 const editDate = ref(false);
 const saveDate = () => dateForm.put(route('orders.delivery-date', props.order.id), { preserveScroll: true, onSuccess: () => (editDate.value = false) });
 
+const releaseHold = () => confirm('Release this unpaid order to pick? It will be picked and delivered before payment.') && router.post(route('orders.release-hold', props.order.id), {}, { preserveScroll: true });
 const undoMove = () => confirm('Put this order back on its original date and run?') && router.post(route('orders.consolidate.undo', props.order.id), {}, { preserveScroll: true });
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -87,9 +90,11 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
             <header class="flex flex-wrap items-center gap-3">
                 <h1 class="font-mono text-xl font-semibold">{{ order.number }}</h1>
                 <span class="rounded bg-muted px-2 py-0.5 text-sm">{{ order.status_label }}</span>
+                <HeldBadge :hold="order.hold" />
                 <SourceBadge :channel="order.channel" />
                 <span v-if="order.external_ref" class="text-sm text-muted-foreground">{{ order.external_ref }} (v{{ order.external_version }})</span>
                 <div class="ml-auto flex gap-2">
+                    <Button v-if="can.release_hold" variant="outline" @click="releaseHold">Release to pick</Button>
                     <Button v-if="can.manage && (order.oversold || order.needs_review)" variant="outline" @click="clearFlags">Mark flags handled</Button>
                     <Button v-if="can.manage" variant="ghost" @click="cancel">Cancel order</Button>
                 </div>

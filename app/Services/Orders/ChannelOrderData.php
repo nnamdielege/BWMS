@@ -25,5 +25,8 @@ final class ChannelOrderData
         public readonly ?string $notes = null,
         /** Delivery address for run assignment: street, suburb, postcode, lat, lng, instructions (all optional). */
         public readonly array $delivery = [],
+        /** awaiting_payment holds a new order from picking; paid releases it; null says nothing about payment. */
+        public readonly ?string $paymentStatus = null,
+        public readonly ?string $payBy = null,
     ) {}
 }

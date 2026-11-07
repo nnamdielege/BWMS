@@ -51,6 +51,7 @@ class PickListService
             foreach ($orders as $order) {
                 $this->assert($order->site_id === $site->id, "{$order->number} is fulfilled from another site.");
                 $this->assert(in_array($order->status, [OrderStatus::Open, OrderStatus::PartiallyDispatched], true), "{$order->number} is {$order->status->label()}.");
+                $this->assert(! $order->payment_hold, "{$order->number} is waiting for payment. Release it to pick first.");
             }
 
             $days = $orders->map(fn (Order $o) => $o->delivery_date?->toDateString() ?? 'no date')->unique();

@@ -53,10 +53,10 @@ class PickPackService
         });
     }
 
-    /** Open orders of the run with nothing on a pick list yet. */
+    /** Open orders of the run with nothing on a pick list yet. Orders held for payment wait. */
     public function waitingOrders(DeliveryRun $run): Collection
     {
-        return $run->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::PartiallyDispatched])->where('site_id', $run->site_id)->get();
+        return $run->orders()->whereIn('status', [OrderStatus::Open, OrderStatus::PartiallyDispatched])->where('site_id', $run->site_id)->where('payment_hold', false)->get();
     }
 
     public function claim(PickList $pickList, User $picker, bool $takeOver = false): PickList

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Models\Concerns\Auditable;
+use App\Support\BusinessDate;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -26,6 +27,9 @@ class Order extends Model
             'cancelled_at' => 'datetime',
             'requested_delivery_date' => 'date',
             'delivery_date' => 'date',
+            'payment_hold' => 'boolean',
+            'pay_by' => 'datetime',
+            'hold_released_at' => 'datetime',
             'original_delivery_date' => 'date',
             'review_notes' => 'array',
             'external_version' => 'integer',
@@ -55,6 +59,17 @@ class Order extends Model
         }
         unset($notes[$key]);
         $this->forceFill($notes === [] ? ['review_notes' => null, 'needs_review' => false] : ['review_notes' => $notes]);
+    }
+
+    /** For the HELD badge: null when the order isn't held. */
+    public function holdSummary(): ?array
+    {
+        if (! $this->payment_hold) {
+            return null;
+        }
+        $date = $this->pay_by?->copy()->setTimezone(config('bwms.business_timezone'))->toDateString();
+
+        return ['pay_by' => $date, 'overdue' => $date !== null && $date < BusinessDate::today()];
     }
 
     public function deliveryRun(): BelongsTo

@@ -14,6 +14,7 @@ use App\Services\Stock\Exceptions\InvalidMovement;
 use App\Support\Audit;
 use App\Support\NumberSequence;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
@@ -83,7 +84,10 @@ class OrderService
                 throw new InvalidMovement("Unknown {$data->channel->value} order {$data->externalRef} cannot be cancelled.");
             }
             $order = $this->newOrder($data->channel, $data->externalRef, $data->siteId, null);
+            // Only a new order: a re-send mustn't undo a manager's Release to pick.
+            $order->forceFill(['payment_hold' => $data->paymentStatus === 'awaiting_payment']);
         }
+        $this->applyPayment($order, $data);
 
         $dateChanged = $order->requested_delivery_date?->toDateString() !== $data->requestedDeliveryDate;
         $order->fill(['customer_id' => $data->customerId, 'requested_delivery_date' => $data->requestedDeliveryDate, 'notes' => $data->notes]);
@@ -139,6 +143,33 @@ class OrderService
             Audit::record($moved ? 'order_delivery_date_changed' : 'order_delivery_date_change_held', $order, ['delivery_date' => $old], ['delivery_date' => $moved ? $date : $old], ['requested' => $date], $actor->id);
 
             return $moved;
+        });
+    }
+
+    private function applyPayment(Order $order, ChannelOrderData $data): void
+    {
+        if ($data->payBy !== null) {
+            $order->forceFill(['pay_by' => Carbon::parse($data->payBy)]);
+        }
+        if ($data->paymentStatus === 'paid' && $order->payment_hold) {
+            $order->forceFill(['payment_hold' => false])->save();
+            Audit::record('order_payment_received', $order, ['payment_hold' => true], ['payment_hold' => false], ['channel' => $data->channel->value]);
+        }
+    }
+
+    /** A manager lets an unpaid order be picked. It stays released whatever the channel sends next. */
+    public function releaseHold(Order $order, User $actor): Order
+    {
+        return DB::transaction(function () use ($order, $actor) {
+            $order = Order::lockForUpdate()->findOrFail($order->id);
+            $this->assert($order->payment_hold, "{$order->number} isn't held.");
+            $this->assert($order->status->isActive(), "{$order->number} is {$order->status->label()}.");
+
+            $hold = $order->holdSummary();
+            $order->forceFill(['payment_hold' => false, 'hold_released_at' => now(), 'hold_released_by' => $actor->id])->save();
+            Audit::record('order_hold_released', $order, ['payment_hold' => true], ['payment_hold' => false], ['pay_by' => $hold['pay_by']], $actor->id);
+
+            return $order;
         });
     }
 
