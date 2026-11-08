@@ -68,6 +68,7 @@ Timeouts are 5s connect and 15s total. The client refuses to run during a web re
 ## Mapping portal products
 
 - **Bulk:** run `php artisan channels:portal-map products.csv [--dry-run]`. The CSV has columns `portal_product_id, sku[, pack_qty]`. `pack_qty` picks the BWMS pack; without it, the product's default sale pack is used. Listings start with sync off.
+- **Correct a mapping:** `php artisan channels:portal-map fix.csv --update --dry-run`, then without `--dry-run`. Same columns; `pack_qty` is required, and `portal_product_id` may be blank when the SKU has one portal listing. It re-points the listing to the product's pack of that size and reports old → new. It refuses, and says why, if the product has no sellable pack of that size: add the pack on the product page first. It never creates a pack. Each change is audited (`portal_listing_repointed`), and a listing with sync on gets a stock push, since the portal's figure is in packs. Orders already received keep the pack they came in with. The report also shows how each product's stock was entered (opening balance and stocktake counts against the pack size), to spot counts typed in cartons instead of base units.
 - **One at a time:** an unknown product on a portal call appears in the Sync screen's mapping queue (channel `portal`). Map it there.
 
 ## Importing portal products
