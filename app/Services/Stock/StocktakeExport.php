@@ -225,6 +225,9 @@ class StocktakeExport
         if ($line->counted_qty !== null && $line->system_qty_at_count !== null && $line->system_qty_at_count !== $line->snapshot_qty) {
             $notes[] = "Stock moved during the count: system had {$line->system_qty_at_count} when counted";
         }
+        if ($line->count_note) {
+            $notes[] = ucfirst($line->count_note);
+        }
 
         return $notes ? implode('. ', $notes) : null;
     }

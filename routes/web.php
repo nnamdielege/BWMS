@@ -112,6 +112,9 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         ->whereIn('kind', ['results', 'count-sheet'])->whereIn('format', ['xlsx', 'csv', 'pdf'])->name('stocktakes.export');
     Route::put('stocktakes/{stocktake}/lines/{line}', [StocktakeController::class, 'count'])->middleware('can:stocktakes.count')->name('stocktakes.count');
     Route::post('stocktakes/{stocktake}/lines', [StocktakeController::class, 'addLine'])->middleware('can:stocktakes.count')->name('stocktakes.lines.store');
+    Route::post('stocktakes/{stocktake}/upload', [StocktakeController::class, 'upload'])->middleware('can:stocktakes.manage')->name('stocktakes.upload');
+    Route::post('stocktakes/{stocktake}/upload/apply', [StocktakeController::class, 'applyUpload'])->middleware('can:stocktakes.manage')->name('stocktakes.upload.apply');
+    Route::delete('stocktakes/{stocktake}/upload', [StocktakeController::class, 'discardUpload'])->middleware('can:stocktakes.manage')->name('stocktakes.upload.discard');
     Route::post('stocktakes/{stocktake}/post', [StocktakeController::class, 'post'])->middleware('can:stocktakes.manage')->name('stocktakes.post');
     Route::post('stocktakes/{stocktake}/cancel', [StocktakeController::class, 'cancel'])->middleware('can:stocktakes.manage')->name('stocktakes.cancel');
     Route::post('count-tasks/{countTask}/dismiss', [CountTaskController::class, 'dismiss'])->middleware('can:stocktakes.manage')->name('count-tasks.dismiss');

@@ -11,6 +11,7 @@ use App\Models\StocktakeLine;
 use App\Services\Stock\Exceptions\StockException;
 use App\Services\Stock\StocktakeExport;
 use App\Services\Stock\StocktakeService;
+use App\Services\Stock\StocktakeUpload;
 use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,10 +19,11 @@ use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 class StocktakeController extends Controller
 {
-    public function __construct(private StocktakeService $stocktakes) {}
+    public function __construct(private StocktakeService $stocktakes, private StocktakeUpload $uploads) {}
 
     public function index(Request $request): Response
     {
@@ -79,7 +81,9 @@ class StocktakeController extends Controller
                     'pack' => $this->countPack($l->product),
                     'system_qty_at_count' => $l->system_qty_at_count,
                     'variance' => $l->posted_variance ?? $l->variance(),
+                    'count_note' => $l->count_note,
                 ]),
+            'upload' => $this->uploadPreview($request, $stocktake),
             'bins' => Location::bins()->where('is_active', true)->with('parent.parent')->orderBy('code')->get()
                 ->map(fn (Location $l) => ['id' => $l->id, 'label' => $l->path()]),
             'can' => [
@@ -135,6 +139,44 @@ class StocktakeController extends Controller
         return back()->with('success', "Line added for {$product->sku}.");
     }
 
+    /** Reads a filled-in count sheet or results export into a preview on the stocktake's page. */
+    public function upload(Request $request, Stocktake $stocktake): RedirectResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'max:5120']]);
+        $file = $request->file('file');
+
+        try {
+            $plan = $this->uploads->preview($stocktake, $request->user(), $file->getRealPath(), $file->getClientOriginalExtension(), $file->getClientOriginalName());
+        } catch (RuntimeException $e) {
+            throw ValidationException::withMessages(['file' => $e->getMessage()]);
+        }
+        $request->session()->put($this->uploadSession($stocktake), $plan['token']);
+
+        return back();
+    }
+
+    /** Records the previewed counts. Never posts. */
+    public function applyUpload(Request $request, Stocktake $stocktake): RedirectResponse
+    {
+        $data = $request->validate(['token' => ['required', 'uuid']]);
+        $result = null;
+        $this->guard(function () use ($request, $stocktake, $data, &$result) {
+            $result = $this->uploads->apply($stocktake, $request->user(), $data['token']);
+        });
+        $request->session()->forget($this->uploadSession($stocktake));
+
+        return back()->with('success', "Counts recorded for {$result['counted']} line(s)".($result['added'] ? ", {$result['added']} line(s) added as found" : '').'. Nothing is posted yet.');
+    }
+
+    public function discardUpload(Request $request, Stocktake $stocktake): RedirectResponse
+    {
+        if ($token = $request->session()->pull($this->uploadSession($stocktake))) {
+            $this->uploads->discard($request->user(), $token);
+        }
+
+        return back();
+    }
+
     public function post(Request $request, Stocktake $stocktake): RedirectResponse
     {
         $data = $request->validate(['zero_uncounted' => ['boolean']]);
@@ -149,6 +191,31 @@ class StocktakeController extends Controller
         $this->guard(fn () => $this->stocktakes->cancel($stocktake));
 
         return back()->with('success', "Stocktake {$stocktake->number} cancelled.");
+    }
+
+    private function uploadPreview(Request $request, Stocktake $stocktake): ?array
+    {
+        $token = $request->session()->get($this->uploadSession($stocktake));
+        $plan = $token && $stocktake->isOpen() && $request->user()->can('stocktakes.manage') ? $this->uploads->get($request->user(), $token) : null;
+        if (! $plan) {
+            return null;
+        }
+
+        return [
+            'token' => $plan['token'],
+            'filename' => $plan['filename'],
+            'expires_at' => now()->setTimestamp($plan['expires_at'])->toIso8601String(),
+            'summary' => $this->uploads->summary($plan),
+            'matched' => array_values(array_filter($plan['matched'], fn ($m) => ! $m['unchanged'])),
+            'new' => $plan['new'],
+            'errors' => $plan['errors'],
+            'blank' => $plan['blank'],
+        ];
+    }
+
+    private function uploadSession(Stocktake $stocktake): string
+    {
+        return "stocktake_upload.{$stocktake->id}";
     }
 
     /** @return array{per: int, name: string, base_unit: string} */

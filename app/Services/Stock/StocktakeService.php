@@ -77,7 +77,8 @@ class StocktakeService
         );
     }
 
-    public function recordCount(StocktakeLine $line, int $counted, User $actor): StocktakeLine
+    /** $note says where a count came from when it wasn't typed in; typing it in again clears it. */
+    public function recordCount(StocktakeLine $line, int $counted, User $actor, ?string $note = null): StocktakeLine
     {
         $this->assertOpen($line->stocktake);
         if ($counted < 0) {
@@ -89,6 +90,7 @@ class StocktakeService
             'system_qty_at_count' => $this->currentOnHand($line),
             'counted_by' => $actor->id,
             'counted_at' => now(),
+            'count_note' => $note,
         ])->save();
 
         return $line;

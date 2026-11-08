@@ -641,6 +641,22 @@ The app lists every product and batch in that area, with its quantity at that mo
 
 Work can carry on during the count. The **Variance** is your count minus the system quantity at the moment you enter it. If stock moves after you count a line, count it again and re-enter the figure.
 
+### 8.2a Upload counts
+
+For managers and admins, while the stocktake is counting. Instead of typing counts in, fill in a spreadsheet and upload it.
+
+1. **Export → Count sheet (Excel)**, and fill in **Counted (packs)** and **Counted (each)**. You can also fill in **Counted (base)** on a **Results** export. Add a row for anything found that isn't listed: bin, SKU, and lot and best-before for batch-tracked products. Other columns are ignored.
+2. Click **Upload counts** and choose the file (Excel or CSV).
+3. Check the preview:
+   - **Counts:** each line's count now, the new count and the variance it will make.
+   - **New lines:** stock in a bin that wasn't in the snapshot. These are added as found.
+   - **Errors**, by row: an unknown SKU or bin, a bin outside the stocktake, a batch-tracked product without a lot, a negative or part number, or packs and base that don't agree. **Any error holds the whole file back.** Fix the file and upload it again.
+   - **Blank rows** are left as they are: uncounted, or with the count they already have. A 0 is a count.
+   - Two rows for the same bin, product and lot are **added together**, for example a bin counted in two parts.
+4. Click **Apply counts**. The counts are recorded as if you typed them in, with "uploaded from" and the file name next to each. **Nothing is posted.** Review, then post as usual (8.3).
+
+The preview lasts 30 minutes. If someone enters a count for one of the lines after you upload, applying is refused, so nothing is overwritten: upload the file again. A file exported from a different stocktake is refused. Each upload and each apply is recorded in the audit log.
+
 ### 8.3 Post or cancel
 
 For managers and admins.
