@@ -644,6 +644,15 @@ For managers and admins.
 
 **Cancel** closes the stocktake without changing any stock.
 
+### 8.3a Export
+
+**Export** on a stocktake works in any status: counting, posted or cancelled.
+
+- **Results** (Excel or CSV): the stocktake's details at the top, then one row per line in bin walk order. Each row has the snapshot, the count in base units and in packs (for example "3 Carton + 4 Each"), the variance, who counted it and when. The last row has the totals. An uncounted line has a blank count, not 0. Managers and admins also get the unit cost and the variance in dollars. Costs are today's product cost per base unit, not the cost when the stocktake was posted.
+- **Count sheet** (Excel or PDF to print): the same lines in walk order, with boxes to write the count in packs and in each, and a signature and date line on every page. It doesn't show the system quantities, so counters count what's there.
+
+The file is named after the stocktake, for example `STK-00003-results-2026-11-08.xlsx`. Each export is recorded in the audit log.
+
 ### 8.4 Count tasks
 
 A count task asks someone to count one bin. The app raises one when:

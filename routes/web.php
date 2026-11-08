@@ -108,6 +108,8 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::get('stocktakes', [StocktakeController::class, 'index'])->middleware('can:stocktakes.count')->name('stocktakes.index');
     Route::post('stocktakes', [StocktakeController::class, 'store'])->middleware('can:stocktakes.manage')->name('stocktakes.store');
     Route::get('stocktakes/{stocktake}', [StocktakeController::class, 'show'])->middleware('can:stocktakes.count')->name('stocktakes.show');
+    Route::get('stocktakes/{stocktake}/export/{kind}/{format}', [StocktakeController::class, 'export'])->middleware('can:stocktakes.count')
+        ->whereIn('kind', ['results', 'count-sheet'])->whereIn('format', ['xlsx', 'csv', 'pdf'])->name('stocktakes.export');
     Route::put('stocktakes/{stocktake}/lines/{line}', [StocktakeController::class, 'count'])->middleware('can:stocktakes.count')->name('stocktakes.count');
     Route::post('stocktakes/{stocktake}/lines', [StocktakeController::class, 'addLine'])->middleware('can:stocktakes.count')->name('stocktakes.lines.store');
     Route::post('stocktakes/{stocktake}/post', [StocktakeController::class, 'post'])->middleware('can:stocktakes.manage')->name('stocktakes.post');

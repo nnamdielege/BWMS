@@ -35,6 +35,11 @@ class StocktakeLine extends Model
         return $this->belongsTo(Location::class);
     }
 
+    public function counter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'counted_by');
+    }
+
     public function batch(): BelongsTo
     {
         return $this->belongsTo(Batch::class);

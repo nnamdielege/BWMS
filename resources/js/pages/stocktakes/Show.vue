@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
@@ -49,6 +57,8 @@ const post = () => {
 };
 const cancel = () => confirm('Cancel this stocktake? No stock will change.') && router.post(route('stocktakes.cancel', props.stocktake.id));
 
+const exportUrl = (kind: 'results' | 'count-sheet', format: string) => route('stocktakes.export', [props.stocktake.id, kind, format]);
+
 const found = useForm({ sku: '', location_id: null as number | null, lot_code: '', best_before: '' });
 const addFound = () => found.post(route('stocktakes.lines.store', props.stocktake.id), { preserveScroll: true, onSuccess: () => found.reset() });
 </script>
@@ -63,9 +73,25 @@ const addFound = () => found.post(route('stocktakes.lines.store', props.stocktak
                 <span class="text-sm">{{ stocktake.scope }}</span>
                 <span class="rounded bg-muted px-2 py-0.5 text-sm capitalize">{{ stocktake.status }}</span>
                 <span class="text-sm text-muted-foreground">{{ uncounted }} uncounted · net variance {{ netVariance > 0 ? '+' : '' }}{{ netVariance }}</span>
-                <div v-if="open && can.manage" class="ml-auto flex gap-2">
-                    <Button @click="post">Review done — post variances</Button>
-                    <Button variant="ghost" @click="cancel">Cancel</Button>
+                <div class="ml-auto flex gap-2">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger as-child>
+                            <Button variant="outline">Export</Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" class="w-60">
+                            <DropdownMenuLabel>Results{{ can.manage ? '' : ' (without costs)' }}</DropdownMenuLabel>
+                            <DropdownMenuItem as-child><a :href="exportUrl('results', 'xlsx')">Excel (.xlsx)</a></DropdownMenuItem>
+                            <DropdownMenuItem as-child><a :href="exportUrl('results', 'csv')">CSV</a></DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Count sheet, for counters</DropdownMenuLabel>
+                            <DropdownMenuItem as-child><a :href="exportUrl('count-sheet', 'xlsx')">Excel (.xlsx)</a></DropdownMenuItem>
+                            <DropdownMenuItem as-child><a :href="exportUrl('count-sheet', 'pdf')" target="_blank">PDF to print</a></DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <template v-if="open && can.manage">
+                        <Button @click="post">Review done — post variances</Button>
+                        <Button variant="ghost" @click="cancel">Cancel</Button>
+                    </template>
                 </div>
             </header>
             <p class="text-xs text-muted-foreground">

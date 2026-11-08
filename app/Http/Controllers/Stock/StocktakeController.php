@@ -9,9 +9,11 @@ use App\Models\Product;
 use App\Models\Stocktake;
 use App\Models\StocktakeLine;
 use App\Services\Stock\Exceptions\StockException;
+use App\Services\Stock\StocktakeExport;
 use App\Services\Stock\StocktakeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -82,6 +84,22 @@ class StocktakeController extends Controller
                 'count' => $request->user()->can('stocktakes.count'),
                 'manage' => $request->user()->can('stocktakes.manage'),
             ],
+        ]);
+    }
+
+    /** Results (xlsx, csv) or a blank count sheet (xlsx, pdf), in any status. Costs for managers and admins only. */
+    public function export(Request $request, Stocktake $stocktake, string $kind, string $format, StocktakeExport $exports): HttpResponse
+    {
+        abort_unless(in_array($format, StocktakeExport::FORMATS[$kind] ?? [], true), 404);
+
+        $file = $exports->export($stocktake, $kind, $format, $request->user()->can('stocktakes.manage'));
+        // The PDF opens in the browser to print; the rest download.
+        $disposition = $format === 'pdf' ? 'inline' : 'attachment';
+
+        return response($file['body'], 200, [
+            'Content-Type' => $file['type'],
+            'Content-Disposition' => "{$disposition}; filename=\"{$file['filename']}\"",
+            'Cache-Control' => 'no-store',
         ]);
     }
 
