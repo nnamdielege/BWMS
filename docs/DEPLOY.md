@@ -46,6 +46,7 @@ and binary logging is enabled`).
       php artisan bwms:check-triggers      # MUST print OK; abort the deploy if it fails
       php artisan stock:verify             # balances = ledger
       php artisan bwms:check-timestamps    # read-only: rows overwritten by ON UPDATE before 2026_11_08_090000
+      php artisan orders:recheck-oversold --dry-run   # once: stale oversold flags; run without --dry-run to clear them
       php artisan config:cache && php artisan route:cache && php artisan view:cache
       php artisan queue:restart
       ```

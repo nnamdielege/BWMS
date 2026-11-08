@@ -745,7 +745,7 @@ Order statuses: **Open** (reserved, waiting) â†’ **Picking** (on a pick list) â†
 
 ![Oversold order](img/71-order-oversold.png)
 
-- **Oversold:** the order was accepted beyond available stock. Decide: short-ship, substitute, or contact the customer.
+- **Oversold:** the order was accepted beyond available stock. Decide: short-ship, substitute, or contact the customer. The flag comes off by itself, with an entry in the audit log, once stock covers the whole order: after a delivery is received, an adjustment, a posted stocktake, or another order is cancelled or reduced. When stock is short, the oldest orders are covered first.
 - **Review:** the order page says why. For example, the channel changed the order while it was being picked, it was reduced below what was already dispatched, or its delivery date needs a look ([11.1](#111-how-an-order-gets-its-run)).
 
 When it's dealt with, click **Mark flags handled**.
