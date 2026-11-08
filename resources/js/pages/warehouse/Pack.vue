@@ -2,13 +2,14 @@
 import InputError from '@/components/InputError.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
+import { packLabel, type Pack } from '@/lib/packs';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 
 type PackLine = {
     id: number;
     product: { sku: string; name: string; chilled: boolean; base_unit: string };
-    pack: { name: string; base_qty: number };
+    pack: Pack;
     to_pick_base: number;
     to_pick_label: string;
     picked_base: number | null;
@@ -130,7 +131,7 @@ onBeforeUnmount(() => {
 });
 
 const packed = (l: PackLine) =>
-    l.picked_base === null ? '—' : l.picked_base % l.pack.base_qty === 0 ? `${l.picked_base / l.pack.base_qty} ${l.pack.name}` : `${l.picked_base} ${l.product.base_unit}`;
+    l.picked_base === null ? '—' : packLabel(l.picked_base, l.pack);
 const ready = (o: PackOrder) => o.picking_done && s(o).checked.length === o.lines.filter((l) => !l.no_stock).length && validCartons(s(o).cartons);
 const save = async (o: PackOrder) => {
     if (await flush()) router.post(route('pick.pack.store', [props.pickList.id, o.id]), { cartons: s(o).cartons }, { preserveScroll: true });

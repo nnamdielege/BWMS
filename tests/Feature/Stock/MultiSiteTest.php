@@ -75,7 +75,7 @@ class MultiSiteTest extends TestCase
             'client_token' => (string) Str::uuid(),
             'from_location_id' => $this->bin('STOCK')->id,
             'to_location_id' => $this->bin('STOCK', $this->second)->id,
-            'qty' => 4,
+            'each' => 4,
         ])->assertSessionHasNoErrors();
 
         $this->assertSame(6, $this->balance($p, $this->bin('STOCK')));

@@ -42,7 +42,7 @@ class CountTaskTest extends TestCase
             idempotencyKey: 'drain:'.Str::uuid(), allowNegative: true,
         ));
 
-        $this->actingAs($this->manager)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => $qty]])->assertSessionHasNoErrors();
+        $this->actingAs($this->manager)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => ['each' => $qty]]])->assertSessionHasNoErrors();
         $this->actingAs($this->manager)->post(route('pick-lists.dispatch', $list))->assertSessionHasNoErrors();
     }
 

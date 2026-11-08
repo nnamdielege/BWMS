@@ -10,6 +10,7 @@ use App\Models\PickListLine;
 use App\Services\Orders\PickListService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Support\BusinessDate;
+use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -87,10 +88,10 @@ class PickListController extends Controller
                         'order' => $l->orderLine->order->number,
                         'channel' => $l->orderLine->order->channel->value,
                         'customer' => $l->orderLine->order->customer?->name,
-                        'pack' => $l->orderLine->unit->name,
-                        'pack_qty' => $l->orderLine->base_qty_per_unit,
+                        'pack' => PackQty::forInput($l->orderLine->base_qty_per_unit, $l->orderLine->unit->name, $l->product->base_unit),
                         'qty_to_pick_base' => $l->qty_to_pick_base,
                         'qty_picked_base' => $l->qty_picked_base,
+                        'to_pick_label' => PackQty::label($l->qty_to_pick_base, $l->orderLine->base_qty_per_unit, $l->orderLine->unit->name, $l->product->base_unit),
                     ]),
             ],
             'can' => ['pick' => $request->user()->can('picking.perform') && $pickList->isOpen()],
@@ -99,8 +100,15 @@ class PickListController extends Controller
 
     public function record(Request $request, PickList $pickList): RedirectResponse
     {
-        $data = $request->validate(['picked' => ['required', 'array'], 'picked.*' => ['integer', 'min:0']]);
-        $this->guard(fn () => $this->picks->recordPicked($pickList, $data['picked']));
+        // Typed in the order line's pack plus loose units, saved as base units.
+        $data = $request->validate(['picked' => ['required', 'array'], 'picked.*' => ['array'], ...PackQty::rules('picked.*.')]);
+        $per = $pickList->lines()->whereIn('id', array_keys($data['picked']))->with('orderLine:id,base_qty_per_unit')->get()
+            ->mapWithKeys(fn (PickListLine $l) => [$l->id => $l->orderLine->base_qty_per_unit]);
+        $picked = collect($data['picked'])
+            ->filter(fn ($entry, $id) => isset($per[$id]) && ! PackQty::isBlank($entry))
+            ->map(fn ($entry, $id) => PackQty::toBase($entry, $per[$id]))
+            ->all();
+        $this->guard(fn () => $this->picks->recordPicked($pickList, $picked));
 
         return back();
     }

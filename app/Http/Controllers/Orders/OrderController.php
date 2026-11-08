@@ -17,6 +17,7 @@ use App\Services\Orders\PickPackService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Support\Audit;
 use App\Support\BusinessDate;
+use App\Support\PackQty;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -156,6 +157,7 @@ class OrderController extends Controller
                     'reserved' => $l->reservation?->qty_base ?? 0,
                     'dispatched' => $l->qty_dispatched_base,
                     'cancelled' => $l->qty_cancelled_base,
+                    'pack' => PackQty::forInput($l->base_qty_per_unit, $l->unit->name, $l->product->base_unit),
                     'unit_price' => $l->unit_price,
                     'pick_lists' => $l->pickLines->map(fn ($p) => $p->pickList->only(['id', 'number', 'status']))->unique('id')->values(),
                 ]),

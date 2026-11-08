@@ -72,7 +72,7 @@ class ProductFlagsTest extends TestCase
         $list = app(PickListService::class)->create($this->manager, $this->site(), [$order->id])['pickList'];
         $this->assertSame([$goods->id], $list->lines()->pluck('product_id')->all(), 'Services are not picked');
 
-        $this->actingAs($this->manager)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => 2]]);
+        $this->actingAs($this->manager)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => ['each' => 2]]]);
         $this->actingAs($this->manager)->post(route('pick-lists.dispatch', $list))->assertSessionHasNoErrors();
 
         $this->assertSame(OrderStatus::Dispatched, $order->fresh()->status);

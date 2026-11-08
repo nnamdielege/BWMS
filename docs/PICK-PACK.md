@@ -86,3 +86,20 @@ Guided picking and packing for the warehouse, on cheap **Android handhelds with 
 - Driver screens on the same handhelds.
 - Public holidays in the cutoff rules.
 - Batch-picking several runs at once.
+
+## Quantities are typed in packs
+
+Every quantity box takes packs plus loose base units (`App\Support\PackQty`, `PackQtyInput.vue`) and the server saves base units. The endpoints take `packs` and `each`, never a bare number:
+
+- `PUT pick-lists/{id}/picked`: `picked[lineId][packs|each]`, in the order line's pack.
+- `PUT pick/lists/{id}/lines/{line}`: `packs`, `each`, in the order line's pack. Scans send `each` (the scanned base units).
+- `PUT stocktakes/{id}/lines/{line}`: `packs`, `each`, in the product's largest pack.
+- `POST stock/{product}/adjustments` and `.../transfers`: `product_unit_id`, `packs`, `each` (plus `direction` on adjustments).
+
+Before this, the boxes took base units, so "1" typed for a Case of 12 was saved as 1 bottle. To find open orders left holding part of a pack:
+
+```
+php artisan orders:pack-mismatches
+```
+
+Read-only. It lists lines where dispatched + reserved isn't a whole number of packs, and lines where part of a pack has already been dispatched.

@@ -25,7 +25,7 @@ class AdjustmentAndTransferTest extends TestCase
         $p = Product::factory()->create();
         $this->stockIn($p, 10);
         $manager = $this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER);
-        $payload = ['client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'qty' => -3, 'reason_code_id' => $this->reason('DAMAGED')->id];
+        $payload = ['client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'direction' => 'out', 'each' => 3, 'reason_code_id' => $this->reason('DAMAGED')->id];
 
         $this->actingAs($manager)->post(route('stock.adjust', $p), $payload)->assertSessionHasNoErrors();
         $this->actingAs($manager)->post(route('stock.adjust', $p), $payload)->assertSessionHasNoErrors();
@@ -41,7 +41,7 @@ class AdjustmentAndTransferTest extends TestCase
         $this->stockIn($p, 1);
 
         $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER))
-            ->post(route('stock.adjust', $p), ['client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'qty' => -2, 'reason_code_id' => $this->reason('DAMAGED')->id])
+            ->post(route('stock.adjust', $p), ['client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'direction' => 'out', 'each' => 2, 'reason_code_id' => $this->reason('DAMAGED')->id])
             ->assertSessionHasErrors('qty');
 
         $this->assertSame(1, $this->balance($p));
@@ -53,7 +53,7 @@ class AdjustmentAndTransferTest extends TestCase
 
         $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER))
             ->post(route('stock.adjust', $p), [
-                'client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'qty' => 6,
+                'client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'direction' => 'in', 'each' => 6,
                 'reason_code_id' => $this->reason('FOUND')->id, 'note' => 'Behind pallet',
                 'new_batch' => ['lot_code' => 'L77', 'best_before' => '2027-01-31'],
             ])->assertSessionHasNoErrors();
@@ -69,11 +69,11 @@ class AdjustmentAndTransferTest extends TestCase
         $this->stockIn($p, 10);
         $staff = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
 
-        $this->actingAs($staff)->post(route('stock.adjust', $p), ['client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'qty' => -1, 'reason_code_id' => $this->reason('DAMAGED')->id])
+        $this->actingAs($staff)->post(route('stock.adjust', $p), ['client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'direction' => 'out', 'each' => 1, 'reason_code_id' => $this->reason('DAMAGED')->id])
             ->assertForbidden();
 
         $this->actingAs($staff)->post(route('stock.transfer', $p), [
-            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'qty' => 4,
+            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'each' => 4,
         ])->assertSessionHasNoErrors();
 
         $this->assertSame(6, $this->balance($p));
@@ -86,7 +86,7 @@ class AdjustmentAndTransferTest extends TestCase
         $this->stockIn($p, 2);
 
         $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER))->post(route('stock.transfer', $p), [
-            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'qty' => 5,
+            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'each' => 5,
         ])->assertSessionHasErrors('qty');
 
         $this->assertSame(2, $this->balance($p));

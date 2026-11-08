@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import PackQtyInput from '@/components/PackQtyInput.vue';
 import ScanInput from '@/components/ScanInput.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
+import { isBlank, packLabel, toBase, type Pack, type PackEntry } from '@/lib/packs';
 import { catchVisitFailures } from '@/lib/visitFailures';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, nextTick, ref, watch } from 'vue';
@@ -13,7 +15,7 @@ type Line = {
     no_stock: boolean;
     bin: { code: string; path: string; barcode: string | null } | null;
     product: { sku: string; name: string; chilled: boolean; base_unit: string };
-    pack: { name: string; base_qty: number };
+    pack: Pack;
     barcodes: { code: string; base_qty: number }[];
     batch: { lot: string; best_before: string | null } | null;
     to_pick_base: number;
@@ -47,7 +49,8 @@ const productCodes = ref<string[]>([]);
 const countBase = ref(0);
 const message = ref<{ kind: 'ok' | 'error'; text: string } | null>(null);
 const mode = ref<'scan' | 'manual' | 'short'>('scan');
-const manualQty = ref<number | '' | null>(null);
+// Typed in the order line's pack plus loose units; the server saves base units.
+const manualQty = ref<PackEntry>({ packs: null, each: null });
 const reason = ref<string>('');
 const saving = ref(false);
 const showList = ref(false);
@@ -65,7 +68,7 @@ const reset = () => {
     productCodes.value = [];
     countBase.value = 0;
     mode.value = 'scan';
-    manualQty.value = null;
+    manualQty.value = { packs: null, each: null };
     reason.value = '';
     problem.value = null;
 };
@@ -77,7 +80,7 @@ watch([mode, manualQty, reason], () => (problem.value = null));
 // Back abandons what was typed: a reason chosen here mustn't carry into the next try unseen.
 watch(mode, (now) => {
     if (now === 'scan') {
-        manualQty.value = null;
+        manualQty.value = { packs: null, each: null };
         reason.value = '';
     }
 });
@@ -89,7 +92,7 @@ const say = (kind: 'ok' | 'error', text: string) => {
     message.value = { kind, text };
     buzz(kind === 'ok');
 };
-const inPacks = (base: number, l: Line) => (base % l.pack.base_qty === 0 ? `${base / l.pack.base_qty} ${l.pack.name}` : `${base} ${l.product.base_unit}`);
+const inPacks = (base: number, l: Line) => packLabel(base, l.pack);
 
 const onScan = (code: string) => {
     const l = line.value;
@@ -105,7 +108,7 @@ const onScan = (code: string) => {
         productCodes.value.push(code);
         countBase.value += match.base_qty;
         say('ok', `${l.product.sku} ✓ ${inPacks(countBase.value, l)} of ${l.to_pick_label}`);
-        if (countBase.value === l.to_pick_base) submit(countBase.value);
+        if (countBase.value === l.to_pick_base) submit({ packs: null, each: countBase.value });
         return;
     }
     const otherBin = props.lines.find((x) => x.bin?.barcode === code);
@@ -113,19 +116,14 @@ const onScan = (code: string) => {
     say('error', `Not this product: ${code}`);
 };
 
-const manualBase = computed(() => {
-    const l = line.value;
-    if (!l || typeof manualQty.value !== 'number' || !Number.isInteger(manualQty.value) || manualQty.value < 0) return null;
-    return l.to_pick_base % l.pack.base_qty === 0 ? manualQty.value * l.pack.base_qty : manualQty.value;
-});
-const manualUnit = computed(() => (line.value && line.value.to_pick_base % line.value.pack.base_qty === 0 ? line.value.pack.name : line.value?.product.base_unit));
+const manualBase = computed(() => (line.value && !isBlank(manualQty.value) ? toBase(manualQty.value, line.value.pack.per) : null));
 const needsReason = computed(() => !(binDone.value && productCodes.value.length));
 
 const blockedBy = computed(() => {
     const l = line.value;
     if (!l) return null;
     if (!props.pickList.mine && props.pickList.claimed_by) return `${props.pickList.claimed_by} is picking this list. Take it over first.`;
-    if (manualBase.value === null) return `Enter a whole number of ${manualUnit.value}.`;
+    if (manualBase.value === null) return 'Enter how many you picked.';
     if (manualBase.value > l.to_pick_base) return `Too many: only ${l.to_pick_label} needed.`;
     if (needsReason.value && manualBase.value > 0 && !reason.value) return 'Choose why there was no scan.';
     return null;
@@ -134,10 +132,10 @@ const blockedBy = computed(() => {
 const confirmManual = () => {
     (document.activeElement as HTMLElement | null)?.blur();
     if (blockedBy.value) return showProblem(blockedBy.value);
-    submit(manualBase.value as number);
+    submit(manualQty.value);
 };
 
-const submit = (qtyBase: number) => {
+const submit = (qty: PackEntry) => {
     const l = line.value;
     if (!l) return;
     saving.value = true;
@@ -145,7 +143,7 @@ const submit = (qtyBase: number) => {
     const stopCatching = catchVisitFailures(showProblem);
     router.put(
         route('pick.record', [props.pickList.id, l.id]),
-        { qty_picked_base: qtyBase, bin_barcode: binCode.value, product_barcodes: productCodes.value, override_reason: needsReason.value && qtyBase > 0 ? reason.value || null : null },
+        { packs: qty.packs, each: qty.each, bin_barcode: binCode.value, product_barcodes: productCodes.value, override_reason: needsReason.value && toBase(qty, l.pack.per) > 0 ? reason.value || null : null },
         {
             preserveScroll: true,
             preserveState: true,
@@ -212,7 +210,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 
             <div v-if="line.no_stock" class="mt-3">
                 <p class="mb-2 text-sm text-muted-foreground">There's nothing to pick for this line. The rest follows the order's short-pick rule at dispatch.</p>
-                <button class="h-12 w-full rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50" :disabled="saving || !pickList.mine" @click="submit(0)">Confirm short</button>
+                <button class="h-12 w-full rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50" :disabled="saving || !pickList.mine" @click="submit({ packs: 0, each: 0 })">Confirm short</button>
             </div>
 
             <div v-else-if="mode === 'scan'" class="mt-3">
@@ -225,10 +223,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 
             <form v-else class="mt-3 space-y-3 rounded-xl border p-3" novalidate @submit.prevent="confirmManual">
                 <div class="font-semibold">{{ mode === 'short' ? 'How many did you find?' : 'Quantity picked' }}</div>
-                <div class="flex items-center gap-2">
-                    <input v-model.number="manualQty" type="number" inputmode="numeric" min="0" class="h-14 w-32 rounded-lg border bg-background px-3 text-2xl tabular-nums" autofocus />
-                    <span>{{ manualUnit }}</span>
-                </div>
+                <PackQtyInput v-model="manualQty" :pack="line.pack" size="lg" />
                 <div v-if="needsReason && (manualBase ?? 0) > 0">
                     <div class="mb-1 text-sm">Why no scan?</div>
                     <div class="grid grid-cols-2 gap-2">

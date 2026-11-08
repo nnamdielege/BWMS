@@ -11,6 +11,7 @@ use App\Models\StocktakeLine;
 use App\Services\Stock\Exceptions\StockException;
 use App\Services\Stock\StocktakeExport;
 use App\Services\Stock\StocktakeService;
+use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -55,7 +56,7 @@ class StocktakeController extends Controller
 
     public function show(Request $request, Stocktake $stocktake): Response
     {
-        $stocktake->load(['scope', 'lines.product:id,sku,name,base_unit', 'lines.location.parent', 'lines.batch']);
+        $stocktake->load(['scope', 'lines.product:id,sku,name,base_unit', 'lines.product.units:id,product_id,name,base_qty', 'lines.location.parent', 'lines.batch']);
 
         return Inertia::render('stocktakes/Show', [
             'stocktake' => [
@@ -75,6 +76,7 @@ class StocktakeController extends Controller
                     'batch' => $l->batch?->label(),
                     'snapshot_qty' => $l->snapshot_qty,
                     'counted_qty' => $l->counted_qty,
+                    'pack' => $this->countPack($l->product),
                     'system_qty_at_count' => $l->system_qty_at_count,
                     'variance' => $l->posted_variance ?? $l->variance(),
                 ]),
@@ -106,9 +108,13 @@ class StocktakeController extends Controller
     public function count(Request $request, Stocktake $stocktake, StocktakeLine $line): RedirectResponse
     {
         abort_unless($line->stocktake_id === $stocktake->id, 404);
-        $data = $request->validate(['counted_qty' => ['required', 'integer', 'min:0', 'max:10000000']]);
+        $data = $request->validate(PackQty::rules());
+        if (PackQty::isBlank($data)) {
+            throw ValidationException::withMessages(['stocktake' => 'Enter the count.']);
+        }
+        $counted = PackQty::toBase($data, $this->countPack($line->product)['per']);
 
-        $this->guard(fn () => $this->stocktakes->recordCount($line, (int) $data['counted_qty'], $request->user()));
+        $this->guard(fn () => $this->stocktakes->recordCount($line, $counted, $request->user()));
 
         return back();
     }
@@ -143,6 +149,14 @@ class StocktakeController extends Controller
         $this->guard(fn () => $this->stocktakes->cancel($stocktake));
 
         return back()->with('success', "Stocktake {$stocktake->number} cancelled.");
+    }
+
+    /** @return array{per: int, name: string, base_unit: string} */
+    private function countPack(Product $product): array
+    {
+        $pack = PackQty::largestPack($product);
+
+        return PackQty::forInput($pack?->base_qty ?? 1, $pack?->name ?? $product->base_unit, $product->base_unit);
     }
 
     private function guard(callable $fn): void

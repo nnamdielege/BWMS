@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import PackQtyInput from '@/components/PackQtyInput.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { fromBase, isBlank, packLabel, toBase, type Pack, type PackEntry } from '@/lib/packs';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, reactive } from 'vue';
@@ -22,6 +24,7 @@ interface Line {
     batch: string | null;
     snapshot_qty: number;
     counted_qty: number | null;
+    pack: Pack;
     system_qty_at_count: number | null;
     variance: number | null;
 }
@@ -40,11 +43,12 @@ const breadcrumbs: BreadcrumbItem[] = [
 const open = computed(() => props.stocktake.status === 'counting');
 const errors = computed(() => usePage().props.errors as Record<string, string>);
 
-const counts = reactive<Record<number, number | null>>(Object.fromEntries(props.lines.map((l) => [l.id, l.counted_qty])));
+// Counted in the product's largest pack plus loose units, like the count sheet; the server saves base units.
+const counts = reactive<Record<number, PackEntry>>(Object.fromEntries(props.lines.map((l) => [l.id, fromBase(l.counted_qty, l.pack.per)])));
 const saveCount = (l: Line) => {
-    const value = counts[l.id];
-    if (value === null || value === undefined || value === l.counted_qty) return;
-    router.put(route('stocktakes.count', [props.stocktake.id, l.id]), { counted_qty: value }, { preserveScroll: true, preserveState: true });
+    const entry = counts[l.id];
+    if (isBlank(entry) || toBase(entry, l.pack.per) === l.counted_qty) return;
+    router.put(route('stocktakes.count', [props.stocktake.id, l.id]), { packs: entry.packs, each: entry.each }, { preserveScroll: true, preserveState: true });
 };
 
 const uncounted = computed(() => props.lines.filter((l) => l.counted_qty === null).length);
@@ -103,7 +107,7 @@ const addFound = () => found.post(route('stocktakes.lines.store', props.stocktak
                 <thead class="border-b text-muted-foreground">
                     <tr>
                         <th class="py-2">Location</th><th>SKU</th><th>Product</th><th>Batch</th>
-                        <th class="text-right">Snapshot</th><th class="w-32 text-right">Counted</th><th class="text-right">Variance</th>
+                        <th class="text-right">Snapshot</th><th class="w-56 text-right">Counted</th><th class="text-right">Variance</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -112,21 +116,13 @@ const addFound = () => found.post(route('stocktakes.lines.store', props.stocktak
                         <td class="font-mono">{{ l.product.sku }}</td>
                         <td>{{ l.product.name }}</td>
                         <td>{{ l.batch ?? '' }}</td>
-                        <td class="text-right tabular-nums">{{ l.snapshot_qty }}</td>
+                        <td class="text-right tabular-nums">{{ packLabel(l.snapshot_qty, l.pack) }}</td>
                         <td class="text-right">
-                            <Input
-                                v-if="open && can.count"
-                                v-model.number="counts[l.id]"
-                                type="number"
-                                min="0"
-                                class="h-8 w-28 text-right"
-                                @blur="saveCount(l)"
-                                @keydown.enter.prevent="saveCount(l)"
-                            />
-                            <span v-else class="tabular-nums">{{ l.counted_qty ?? '—' }}</span>
+                            <PackQtyInput v-if="open && can.count" v-model="counts[l.id]" :pack="l.pack" @commit="saveCount(l)" />
+                            <span v-else class="tabular-nums">{{ l.counted_qty === null ? '—' : packLabel(l.counted_qty, l.pack) }}</span>
                         </td>
                         <td class="text-right tabular-nums" :class="{ 'text-red-600': (l.variance ?? 0) < 0, 'text-green-700': (l.variance ?? 0) > 0 }">
-                            {{ l.variance === null ? '' : (l.variance > 0 ? '+' : '') + l.variance }}
+                            {{ l.variance === null ? '' : (l.variance > 0 ? '+' : '') + packLabel(l.variance, l.pack) }}
                         </td>
                     </tr>
                 </tbody>

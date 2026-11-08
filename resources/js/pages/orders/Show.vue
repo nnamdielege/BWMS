@@ -5,6 +5,7 @@ import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { packLabel, unitLabel, type Pack } from '@/lib/packs';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -19,6 +20,7 @@ interface Line {
     qty_base: number;
     reserved: number;
     dispatched: number;
+    pack: Pack;
     cancelled: number;
     unit_price: string | null;
     pick_lists: { id: number; number: string; status: string }[];
@@ -159,10 +161,10 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
                 <tbody>
                     <tr v-for="l in order.lines" :key="l.id" class="border-b">
                         <td class="py-2"><span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}</td>
-                        <td>{{ l.qty }} × {{ l.unit }}<span v-if="l.base_qty_per_unit > 1" class="text-xs text-muted-foreground"> ({{ l.qty_base }} {{ l.product.base_unit }})</span></td>
-                        <td class="text-right tabular-nums">{{ l.reserved }}</td>
-                        <td class="text-right tabular-nums">{{ l.dispatched }}</td>
-                        <td class="text-right tabular-nums">{{ l.cancelled || '' }}</td>
+                        <td>{{ l.qty }} × {{ l.unit }}<span v-if="l.base_qty_per_unit > 1" class="text-xs text-muted-foreground"> ({{ l.qty_base }} {{ unitLabel(l.product.base_unit, l.qty_base) }})</span></td>
+                        <td class="text-right tabular-nums" :class="{ 'text-amber-700 dark:text-amber-300': l.reserved % l.pack.per !== 0 }">{{ packLabel(l.reserved, l.pack) }}</td>
+                        <td class="text-right tabular-nums" :class="{ 'text-amber-700 dark:text-amber-300': l.dispatched % l.pack.per !== 0 }">{{ packLabel(l.dispatched, l.pack) }}</td>
+                        <td class="text-right tabular-nums">{{ l.cancelled ? packLabel(l.cancelled, l.pack) : '' }}</td>
                         <td>
                             <Link v-for="p in l.pick_lists" :key="p.id" :href="route('pick-lists.show', p.id)" class="mr-2 font-mono underline">{{ p.number }}</Link>
                         </td>
@@ -170,7 +172,7 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
                     </tr>
                 </tbody>
             </table>
-            <p class="text-xs text-muted-foreground">Reserved / dispatched / cancelled are in base units. Stock leaves the ledger at dispatch; until then it is reserved.</p>
+            <p class="text-xs text-muted-foreground">Reserved / dispatched / cancelled are in the line's pack plus loose units; amber means part of a pack. Stock leaves the ledger at dispatch; until then it is reserved.</p>
             <p v-if="order.notes" class="whitespace-pre-line text-sm"><span class="text-muted-foreground">Notes:</span> {{ order.notes }}</p>
             <p class="text-xs text-muted-foreground">Created {{ fmt(order.created_at) }}{{ order.created_by ? ` by ${order.created_by}` : '' }}</p>
         </div>

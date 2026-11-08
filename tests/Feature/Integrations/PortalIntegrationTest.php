@@ -240,7 +240,7 @@ class PortalIntegrationTest extends TestCase
         Http::fake(['portal.test/*' => Http::response(['ok' => true])]);
         Queue::fake([SendPortalOrderEvent::class]);
 
-        $this->actingAs($picker)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => 12]])->assertSessionHasNoErrors(); // short: 1 of 2 cartons
+        $this->actingAs($picker)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => ['packs' => 1]]])->assertSessionHasNoErrors(); // short: 1 of 2 cartons
         $this->actingAs($picker)->post(route('pick-lists.dispatch', $list))->assertSessionHasNoErrors();
 
         Queue::assertPushed(SendPortalOrderEvent::class, fn ($j) => $j->orderId === $order->id && $j->pickListId === $list->id);
@@ -260,7 +260,7 @@ class PortalIntegrationTest extends TestCase
         $picker = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
         $list = app(PickListService::class)->create($picker, $this->site(), [$order->id])['pickList'];
 
-        $this->actingAs($picker)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => 12]])->assertSessionHasNoErrors(); // 1 of 2 cartons
+        $this->actingAs($picker)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => ['packs' => 1]]])->assertSessionHasNoErrors(); // 1 of 2 cartons
         $this->actingAs($picker)->post(route('pick-lists.dispatch', $list))->assertSessionHasNoErrors();
 
         $order->refresh();

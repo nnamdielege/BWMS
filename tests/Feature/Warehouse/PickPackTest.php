@@ -101,8 +101,14 @@ class PickPackTest extends TestCase
         return PickList::latest('id')->first();
     }
 
+    /** $data['qty_picked_base'] goes as loose base units; the screen sends packs + each. */
     private function record(PickList $list, int $lineId, array $data)
     {
+        if (array_key_exists('qty_picked_base', $data)) {
+            $data['each'] = $data['qty_picked_base'];
+            unset($data['qty_picked_base']);
+        }
+
         return $this->actingAs($this->picker)->put(route('pick.record', [$list, $lineId]), $data);
     }
 
@@ -210,7 +216,7 @@ class PickPackTest extends TestCase
         $this->assertSame([CountTask::REASON_SHORT_PICK, $this->binA->id], [$task->reason, $task->location_id]);
 
         $other = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
-        $this->actingAs($other)->put(route('pick.record', [$list, $jam->id]), ['qty_picked_base' => 0])->assertSessionHasErrors('pick');
+        $this->actingAs($other)->put(route('pick.record', [$list, $jam->id]), ['each' => 0])->assertSessionHasErrors('pick');
         $this->actingAs($other)->post(route('pick.claim', $list), ['take_over' => true])->assertRedirect(route('pick.work', $list));
         $this->assertSame($other->id, $list->fresh()->claimed_by);
         $this->assertDatabaseHas('audit_logs', ['event' => 'pick_list_taken_over']);

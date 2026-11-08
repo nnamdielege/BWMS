@@ -100,7 +100,7 @@ class StocktakeTest extends TestCase
             'sku' => $p->sku, 'location_id' => $this->bin()->id, 'lot_code' => 'F1', 'best_before' => '2027-02-01',
         ])->assertSessionHasNoErrors();
         $line = $st->lines()->sole();
-        $this->actingAs($manager)->put(route('stocktakes.count', [$st, $line]), ['counted_qty' => 12])->assertSessionHasNoErrors();
+        $this->actingAs($manager)->put(route('stocktakes.count', [$st, $line]), ['each' => 12])->assertSessionHasNoErrors();
         $this->actingAs($manager)->post(route('stocktakes.post', $st))->assertSessionHasNoErrors();
 
         $this->assertSame(12, $this->balance($p, null, $p->batches()->sole()));
@@ -128,7 +128,7 @@ class StocktakeTest extends TestCase
         $st = $this->service()->create($manager, $this->bin());
 
         $this->actingAs($staff)->get(route('stocktakes.show', $st))->assertOk();
-        $this->actingAs($staff)->put(route('stocktakes.count', [$st, $st->lines()->sole()]), ['counted_qty' => 4])->assertSessionHasNoErrors();
+        $this->actingAs($staff)->put(route('stocktakes.count', [$st, $st->lines()->sole()]), ['each' => 4])->assertSessionHasNoErrors();
         $this->actingAs($staff)->post(route('stocktakes.post', $st))->assertForbidden();
         $this->actingAs($staff)->post(route('stocktakes.store'), ['scope_location_id' => $this->bin()->id])->assertForbidden();
     }

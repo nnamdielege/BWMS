@@ -15,6 +15,7 @@ use App\Services\Documents\PdfRenderer;
 use App\Services\Orders\PickPackService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Support\BusinessDate;
+use App\Support\PackQty;
 use App\Support\WarehouseNav;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -112,13 +113,18 @@ class PickPackController extends Controller
     {
         abort_unless($line->pick_list_id === $pickList->id, 404);
         $data = $request->validate([
-            'qty_picked_base' => ['required', 'integer', 'min:0'],
+            ...PackQty::rules(),
             'bin_barcode' => ['nullable', 'string', 'max:64'],
             'product_barcodes' => ['array', 'max:500'],
             'product_barcodes.*' => ['string', 'max:64'],
             'override_reason' => ['nullable', Rule::in(PickPackService::OVERRIDE_REASONS)],
         ]);
-        $this->guard(fn () => $this->service->recordLine($line, $request->user(), (int) $data['qty_picked_base'],
+        if (PackQty::isBlank($data)) {
+            throw ValidationException::withMessages(['qty' => 'Enter how many you picked.']);
+        }
+        // Typed in the order line's pack plus loose units, saved as base units.
+        $qtyBase = PackQty::toBase($data, $line->orderLine->base_qty_per_unit);
+        $this->guard(fn () => $this->service->recordLine($line, $request->user(), $qtyBase,
             $data['bin_barcode'] ?? null, array_values($data['product_barcodes'] ?? []), $data['override_reason'] ?? null));
 
         return back();
@@ -266,11 +272,11 @@ class PickPackController extends Controller
             'no_stock' => $l->no_stock,
             'bin' => $l->location ? ['code' => $l->location->code, 'path' => $l->location->path(), 'barcode' => $l->location->barcode] : null,
             'product' => ['sku' => $l->product->sku, 'name' => $l->product->name, 'chilled' => $l->product->is_chilled, 'base_unit' => $l->product->base_unit],
-            'pack' => ['name' => $ol->unit->name, 'base_qty' => $per],
+            'pack' => PackQty::forInput($per, $ol->unit->name, $l->product->base_unit),
             'barcodes' => $l->product->units->flatMap(fn ($u) => $u->barcodes->map(fn ($b) => ['code' => $b->barcode, 'base_qty' => $u->base_qty]))->values(),
             'batch' => $l->batch ? ['lot' => $l->batch->lot_code, 'best_before' => $l->batch->best_before?->toDateString()] : null,
             'to_pick_base' => $l->qty_to_pick_base,
-            'to_pick_label' => $this->packs($l->qty_to_pick_base, $per).' '.$ol->unit->name,
+            'to_pick_label' => PackQty::label($l->qty_to_pick_base, $per, $ol->unit->name, $l->product->base_unit),
             'picked_base' => $l->qty_picked_base,
             'ticked' => $l->ticked_at !== null,
             'scanned' => (bool) ($l->bin_scanned_at && $l->product_scanned_at),

@@ -551,13 +551,21 @@ Click **Detail** for one product:
 - **By location and batch:** each bin and batch, earliest best-before first. **quarantine**, **not sellable** and **expired** tags show why stock isn't sellable.
 - **Recent movements:** the last changes. **All movements** opens the full history.
 
+**Typing a quantity.** Every quantity box comes as two: packs and loose units, for example `[1] Case + [5] bottles`, with the pack spelled out underneath ("1 Case = 12 bottles"). Leave a box empty if it's 0. The app saves the total in base units: 1 Case + 5 bottles is 17 bottles. Which pack you count in:
+
+| Screen | Pack |
+|---|---|
+| Pick lists (desktop), handheld **Enter quantity** and **Short / not found** | The order line's pack |
+| Stocktake counts | The product's largest pack, the same one the count sheet prints |
+| Adjust, move between bins | You choose. It starts on the largest pack |
+
 ### 7.3 Adjust or write off stock
 
 For admins and warehouse managers.
 
 1. Open the product's stock page.
 2. Under **Adjust / write off**, choose **Remove** or **Add**.
-3. Enter the quantity in base units.
+3. Choose the pack and enter the quantity, for example 2 Case + 0 bottles.
 4. Choose the bin. For batch-tracked products, choose the batch. When adding, you can create a new batch with a lot code and best-before date.
 5. Choose a reason:
 
@@ -585,7 +593,7 @@ Warehouse staff can do this too.
    - **From bin**
    - **Batch** (batch-tracked products)
    - **To bin**
-   - **Quantity**
+   - **Quantity**, in the pack you choose plus loose units
 3. Click **Move stock**.
 
 Use this to put away stock from a receiving bin, or to move damaged stock to quarantine.
@@ -626,7 +634,7 @@ The app lists every product and batch in that area, with its quantity at that mo
 ### 8.2 Count
 
 1. Open the stocktake.
-2. Count each line and type the figure into **Counted**. It saves when you press Enter or leave the box.
+2. Count each line and type it into **Counted**, in the product's largest pack plus loose units, for example 3 Case + 4 bottles. It saves when you press Enter or leave the boxes.
 3. Found something that isn't listed? Under **Found something not listed?**, enter the SKU and bin (plus lot and best-before for batch-tracked products) and click **Add line**.
 
 ![Counting](img/61-stocktake-counting.png)
@@ -776,6 +784,8 @@ The delivery fields decide the delivery run:
 
 Also on the customer: **Ordermentum retailer ID** and **Portal user ID**, which link channel orders to the customer.
 
+**Reserved, Dispatched and Cancelled** on an order show in the line's pack plus loose units, for example 1 Case + 5 bottles. Amber means part of a pack.
+
 ### 9.10 Pick lists (desktop)
 
 A pick list covers one delivery day: the app refuses a selection that mixes days.
@@ -784,7 +794,7 @@ Most picking is done on the handhelds ([10](#10-pick--pack-phonehandheld)). Ther
 
 1. On **Orders**, tick orders from the same site and click **Create pick list**.
 2. The pick list opens, sorted by bin, earliest best-before first. **Print** prints it.
-3. Enter the quantity picked on each line. Less than asked is a short pick.
+3. Enter the quantity picked on each line, in the order line's pack plus loose units, for example 1 Case + 5 bottles. Less than asked is a short pick.
 4. Click **Dispatch** when every line is confirmed. **Mark all picked** fills every line you haven't entered yet with the full quantity.
 
 **Status reads the same here and on the handheld:** Not started, Picking 2/5, Picked, Packed, Dispatched or Cancelled, whichever screen did the work. A list made here also shows on the handheld queue. Open lists show by default, and dispatched and cancelled ones are under **History**. Both screens refresh every 30 seconds and when you come back to the window.
@@ -870,7 +880,7 @@ Both scans are checked by the server as well.
 **Label missing or scanner not working**
 
 1. Tap **Enter quantity**.
-2. Enter how many you picked.
+2. Enter how many you picked, in the order line's pack plus loose units. For a Case of 12, 1 Case is 12 bottles, and 5 loose bottles go in the second box.
 3. Choose why there was no scan: Label missing, Label damaged, Scanner not working, or Other. This is recorded.
 4. Tap **Confirm**.
 
@@ -879,7 +889,7 @@ Both scans are checked by the server as well.
 **Not enough in the bin**
 
 1. Tap **Short / not found**.
-2. Enter how many you actually found (0 if none).
+2. Enter how many you actually found, in packs plus loose units (0 if none).
 3. Tap **Confirm**.
 
 ![Short pick](img/85-pick-short.png)

@@ -85,7 +85,7 @@ class PickAndDispatchTest extends TestCase
 
         $this->actingAs($this->picker)->post(route('pick-lists.dispatch', $list))->assertSessionHasErrors('pick'); // nothing confirmed yet
 
-        $this->actingAs($this->picker)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => 6]])->assertSessionHasNoErrors();
+        $this->actingAs($this->picker)->put(route('pick-lists.record', $list), ['picked' => [$list->lines()->value('id') => ['each' => 6]]])->assertSessionHasNoErrors();
         $this->actingAs($this->picker)->post(route('pick-lists.dispatch', $list))->assertSessionHasNoErrors();
         $this->picks()->dispatch($list->fresh(), $this->picker); // double submit
 

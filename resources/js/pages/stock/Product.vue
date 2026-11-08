@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import PackQtyInput from '@/components/PackQtyInput.vue';
 import MovementTable, { type MovementRow } from '@/components/MovementTable.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { type Pack, type PackEntry } from '@/lib/packs';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
@@ -53,22 +55,30 @@ const breadcrumbs: BreadcrumbItem[] = [
 // A fresh UUID per form instance makes a double-click or retry idempotent server-side.
 const token = () => crypto.randomUUID();
 
+// Quantities are typed in a pack (the largest by default) plus loose units; the server saves base units.
+const largestPackId = [...props.product.units].filter((u) => u.base_qty > 1).sort((a, b) => b.base_qty - a.base_qty)[0]?.id ?? null;
+const packFor = (unitId: number | null): Pack => {
+    const u = props.product.units.find((x) => x.id === unitId && x.base_qty > 1);
+    return { per: u?.base_qty ?? 1, name: u?.name ?? props.product.base_unit, base_unit: props.product.base_unit };
+};
+const blankQty = (): PackEntry => ({ packs: null, each: null });
+const qtyError = (errors: Record<string, string | undefined>) => errors.packs || errors.each;
+
 const adjust = useForm({
     client_token: token(),
     location_id: null as number | null,
     batch_id: null as number | null,
     new_batch: { lot_code: '', best_before: '' },
     direction: 'out' as 'in' | 'out',
-    amount: 1,
-    qty: 0, // signed value sent to the server, derived from direction + amount
+    product_unit_id: largestPackId,
+    qty: blankQty(),
     reason_code_id: null as number | null,
     note: '',
 });
 const reasonsForDirection = computed(() => props.reasons.filter((r) => r.direction === 'both' || r.direction === adjust.direction));
 const selectedReason = computed(() => props.reasons.find((r) => r.id === adjust.reason_code_id));
 const submitAdjust = () => {
-    adjust.qty = adjust.direction === 'out' ? -Math.abs(adjust.amount) : Math.abs(adjust.amount);
-    adjust.post(route('stock.adjust', props.product.id), {
+    adjust.transform(({ qty, ...rest }) => ({ ...rest, packs: qty.packs, each: qty.each })).post(route('stock.adjust', props.product.id), {
         preserveScroll: true,
         onSuccess: () => {
             adjust.reset();
@@ -82,7 +92,8 @@ const transfer = useForm({
     from_location_id: null as number | null,
     to_location_id: null as number | null,
     batch_id: null as number | null,
-    qty: 1,
+    product_unit_id: largestPackId,
+    qty: blankQty(),
     note: '',
 });
 const pickBalance = (b: (typeof props.balances)[number]) => {
@@ -90,7 +101,7 @@ const pickBalance = (b: (typeof props.balances)[number]) => {
     transfer.batch_id = b.batch_id;
 };
 const submitTransfer = () =>
-    transfer.post(route('stock.transfer', props.product.id), {
+    transfer.transform(({ qty, ...rest }) => ({ ...rest, packs: qty.packs, each: qty.each })).post(route('stock.transfer', props.product.id), {
         preserveScroll: true,
         onSuccess: () => {
             transfer.reset();
@@ -149,8 +160,14 @@ const packs = computed(() => props.product.units.filter((u) => u.base_qty > 1));
                         <label class="flex items-center gap-1"><input type="radio" value="in" v-model="adjust.direction" @change="adjust.reason_code_id = null" /> Add</label>
                     </div>
                     <div class="grid gap-1">
-                        <Label>Quantity ({{ product.base_unit }})</Label>
-                        <Input v-model.number="adjust.amount" type="number" min="1" required />
+                        <Label>Quantity</Label>
+                        <div class="flex flex-wrap items-start gap-2">
+                            <select v-if="packs.length" v-model="adjust.product_unit_id" class="h-8 rounded-md border bg-background px-2 text-sm" aria-label="Pack">
+                                <option v-for="u in packs" :key="u.id" :value="u.id">{{ u.name }} of {{ u.base_qty }}</option>
+                                <option :value="null">{{ product.base_unit }} only</option>
+                            </select>
+                            <PackQtyInput v-model="adjust.qty" :pack="packFor(adjust.product_unit_id)" />
+                        </div>
                     </div>
                     <select v-model="adjust.location_id" class="h-9 w-full rounded-md border bg-background px-2 text-sm" required>
                         <option :value="null" disabled>Bin…</option>
@@ -177,7 +194,7 @@ const packs = computed(() => props.product.units.filter((u) => u.base_qty > 1));
                         :placeholder="selectedReason?.requires_note ? 'Note (required)' : 'Note (optional)'"
                         :required="selectedReason?.requires_note"
                     />
-                    <InputError :message="adjust.errors.qty || adjust.errors.location_id || adjust.errors.reason_code_id" />
+                    <InputError :message="adjust.errors.qty || qtyError(adjust.errors) || adjust.errors.location_id || adjust.errors.reason_code_id" />
                     <Button type="submit" :disabled="adjust.processing">Post adjustment</Button>
                 </form>
 
@@ -195,8 +212,14 @@ const packs = computed(() => props.product.units.filter((u) => u.base_qty > 1));
                         <option :value="null" disabled>To bin…</option>
                         <option v-for="b in bins" :key="b.id" :value="b.id">{{ b.label }}</option>
                     </select>
-                    <Input v-model.number="transfer.qty" type="number" min="1" required />
-                    <InputError :message="transfer.errors.qty || transfer.errors.to_location_id" />
+                    <div class="flex flex-wrap items-start gap-2">
+                        <select v-if="packs.length" v-model="transfer.product_unit_id" class="h-8 rounded-md border bg-background px-2 text-sm" aria-label="Pack">
+                            <option v-for="u in packs" :key="u.id" :value="u.id">{{ u.name }} of {{ u.base_qty }}</option>
+                            <option :value="null">{{ product.base_unit }} only</option>
+                        </select>
+                        <PackQtyInput v-model="transfer.qty" :pack="packFor(transfer.product_unit_id)" />
+                    </div>
+                    <InputError :message="transfer.errors.qty || qtyError(transfer.errors) || transfer.errors.to_location_id" />
                     <Button type="submit" :disabled="transfer.processing">Move stock</Button>
                 </form>
             </div>
