@@ -19,11 +19,17 @@ class FefoAllocator
     public function __construct(private StockQuery $stock) {}
 
     /**
+     * $packSize > 1 (an order line in Cases of 12, say) takes whole packs from each
+     * bin: a bin with less than a pack free gives nothing, so it stays waiting for
+     * stock rather than going out loose. The one exception is $qty that isn't whole
+     * packs, a line that already shipped part of a pack: the loose rest may come
+     * from any bin, to finish that pack.
+     *
      * @param  array<string, int>  $alreadyAllocated  "{location_id}-{batch_key}" => qty already promised
      *                                                to other open pick lists; subtracted from on hand
      * @return array{lines: list<array{balance: StockBalance, qty: int}>, shortfall: int}
      */
-    public function allocate(Product $product, int $qty, ?Location $within = null, array $alreadyAllocated = []): array
+    public function allocate(Product $product, int $qty, ?Location $within = null, array $alreadyAllocated = [], int $packSize = 1): array
     {
         $query = StockBalance::query()
             ->select('stock_balances.*')
@@ -49,21 +55,28 @@ class FefoAllocator
             $query->whereIn('stock_balances.location_id', $this->stock->binIdsUnder($within));
         }
 
+        $pack = max(1, $packSize);
+        $loose = max(0, $qty) % $pack;     // only on a line that already shipped part of a pack
+        $whole = max(0, $qty) - $loose;
         $lines = [];
-        $remaining = $qty;
         foreach ($query->get() as $balance) {
-            if ($remaining <= 0) {
+            if ($whole + $loose <= 0) {
                 break;
             }
             $free = $balance->on_hand - ($alreadyAllocated["{$balance->location_id}-{$balance->batch_key}"] ?? 0);
             if ($free <= 0) {
                 continue;
             }
-            $take = min($remaining, $free);
-            $lines[] = ['balance' => $balance, 'qty' => $take];
-            $remaining -= $take;
+            $packs = intdiv(min($whole, $free), $pack) * $pack;
+            $rest = min($loose, $free - $packs);
+            if ($packs + $rest <= 0) {
+                continue;
+            }
+            $lines[] = ['balance' => $balance, 'qty' => $packs + $rest];
+            $whole -= $packs;
+            $loose -= $rest;
         }
 
-        return ['lines' => $lines, 'shortfall' => max(0, $remaining)];
+        return ['lines' => $lines, 'shortfall' => $whole + $loose];
     }
 }

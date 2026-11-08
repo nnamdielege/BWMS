@@ -56,8 +56,21 @@ class ReceivingTest extends TestCase
     {
         return $this->actingAs($as ?? $this->staff)->post(route('purchase-orders.receipts.store', $po), array_merge([
             'client_token' => (string) Str::uuid(),
-            'lines' => [array_merge(['purchase_order_line_id' => $po->lines->first()->id], $line)],
+            'lines' => [self::asLoose(array_merge(['purchase_order_line_id' => $po->lines->first()->id], $line))],
         ], $extra));
+    }
+
+    /** qty_*_base in these tests go as loose base units; the screen sends packs + each. */
+    private static function asLoose(array $line): array
+    {
+        foreach (['accepted', 'damaged', 'rejected'] as $kind) {
+            if (array_key_exists("qty_{$kind}_base", $line)) {
+                $line[$kind] = ['each' => $line["qty_{$kind}_base"]];
+                unset($line["qty_{$kind}_base"]);
+            }
+        }
+
+        return $line;
     }
 
     public function test_partial_then_full_receipt_moves_stock_and_status()
@@ -149,8 +162,8 @@ class ReceivingTest extends TestCase
         $this->actingAs($this->staff)->post(route('purchase-orders.receipts.store', $po), [
             'client_token' => (string) Str::uuid(),
             'lines' => [
-                ['purchase_order_line_id' => $lineId, 'qty_accepted_base' => 12, 'lot_code' => 'A', 'best_before' => '2027-01-10'],
-                ['purchase_order_line_id' => $lineId, 'qty_accepted_base' => 12, 'lot_code' => 'B', 'best_before' => '2027-02-10'],
+                ['purchase_order_line_id' => $lineId, 'accepted' => ['packs' => 1], 'lot_code' => 'A', 'best_before' => '2027-01-10'],
+                ['purchase_order_line_id' => $lineId, 'accepted' => ['packs' => 1], 'lot_code' => 'B', 'best_before' => '2027-02-10'],
             ],
         ])->assertSessionHasNoErrors();
 
@@ -161,7 +174,7 @@ class ReceivingTest extends TestCase
     public function test_double_submit_with_same_token_posts_once()
     {
         $po = $this->sentPo();
-        $payload = ['client_token' => (string) Str::uuid(), 'lines' => [['purchase_order_line_id' => $po->lines->first()->id, 'qty_accepted_base' => 24]]];
+        $payload = ['client_token' => (string) Str::uuid(), 'lines' => [['purchase_order_line_id' => $po->lines->first()->id, 'accepted' => ['each' => 24]]]];
 
         $this->actingAs($this->staff)->post(route('purchase-orders.receipts.store', $po), $payload)->assertSessionHasNoErrors();
         $this->actingAs($this->staff)->post(route('purchase-orders.receipts.store', $po), $payload)->assertSessionHasNoErrors();

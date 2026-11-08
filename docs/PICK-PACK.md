@@ -103,3 +103,7 @@ php artisan orders:pack-mismatches
 ```
 
 Read-only. It lists lines where dispatched + reserved isn't a whole number of packs, and lines where part of a pack has already been dispatched.
+
+## Whole packs only
+
+`FefoAllocator::allocate(..., $packSize)` takes whole packs from each bin for a pack order line (`base_qty_per_unit` > 1), for both pick list creation and the queue's readiness. A bin with less than a pack free gives nothing, and the line waits for stock. A line whose outstanding quantity isn't whole packs (it shipped part of a pack before this rule) may take that loose remainder from any bin, to finish the pack.

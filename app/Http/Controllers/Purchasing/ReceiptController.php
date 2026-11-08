@@ -10,6 +10,7 @@ use App\Models\ReceiptLine;
 use App\Services\Purchasing\ReceivingService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Services\Stock\StockQuery;
+use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -63,9 +64,10 @@ class ReceiptController extends Controller
             'allow_over_receipt' => ['boolean'],
             'lines' => ['required', 'array', 'min:1', 'max:400'],
             'lines.*.purchase_order_line_id' => ['required', 'integer'],
-            'lines.*.qty_accepted_base' => ['nullable', 'integer', 'min:0', 'max:10000000'],
-            'lines.*.qty_damaged_base' => ['nullable', 'integer', 'min:0', 'max:10000000'],
-            'lines.*.qty_rejected_base' => ['nullable', 'integer', 'min:0', 'max:10000000'],
+            // Each in the PO line's pack plus loose units; saved as base units below.
+            'lines.*.accepted' => ['nullable', 'array'], ...PackQty::rules('lines.*.accepted.'),
+            'lines.*.damaged' => ['nullable', 'array'], ...PackQty::rules('lines.*.damaged.'),
+            'lines.*.rejected' => ['nullable', 'array'], ...PackQty::rules('lines.*.rejected.'),
             'lines.*.location_id' => ['nullable', 'integer'],
             'lines.*.lot_code' => ['nullable', 'string', 'max:64'],
             'lines.*.best_before' => ['nullable', 'date'],
@@ -78,9 +80,20 @@ class ReceiptController extends Controller
             throw ValidationException::withMessages(['receipt' => 'Only purchasing managers can accept more than ordered.']);
         }
 
+        $per = $purchaseOrder->lines()->pluck('base_qty_per_unit', 'id');
+        $lines = array_map(function (array $line) use ($per) {
+            $perPack = (int) ($per[$line['purchase_order_line_id']] ?? 1);
+            foreach (['accepted', 'damaged', 'rejected'] as $kind) {
+                $line["qty_{$kind}_base"] = PackQty::toBase($line[$kind] ?? [], $perPack);
+                unset($line[$kind]);
+            }
+
+            return $line;
+        }, $data['lines']);
+
         try {
             $receipt = $this->receiving->receive(
-                $purchaseOrder, $request->user(), $data['lines'], $data['client_token'],
+                $purchaseOrder, $request->user(), $lines, $data['client_token'],
                 $data['supplier_ref'] ?? null, $data['notes'] ?? null, $allowOver,
             );
         } catch (StockException $e) {

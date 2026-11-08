@@ -132,6 +132,8 @@ class StocktakeService
                         note: $stocktake->number,
                         // The count is the physical truth; never block it.
                         allowNegative: true,
+                        // What the variance was worth when posted, so later reports don't use a newer cost.
+                        unitCost: (string) $line->product->avg_cost,
                     );
                 }
             }

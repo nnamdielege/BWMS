@@ -45,6 +45,7 @@ and binary logging is enabled`).
       php artisan db:seed --force          # idempotent: roles, default site, reason codes
       php artisan bwms:check-triggers      # MUST print OK; abort the deploy if it fails
       php artisan stock:verify             # balances = ledger
+      php artisan bwms:check-timestamps    # read-only: rows overwritten by ON UPDATE before 2026_11_08_090000
       php artisan config:cache && php artisan route:cache && php artisan view:cache
       php artisan queue:restart
       ```

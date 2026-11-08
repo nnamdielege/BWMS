@@ -21,6 +21,7 @@ use App\Services\Stock\MovementDraft;
 use App\Services\Stock\StockLedger;
 use App\Support\Audit;
 use App\Support\NumberSequence;
+use App\Support\PackQty;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -70,7 +71,7 @@ class PickListService
                     if ($need <= 0) {
                         continue;
                     }
-                    $result = $this->fefo->allocate($line->product, $need, $site, $allocated[$line->product_id] ?? []);
+                    $result = $this->fefo->allocate($line->product, $need, $site, $allocated[$line->product_id] ?? [], $line->base_qty_per_unit);
                     foreach ($result['lines'] as $alloc) {
                         $b = $alloc['balance'];
                         $pickList->lines()->create([
@@ -123,7 +124,7 @@ class PickListService
                 if ($need <= 0) {
                     continue;
                 }
-                $result = $this->fefo->allocate($line->product, $need, $site, $allocated[$line->product_id] ?? []);
+                $result = $this->fefo->allocate($line->product, $need, $site, $allocated[$line->product_id] ?? [], $line->base_qty_per_unit);
                 foreach ($result['lines'] as $alloc) {
                     $b = $alloc['balance'];
                     $key = "{$b->location_id}-{$b->batch_key}";
@@ -146,9 +147,7 @@ class PickListService
 
     private function shortLabel(OrderLine $line, int $base): string
     {
-        $per = max(1, $line->base_qty_per_unit);
-
-        return $base % $per === 0 ? intdiv($base, $per).' '.$line->unit->name : "{$base} {$line->product->base_unit}";
+        return PackQty::label($base, $line->base_qty_per_unit, $line->unit->name, $line->product->base_unit);
     }
 
     /** @param  array<int, int>  $picked  pick_list_line_id => qty picked */

@@ -179,7 +179,7 @@ class WaitingForStockTest extends TestCase
 
         $this->assertSame(0, $run['waiting'], 'Not "Pick 1 new order"');
         $this->assertSame($order->number, $run['waiting_stock'][0]['number']);
-        $this->assertSame([['sku' => 'MLKALM', 'name' => 'Almond milk', 'short' => '2 Each']], $run['waiting_stock'][0]['lines']);
+        $this->assertSame([['sku' => 'MLKALM', 'name' => 'Almond milk', 'short' => '2 each']], $run['waiting_stock'][0]['lines']);
     }
 
     public function test_pick_new_orders_counts_only_orders_with_something_to_pick()

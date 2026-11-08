@@ -4,13 +4,20 @@ namespace Tests\Feature\Orders;
 
 use App\Authorization\Permissions;
 use App\Models\Customer;
+use App\Models\Location;
 use App\Models\Order;
 use App\Models\PickList;
 use App\Models\Product;
 use App\Models\ReasonCode;
+use App\Models\ReceiptLine;
+use App\Models\StockMovement;
+use App\Models\Supplier;
 use App\Models\User;
 use App\Services\Orders\OrderService;
 use App\Services\Orders\PickListService;
+use App\Services\Purchasing\PurchaseOrderService;
+use App\Services\Stock\Exceptions\InvalidMovement;
+use App\Services\Stock\StocktakeExport;
 use App\Services\Stock\StocktakeService;
 use App\Support\PackQty;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +75,16 @@ class PackQuantityTest extends TestCase
         return app(PickListService::class)->create($this->picker, $this->site(), [$order->id])['pickList'];
     }
 
+    private function expectNothingPickable(Order $order): void
+    {
+        try {
+            $this->pickList($order);
+            $this->fail('A pick list was made from less than a pack.');
+        } catch (InvalidMovement $e) {
+            $this->assertStringContainsString('Nothing can be picked', $e->getMessage());
+        }
+    }
+
     private function adjustIn(Product $p, array $qty): void
     {
         $this->actingAs($this->manager)->post(route('stock.adjust', $p), $qty + [
@@ -83,20 +100,26 @@ class PackQuantityTest extends TestCase
      */
     public function test_the_merak_gourmet_order_as_it_happened_and_as_it_goes_now()
     {
-        // As it happened: "5 cases" typed into a box that took bottles.
+        // "5 cases" typed into a box that took bottles.
         [$a, $b, $c] = [$this->wine('ETN-IT-ROSSO'), $this->wine('ETN-IT-BIANCO'), $this->wine('ETN-IT-ROSATO')];
         foreach ([[$a, 5], [$b, 5], [$c, 4]] as [$p, $typed]) {
             $this->adjustIn($p, ['each' => $typed]);
         }
         $order = $this->orderOneCaseEach([$a, $b, $c], allowBackorder: true);
-        $list = $this->pickList($order);
-        // Everything there was picked; the bottles with no stock are the short lines.
-        app(PickListService::class)->recordPicked($list, $list->lines()->get()->mapWithKeys(fn ($l) => [$l->id => $l->no_stock ? 0 : $l->qty_to_pick_base])->all());
-        app(PickListService::class)->dispatch($list, $this->picker);
 
-        $lines = $order->lines()->with('reservation')->get()->keyBy('product_id');
-        $this->assertSame([5, 5, 4], [$lines[$a->id]->qty_dispatched_base, $lines[$b->id]->qty_dispatched_base, $lines[$c->id]->qty_dispatched_base]);
-        $this->assertSame([7, 7, 8], [$lines[$a->id]->reservation->qty_base, $lines[$b->id]->reservation->qty_base, $lines[$c->id]->reservation->qty_base]);
+        // Pick lists now plan whole Cases only, so 5 loose bottles don't go out as a Case order: it waits.
+        $readiness = app(PickListService::class)->readiness(collect([$order->fresh('lines.product', 'lines.unit')]), $this->site());
+        $this->assertCount(0, $readiness['ready']);
+        $this->assertSame(['1 Case', '1 Case', '1 Case'], array_column($readiness['waiting'][0]['lines'], 'short'));
+        $this->expectNothingPickable($order);
+
+        // As it happened under the old planner: 5/5/4 bottles out, 7/7/8 still reserved.
+        foreach ([[$a, 5], [$b, 5], [$c, 4]] as [$p, $shipped]) {
+            $line = $order->lines()->where('product_id', $p->id)->sole();
+            $line->forceFill(['qty_dispatched_base' => $shipped])->save();
+            $line->reservation->forceFill(['qty_base' => 12 - $shipped])->save();
+        }
+        $order->forceFill(['status' => 'partially_dispatched'])->save();
 
         // The report finds it: whole packs between dispatched and reserved, but bottles already shipped.
         Artisan::call('orders:pack-mismatches');
@@ -105,6 +128,17 @@ class PackQuantityTest extends TestCase
         $this->assertStringContainsString('Merak Gourmet', $report);
         $this->assertStringContainsString('5 bottles (5)', $report);
         $this->assertStringContainsString("isn't a whole number of packs: 0 line(s)", $report);
+
+        // With the stock counted right, the rest of each Case is picked to finish it.
+        foreach ([$a, $b, $c] as $p) {
+            $this->adjustIn($p, ['product_unit_id' => $this->caseOf($p), 'packs' => 2]);
+        }
+        $list = $this->pickList($order);
+        $this->assertSame([7, 7, 8], $list->lines()->orderBy('id')->pluck('qty_to_pick_base')->all());
+        app(PickListService::class)->recordPicked($list, $list->lines()->pluck('qty_to_pick_base', 'id')->all());
+        app(PickListService::class)->dispatch($list, $this->picker);
+        $this->assertSame([12, 12, 12], $order->lines()->orderBy('id')->pluck('qty_dispatched_base')->all());
+        $this->assertSame('dispatched', $order->fresh()->status->value);
 
         // As it goes now: 5 cases typed as 5 cases, and 1 Case picked as 1 Case.
         [$x, $y, $z] = [$this->wine('ETN-IT-NERO'), $this->wine('ETN-IT-BLANC'), $this->wine('ETN-IT-ROSE')];
@@ -248,6 +282,75 @@ class PackQuantityTest extends TestCase
 
         $this->assertStringContainsString("isn't a whole number of packs: 1 line(s) on 1 order(s).", $report);
         $this->assertStringContainsString('1 Case + 5 bottles (17)', $report);
+    }
+
+    public function test_each_bin_gives_whole_packs_only()
+    {
+        $wine = $this->wine('ETN-IT-ROSSO');
+        $other = Location::create(['parent_id' => $this->site()->id, 'type' => 'bin', 'code' => 'B-2', 'name' => 'B-2', 'is_sellable' => true]);
+        $this->stockIn($wine, 17);          // 1 Case + 5 loose
+        $this->stockIn($wine, 7, $other);   // less than a Case
+        $order = app(OrderService::class)->createManual($this->manager, [
+            'customer_id' => $this->merak->id, 'site_id' => $this->site()->id, 'short_ship_policy' => 'backorder',
+            'lines' => [['product_id' => $wine->id, 'product_unit_id' => $this->caseOf($wine), 'qty' => 2]],
+        ]);
+
+        $list = $this->pickList($order);
+
+        $picks = $list->lines()->where('no_stock', false)->get();
+        $this->assertSame([12], $picks->pluck('qty_to_pick_base')->all(), '12 + 12 loose is still not a second Case');
+        $this->assertSame($this->bin()->id, $picks->first()->location_id);
+        $this->assertSame(12, $list->lines()->where('no_stock', true)->sole()->qty_to_pick_base, 'the second Case waits for stock');
+    }
+
+    public function test_lines_sold_by_the_unit_are_unchanged()
+    {
+        $tea = Product::factory()->create(['sku' => 'TEA']);
+        $this->stockIn($tea, 5);
+        $order = app(OrderService::class)->createManual($this->manager, [
+            'customer_id' => $this->merak->id, 'site_id' => $this->site()->id, 'short_ship_policy' => 'backorder',
+            'lines' => [['product_id' => $tea->id, 'product_unit_id' => $tea->units()->value('id'), 'qty' => 7]],
+        ], allowBackorder: true);
+
+        $this->assertSame(5, $this->pickList($order)->lines()->where('no_stock', false)->sole()->qty_to_pick_base);
+    }
+
+    public function test_receiving_takes_damaged_and_rejected_in_packs_too()
+    {
+        $wine = $this->wine('ETN-IT-ROSSO');
+        $service = app(PurchaseOrderService::class);
+        $po = $service->markSent($service->saveDraft(null, [
+            'supplier_id' => Supplier::factory()->create()->id, 'site_id' => $this->site()->id, 'order_date' => '2026-11-02',
+            'lines' => [['product_id' => $wine->id, 'product_unit_id' => $this->caseOf($wine), 'qty_ordered' => 3, 'unit_cost' => '120.00']],
+        ], $this->manager), $this->manager);
+
+        $this->actingAs($this->manager)->post(route('purchase-orders.receipts.store', $po), [
+            'client_token' => (string) Str::uuid(),
+            'lines' => [[
+                'purchase_order_line_id' => $po->lines()->value('id'),
+                'accepted' => ['packs' => 2], 'damaged' => ['packs' => 0, 'each' => 6], 'rejected' => ['each' => 6],
+                'discrepancy_reason' => 'damaged',
+            ]],
+        ])->assertSessionHasNoErrors();
+
+        $line = ReceiptLine::sole();
+        $this->assertSame([24, 6, 6], [$line->qty_accepted_base, $line->qty_damaged_base, $line->qty_rejected_base]);
+    }
+
+    public function test_stocktake_variances_keep_the_cost_they_were_posted_at()
+    {
+        $wine = $this->wine('ETN-IT-ROSSO');
+        $wine->forceFill(['avg_cost' => '2.5000'])->save();
+        $this->stockIn($wine, 24);
+        $st = app(StocktakeService::class)->create($this->manager, $this->bin());
+        app(StocktakeService::class)->recordCount($st->lines()->sole(), 20, $this->manager);
+
+        app(StocktakeService::class)->post($st, $this->manager);
+        $wine->forceFill(['avg_cost' => '9.0000'])->save(); // a later receipt at a new price
+
+        $this->assertSame('2.5000', StockMovement::where('source_type', 'stocktake')->sole()->unit_cost);
+        $file = app(StocktakeExport::class)->export($st->fresh(), StocktakeExport::RESULTS, 'csv', true);
+        $this->assertStringContainsString(',2.5,-10,', $file['body'], 'unit cost and variance $ as posted, not at today\'s 9.00');
     }
 
     public function test_labels()

@@ -3,6 +3,7 @@
 namespace App\Services\Stock;
 
 use App\Models\Product;
+use App\Models\StockMovement;
 use App\Models\Stocktake;
 use App\Models\StocktakeLine;
 use App\Services\Documents\PdfRenderer;
@@ -14,9 +15,9 @@ use Illuminate\Support\Collection;
 /**
  * A stocktake on paper or in a spreadsheet: the results (what was counted and
  * the variance), or a blank count sheet to hand to counters. Lines run in bin
- * walk order, like the pick screens. Costs are per base unit (products.avg_cost):
- * a stocktake's variance movements carry no cost of their own, so this is the
- * product's cost today.
+ * walk order, like the pick screens. Costs are per base unit: what each variance
+ * movement was posted at, else the product's avg_cost today (lines still being
+ * counted, no variance, or posted before costs were saved on variances).
  */
 class StocktakeExport
 {
@@ -98,10 +99,12 @@ class StocktakeExport
         $rows = [];
         $netUnits = 0;
         $netCost = 0.0;
+        $postedCosts = StockMovement::where('source_type', 'stocktake')->where('source_id', $stocktake->id)
+            ->whereNotNull('unit_cost')->pluck('unit_cost', 'idempotency_key');
 
         foreach ($lines as $l) {
             $variance = $this->variance($stocktake, $l);
-            $cost = (float) $l->product->avg_cost;
+            $cost = (float) ($postedCosts["stk:{$stocktake->id}:line:{$l->id}"] ?? $l->product->avg_cost);
             $value = $variance === null ? null : round($variance * $cost, 2);
             $netUnits += $variance ?? 0;
             $netCost += $value ?? 0;

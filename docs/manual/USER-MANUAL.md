@@ -493,9 +493,9 @@ You can receive against a PO that is Sent or Partially received.
 1. Open the PO and click **Receive**.
 2. Enter the **Delivery docket / invoice no.** and any notes.
 3. For each line, enter what arrived:
-   - **Accepted (packs + loose):** good stock. Enter whole packs, and loose units if any. The total in base units shows underneath.
-   - **Damaged:** booked into quarantine. It's counted but not sellable.
-   - **Rejected:** went back with the driver. It isn't stocked. **A reason is required.**
+   - **Accepted:** good stock, in the line's pack plus loose units, for example 2 Case + 0 bottles.
+   - **Damaged:** booked into quarantine. It's counted but not sellable. Packs plus loose units, like Accepted.
+   - **Rejected:** went back with the driver. It isn't stocked. Packs plus loose units. **A reason is required.**
    - **Bin:** where accepted stock goes. The site's receiving bin is chosen first.
    - **Lot / best-before:** required for batch-tracked products. Click **+ lot** to split a line over several lots.
    - **Reason / note:** damaged, wrong item, expired, short dated, quality, over or other. Damaged stock gets "damaged" automatically.
@@ -656,7 +656,7 @@ For managers and admins.
 
 **Export** on a stocktake works in any status: counting, posted or cancelled.
 
-- **Results** (Excel or CSV): the stocktake's details at the top, then one row per line in bin walk order. Each row has the snapshot, the count in base units and in packs (for example "3 Carton + 4 Each"), the variance, who counted it and when. The last row has the totals. An uncounted line has a blank count, not 0. Managers and admins also get the unit cost and the variance in dollars. Costs are today's product cost per base unit, not the cost when the stocktake was posted.
+- **Results** (Excel or CSV): the stocktake's details at the top, then one row per line in bin walk order. Each row has the snapshot, the count in base units and in packs (for example "3 Carton + 4 Each"), the variance, who counted it and when. The last row has the totals. An uncounted line has a blank count, not 0. Managers and admins also get the unit cost and the variance in dollars. Costs are per base unit, at the cost each variance was posted at. For a stocktake still counting, a line with no variance, or one posted before 8 November 2026, it's today's product cost.
 - **Count sheet** (Excel or PDF to print): the same lines in walk order, with boxes to write the count in packs and in each, and a signature and date line on every page. It doesn't show the system quantities, so counters count what's there.
 
 The file is named after the stocktake, for example `STK-00003-results-2026-11-08.xlsx`. Each export is recorded in the audit log.
@@ -836,6 +836,8 @@ Each run shows how many orders it has and how many are waiting to pick.
 ### 10.2a Waiting for stock
 
 An order line with no stock in any bin goes on the pick list as **No stock — short**. Tap **Confirm short**: there's nothing to walk to, and no scan or reason is needed. These lines come last, and don't need ticking when you pack.
+
+**Orders in packs are picked in whole packs.** A Case of 12 is picked from a bin that has a full Case free. A bin with only loose bottles gives nothing, so the line waits for stock instead of going out loose. The exception is a Case that already went out partly, from before this rule: the rest of that Case can be picked loose, to finish it.
 
 **Pick N new order(s)** only counts orders with something to pick now. An order with nothing to pick shows under **Waiting for stock** on its run, in the queue and on **Orders**, with the lines it's short of.
 
