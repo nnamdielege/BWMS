@@ -110,7 +110,26 @@ class OrderIngestor
             PushOrdermentumStock::request($productIds, force: true);
         }
 
+        if (! $mapped['cancelled']) {
+            $this->rememberPrices($mapped['lines'], $listings);
+        }
+
         return $this->finish($inbox, IntegrationInbox::STATUS_PROCESSED, null);
+    }
+
+    /**
+     * Each line's unit price is Ordermentum's current price for that variant: kept on the
+     * listing as the margin report's fallback sell price (the last order seen wins).
+     */
+    private function rememberPrices(array $lines, $listings): void
+    {
+        foreach ($lines as $line) {
+            $listing = $listings[$line['variant_id']] ?? null;
+            if ($listing && is_numeric($line['unit_price']) && (float) $line['unit_price'] > 0
+                && ($listing->price === null || (float) $listing->price !== (float) $line['unit_price'])) {
+                $listing->forceFill(['price' => $line['unit_price'], 'price_seen_at' => now()])->save();
+            }
+        }
     }
 
     /**

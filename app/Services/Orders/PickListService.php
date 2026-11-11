@@ -193,6 +193,8 @@ class PickListService
                     batch: $line->batch,
                     sourceType: 'order',
                     sourceId: $line->orderLine->order_id,
+                    // Cost of the goods as they left, for margin reports; later receipts move avg_cost.
+                    unitCost: (string) $line->product->avg_cost,
                     note: $line->orderLine->order->number,
                     // Goods physically left; a ledger shortfall is a count problem to fix, not a reason to stop the truck.
                     allowNegative: true,

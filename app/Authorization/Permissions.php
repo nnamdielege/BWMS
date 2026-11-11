@@ -56,6 +56,9 @@ final class Permissions
 
     public const REPORTS_VIEW = 'reports.view';
 
+    /** Stock value at cost and sell, margins, drop profitability. Managers and admins. */
+    public const REPORTS_MARGIN = 'reports.margin';
+
     public const SETTINGS_MANAGE = 'settings.manage';
 
     public const ROLE_ADMIN = 'admin';
@@ -94,7 +97,7 @@ final class Permissions
                 self::PRODUCTS_MANAGE, self::LOCATIONS_MANAGE,
                 self::STOCK_ADJUST, self::STOCK_TRANSFER, self::STOCKTAKES_COUNT, self::STOCKTAKES_MANAGE,
                 self::SUPPLIERS_MANAGE, self::PURCHASE_ORDERS_MANAGE, self::RECEIVING_PERFORM,
-                self::ORDERS_MANAGE, self::PICKING_PERFORM, self::SYNC_MANAGE,
+                self::ORDERS_MANAGE, self::PICKING_PERFORM, self::SYNC_MANAGE, self::REPORTS_MARGIN,
             ],
             self::ROLE_WAREHOUSE_STAFF => [
                 self::PRODUCTS_VIEW, self::LOCATIONS_VIEW, self::STOCK_VIEW, self::PURCHASE_ORDERS_VIEW,

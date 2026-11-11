@@ -23,6 +23,7 @@ use App\Http\Controllers\Purchasing\PurchaseOrderController;
 use App\Http\Controllers\Purchasing\ReceiptController;
 use App\Http\Controllers\Purchasing\SupplierController;
 use App\Http\Controllers\RangeController;
+use App\Http\Controllers\Reports\MarginReportController;
 use App\Http\Controllers\Stock\AdjustmentController;
 use App\Http\Controllers\Stock\CountTaskController;
 use App\Http\Controllers\Stock\MovementController;
@@ -189,6 +190,14 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     });
     Route::put('orders/{order}/run', [OrderController::class, 'assignRun'])->middleware('can:orders.manage')->name('orders.run');
     Route::get('locations/labels', [LocationController::class, 'labels'])->middleware('can:locations.view')->name('locations.labels');
+
+    // Reports: stock value at cost/sell and drop profitability. Managers and admins.
+    Route::middleware('can:reports.margin')->prefix('reports/margin')->name('reports.margin.')->group(function () {
+        Route::get('/', [MarginReportController::class, 'index'])->name('index');
+        Route::put('settings', [MarginReportController::class, 'settings'])->name('settings');
+        Route::get('export/{view}/{format}', [MarginReportController::class, 'export'])
+            ->whereIn('view', ['stock', 'drops', 'real'])->whereIn('format', ['xlsx', 'csv'])->name('export');
+    });
 
     Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');
     Route::post('sync/listings/{listing}/push', [SyncController::class, 'push'])->middleware('can:sync.manage')->name('sync.push');

@@ -184,6 +184,7 @@ class ProductImportService
                 'external_product_id' => $listing['product_id'], 'external_variant_id' => $listing['variant_id'], 'external_sku' => $listing['sku'],
                 'external_location_id' => $channel === 'ordermentum' ? config('services.ordermentum.location_id') : null,
                 'sync_enabled' => false,
+                'price' => $listing['price'] ?? null, 'price_seen_at' => isset($listing['price']) ? now() : null,
             ]);
             ChannelUnmappedVariant::where('channel', $channel)->where('external_variant_id', $listing['variant_id'])->whereNull('resolved_at')->update(['resolved_at' => now()]);
             $product->addSellChannel($channel);

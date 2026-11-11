@@ -17,12 +17,12 @@ class ChannelListing extends Model
     /** Push/check bookkeeping is logged in sync_attempts, not the audit log. */
     protected array $auditExclude = [
         'last_pushed_qty', 'last_pushed_at', 'last_response_code', 'last_error', 'last_remote_qty', 'last_checked_at',
-        'push_requested_at', 'push_force', 'remote_tracked', 'remote_status',
+        'push_requested_at', 'push_force', 'remote_tracked', 'remote_status', 'price_seen_at',
     ];
 
     protected $fillable = [
         'channel', 'product_id', 'product_unit_id', 'external_product_id', 'external_variant_id', 'external_sku',
-        'external_location_id', 'sync_enabled', 'safety_buffer',
+        'external_location_id', 'sync_enabled', 'safety_buffer', 'price', 'price_seen_at',
     ];
 
     protected function casts(): array
@@ -33,6 +33,8 @@ class ChannelListing extends Model
             'remote_tracked' => 'boolean',
             'last_pushed_at' => 'datetime',
             'last_checked_at' => 'datetime',
+            'price' => 'decimal:4',
+            'price_seen_at' => 'datetime',
         ];
     }
 

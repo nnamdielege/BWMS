@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\Stocktake;
 use App\Models\StocktakeLine;
+use App\Services\Documents\CsvWriter;
 use App\Services\Documents\PdfRenderer;
 use App\Services\Documents\XlsxWriter;
 use App\Support\Audit;
@@ -128,7 +129,7 @@ class StocktakeExport
         $header = $this->header($stocktake);
 
         if ($format === 'csv') {
-            return $this->csv([...$header, [], $pick($columns), ...array_map($pick, $rows), $pick($totals)]);
+            return CsvWriter::toString([...$header, [], $pick($columns), ...array_map($pick, $rows), $pick($totals)]);
         }
 
         $xlsx = (new XlsxWriter($stocktake->number))->landscape()
@@ -247,20 +248,5 @@ class StocktakeExport
     private static function when(?CarbonInterface $at): ?string
     {
         return $at?->copy()->setTimezone(config('bwms.business_timezone'))->format('Y-m-d H:i');
-    }
-
-    /** UTF-8 with a BOM, so Excel reads accents right; text that could run as a formula is quoted. */
-    private function csv(array $rows): string
-    {
-        $out = fopen('php://temp', 'r+');
-        fwrite($out, "\u{FEFF}");
-        foreach ($rows as $row) {
-            fputcsv($out, array_map(fn ($v) => is_string($v) && preg_match('/^[=+\-@\t\r]/', $v) ? "'".$v : $v, $row));
-        }
-        rewind($out);
-        $csv = stream_get_contents($out);
-        fclose($out);
-
-        return $csv;
     }
 }

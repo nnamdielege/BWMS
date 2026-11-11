@@ -277,7 +277,7 @@ class ProductImportPlanner
                 'shelf_life_days' => $item['shelf_life_days'], 'sell_price' => $item['price'],
                 'is_active' => $item['active'] !== false, 'sell_channels' => $this->sellChannels($sold),
             ],
-            'range' => $row['range'], 'pack' => $pack, 'barcode' => $item['barcode'], 'listings' => array_map(fn ($e) => $e + ['pack_size' => $pack['size']], $toMap),
+            'range' => $row['range'], 'pack' => $pack, 'barcode' => $item['barcode'], 'listings' => array_map(fn ($e) => $e + ['pack_size' => $pack['size'], 'price' => $item['price']], $toMap),
         ];
     }
 
@@ -424,7 +424,7 @@ class ProductImportPlanner
             } elseif ($target && $product->channelListings->where('channel', $channel)->where('product_unit_id', $target->id)->isNotEmpty()) {
                 $conflicts[] = "{$product->sku} ({$target->name}) is already mapped to another ".self::CHANNELS[$channel].' item.';
             } else {
-                $actions['listings'][$channel] = $external + ['pack_size' => $target?->base_qty ?? $pack['size']];
+                $actions['listings'][$channel] = $external + ['pack_size' => $target?->base_qty ?? $pack['size'], 'price' => $item['price']];
                 $row['changes'][] = self::CHANNELS[$channel].' mapping';
             }
         }

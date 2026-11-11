@@ -7,6 +7,7 @@ import { Link } from '@inertiajs/vue3';
 import {
     Barcode,
     Boxes,
+    ChartColumn,
     ClipboardList,
     Combine,
     DollarSign,
@@ -70,6 +71,10 @@ const navGroups: NavGroup[] = [
             { title: 'Capture barcodes', href: '/capture-barcodes', icon: Barcode, permission: 'products.manage' },
             { title: 'Locations', href: '/locations', icon: Warehouse, permission: 'locations.view' },
         ],
+    },
+    {
+        label: 'Reports',
+        items: [{ title: 'Stock value & margin', href: '/reports/margin', icon: ChartColumn, permission: 'reports.margin' }],
     },
     {
         label: 'Integrations',
