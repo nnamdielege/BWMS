@@ -26,6 +26,10 @@ return [
     'ordermentum' => [
         'push_enabled' => (bool) env('ORDERMENTUM_PUSH_ENABLED', false),
         'ingest_enabled' => (bool) env('ORDERMENTUM_INGEST_ENABLED', false),
+        // Go-live date (business time zone). An Ordermentum order delivered before it that is
+        // not already in BWMS is recorded as ignored_historical and never becomes an order:
+        // Ordermentum re-sends old orders whenever their updatedAt changes. Empty = no guard.
+        'ingest_since' => env('ORDERMENTUM_INGEST_SINCE', '2026-11-06') ?: null,
         // Secret path token. Optional once signatures are verified on a real event (set
         // ORDERMENTUM_WEBHOOK_REQUIRE_TOKEN=false); only honoured while signatures are enforced.
         'webhook_token' => env('ORDERMENTUM_WEBHOOK_TOKEN'),

@@ -13,6 +13,7 @@ use App\Models\SyncAttempt;
 use App\Services\Orders\ChannelOrderData;
 use App\Services\Orders\OrderService;
 use App\Services\Stock\Exceptions\InvalidMovement;
+use Illuminate\Support\Carbon;
 
 /**
  * Ordermentum order -> BWMS order (spec B3.2 inbound). The webhook is only a
@@ -46,6 +47,11 @@ class OrderIngestor
         $order = $this->fetch($orderId);
         if ($order === null) {
             return $this->finish($inbox, IntegrationInbox::STATUS_FAILED, "Order {$orderId} not found in Ordermentum (404).");
+        }
+
+        // Before mapping, so an old order never waits as needs_mapping and comes back on a replay.
+        if (($historical = $this->historical($order)) !== null) {
+            return $this->finish($inbox, IntegrationInbox::STATUS_IGNORED_HISTORICAL, $historical);
         }
 
         try {
@@ -105,6 +111,26 @@ class OrderIngestor
         }
 
         return $this->finish($inbox, IntegrationInbox::STATUS_PROCESSED, null);
+    }
+
+    /**
+     * Why an order is history and must not become a BWMS order, or null. Ordermentum
+     * re-sends any order whose updatedAt changes, however old (poll and webhooks alike),
+     * so a new order delivered before go-live is not one to fill. An order already in
+     * BWMS keeps taking updates. An unreadable delivery date is not judged here.
+     */
+    private function historical(array $order): ?string
+    {
+        $since = config('bwms.ordermentum.ingest_since');
+        $delivery = $this->mapper->deliveryDate($order);
+        if (! $since || $delivery === null || $delivery >= Carbon::parse($since)->toDateString()) {
+            return null;
+        }
+        if (Order::where('channel', OrderChannel::Ordermentum)->where('external_ref', (string) ($order['id'] ?? ''))->exists()) {
+            return null;
+        }
+
+        return "Delivered {$delivery}, before ORDERMENTUM_INGEST_SINCE ({$since}); not created.";
     }
 
     private function fetch(string $orderId): ?array

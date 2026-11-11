@@ -72,6 +72,8 @@ Other inbound behaviour:
   - The checkpoint only advances once every page has been read.
 - **Upserts.** Each order is a full-state upsert, versioned by `updatedAt` in ms.
 - **Unmapped variants.** A line with an unmapped variant holds the whole order until it's mapped on the Sync screen.
+- **Historical orders (`ORDERMENTUM_INGEST_SINCE`, default `2026-11-06`, go-live).** Ordermentum treats *any* change to an order as an update, however old the order, and both the poll (`updatedAt[gte]`) and `order_updated` webhooks pass it on. An order delivered before this date that isn't already in BWMS is recorded as `ignored_historical` and never becomes an order. This check runs before mapping, so an old order never waits as `needs_mapping` and comes back on a later replay. An order already in BWMS still takes updates. Set it empty to switch the guard off.
+  - Clean-up for orders that got in before the guard: `php artisan orders:close-historical --before=2026-11-06 --dry-run`, then without `--dry-run`. It cancels open Ordermentum orders delivered before the date (reason "Historical order imported in error"). This releases their reservations, moves no stock, and sends nothing to any channel: no cancel notice and no stock push. Run `channels:ordermentum reconcile` afterwards, when you choose. It also lists open orders delivered from the cutoff to yesterday and never picked, and leaves them alone.
 
 **Webhook signature** (enforced)
 - **Secret:** run `php artisan om:probe secret --write-env`. It writes `ORDERMENTUM_WEBHOOK_SECRET`, and prints found/length only.
