@@ -6,6 +6,7 @@ import SourceBadge from '@/components/SourceBadge.vue';
 import SubstituteDialog, { type SubstituteTarget } from '@/components/SubstituteDialog.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { isBlank, packLabel, toBase, type Pack, type PackEntry } from '@/lib/packs';
+import { useAutoRefresh } from '@/lib/useAutoRefresh';
 import { catchVisitFailures } from '@/lib/visitFailures';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, nextTick, ref, watch } from 'vue';
@@ -55,7 +56,14 @@ const openSubstitute = (l: Line, shortBase: number) => {
 
 const errors = computed(() => usePage().props.errors as Record<string, string>);
 const firstOpen = () => Math.max(0, props.lines.findIndex((l) => l.picked_base === null));
-const index = ref(firstOpen());
+// The line on screen, by id: an auto-refresh can add or remove lines (a substitute from another
+// device) and must not move the picker onto a different one. Null: the first line still to pick.
+const currentId = ref<number | null>(props.lines.find((l) => l.picked_base === null)?.id ?? null);
+const index = computed(() => {
+    const i = currentId.value === null ? -1 : props.lines.findIndex((l) => l.id === currentId.value);
+    return i >= 0 ? i : firstOpen();
+});
+const goTo = (i: number) => (currentId.value = props.lines[i]?.id ?? null);
 const line = computed<Line | undefined>(() => props.lines[index.value]);
 const done = computed(() => props.lines.filter((l) => l.picked_base !== null).length);
 const allDone = computed(() => done.value === props.lines.length);
@@ -94,10 +102,15 @@ const reset = () => {
     reason.value = '';
     problem.value = null;
 };
-watch(index, () => {
-    reset();
-    message.value = null;
-});
+// A different line on screen starts fresh; the same line moving in the list keeps its scans.
+watch(
+    () => line.value?.id,
+    () => {
+        reset();
+        message.value = null;
+    },
+);
+useAutoRefresh(['lines', 'pickList'], { paused: () => saving.value || subTarget.value !== null });
 watch([mode, manualQty, reason], () => (problem.value = null));
 // Back abandons what was typed: a reason chosen here mustn't carry into the next try unseen.
 watch(mode, (now) => {
@@ -179,7 +192,9 @@ const record = (qty: PackEntry, after: (() => void) | null) => {
             only: ['lines', 'errors', 'flash'],
             onSuccess: () => {
                 const next = props.lines.findIndex((x, i) => i > index.value && x.picked_base === null);
-                index.value = next >= 0 ? next : firstOpen();
+                const open = props.lines.findIndex((x) => x.picked_base === null);
+                // All picked: follow whatever comes up next, so a line added later is shown, not this one again.
+                currentId.value = next >= 0 ? props.lines[next].id : open >= 0 ? props.lines[open].id : null;
                 reset();
                 after?.();
             },
@@ -307,7 +322,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 
         <button class="mt-4 text-sm underline" @click="showList = !showList">{{ showList ? 'Hide' : 'Show' }} all lines</button>
         <ol v-if="showList" class="mt-2 divide-y rounded-lg border text-sm">
-            <li v-for="(l, i) in lines" :key="l.id" class="flex items-center gap-2 p-2" :class="{ 'bg-muted': i === index }" @click="index = i">
+            <li v-for="(l, i) in lines" :key="l.id" class="flex items-center gap-2 p-2" :class="{ 'bg-muted': i === index }" @click="goTo(i)">
                 <span class="w-16 font-mono">{{ l.bin?.code ?? 'None' }}</span>
                 <span class="flex-1 truncate">{{ l.product.name }}<span v-if="l.sub_label" class="block text-xs font-semibold text-amber-700 dark:text-amber-300">{{ l.sub_label }}</span></span>
                 <span v-if="l.product.chilled" class="text-xs text-sky-700 dark:text-sky-300">chilled</span>

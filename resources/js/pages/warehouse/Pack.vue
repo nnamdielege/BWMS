@@ -3,6 +3,7 @@ import InputError from '@/components/InputError.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { packLabel, type Pack } from '@/lib/packs';
+import { useAutoRefresh } from '@/lib/useAutoRefresh';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 
@@ -46,24 +47,24 @@ let timer: number | undefined;
 let sending: Promise<boolean> | null = null;
 let left = false;
 
+// The server's ticks and cartons, with changes not yet saved here laid on top.
+const merge = () => {
+    for (const o of props.orders) {
+        const checked = new Set(savedTicks(o));
+        for (const l of o.lines) {
+            if (pending.has(l.id)) checked[pending.get(l.id) ? 'add' : 'delete'](l.id);
+        }
+        s(o).checked = [...checked];
+        if (!pendingCartons.has(o.id)) s(o).cartons = o.cartons;
+    }
+};
 // Back and Forward restore Inertia's copy of the page, not what the server holds, so re-read it.
 const refresh = () => {
     if (left) return;
-    router.reload({
-        only: ['orders'],
-        showProgress: false,
-        onSuccess: () => {
-            for (const o of props.orders) {
-                const checked = new Set(savedTicks(o));
-                for (const l of o.lines) {
-                    if (pending.has(l.id)) checked[pending.get(l.id) ? 'add' : 'delete'](l.id);
-                }
-                s(o).checked = [...checked];
-                if (!pendingCartons.has(o.id)) s(o).cartons = o.cartons;
-            }
-        },
-    });
+    router.reload({ only: ['orders'], showProgress: false, onSuccess: merge });
 };
+// Lines added from another device (a substitute, say) show up; never mid-save.
+useAutoRefresh(['orders'], { paused: () => left || sending !== null || pending.size > 0 || pendingCartons.size > 0, onSuccess: merge });
 const putProgress = async (ticks: Map<number, boolean>, cartons: Map<number, number | null>): Promise<boolean> => {
     const ids = (ticked: boolean) => [...ticks].filter(([, value]) => value === ticked).map(([id]) => id);
     const xsrf = document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '';
