@@ -45,10 +45,28 @@ class StockPushService
 
     public function expectedQty(ChannelListing $listing): int
     {
-        $available = $this->availability->available($listing->product, self::site());
-        $packs = intdiv(max(0, $available), max(1, $listing->unit->base_qty));
+        $packs = intdiv(max(0, $this->available($listing)), max(1, $listing->unit->base_qty));
 
         return max(0, $packs - $listing->safety_buffer);
+    }
+
+    /** BWMS available-to-sell at the Ordermentum site, in base units. */
+    public function available(ChannelListing $listing): int
+    {
+        return $this->availability->available($listing->product, self::site());
+    }
+
+    /**
+     * A reviewed one-off push (channels:ordermentum push-once): one PUT of this figure,
+     * logged and recorded as last pushed like any push. Works with ORDERMENTUM_PUSH_ENABLED off
+     * and changes nothing about ongoing push.
+     *
+     * @throws OrdermentumException on 429 beyond the client's wait, or connection failure
+     * @throws ChannelRetryableError on 5xx
+     */
+    public function pushOnce(ChannelListing $listing, int $qty): void
+    {
+        $this->putOne($listing->loadMissing(['product', 'unit']), $qty);
     }
 
     /**
@@ -198,7 +216,7 @@ class StockPushService
     }
 
     /** @return array<string, string> variant id => order ref, for orders held in the mapping queue */
-    private function heldVariants(): array
+    public function heldVariants(): array
     {
         $out = [];
         IntegrationInbox::where('channel', self::CHANNEL)->where('status', IntegrationInbox::STATUS_NEEDS_MAPPING)

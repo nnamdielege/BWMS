@@ -127,6 +127,23 @@ Other inbound behaviour:
    2. Click "Enable all". This queues a forced push of every listing it enables.
    3. Optionally, run `php artisan channels:ordermentum push` to re-send everything.
 
+## One-off reviewed push (push-once)
+
+Sends BWMS's figures to Ordermentum once, even while `ORDERMENTUM_PUSH_ENABLED=false`, without turning ongoing push on:
+
+```
+php artisan channels:ordermentum push-once --dry-run [--sku=MILK --sku=TEA] [--only-zero-pushed]
+php artisan channels:ordermentum push-once --yes     [same filters]
+```
+
+- **Dry run** lists each enabled listing: SKU, pack, WMS available in that pack, safety buffer, last pushed figure and date, and what would be sent.
+- **`--yes`** sends just those figures, one PUT each, rate-limited (it waits rather than skipping). Each call is logged in sync_attempts and recorded as last pushed. A refused item is reported, and the rest still go.
+- **`--only-zero-pushed`** takes only listings last pushed as 0.
+- **Held back, as for the ongoing push:**
+  - listings switched off, and products not sold on Ordermentum or not stock-tracked;
+  - items on an order waiting for mapping (shown as held);
+  - the whole run, while order events are still being processed.
+
 ## Sales history for reorder suggestions
 
 `php artisan channels:ordermentum-history [--dry-run]` reads past orders (read-only) into `sales_history` for [reorder suggestions](REORDER.md). It covers the 12 months up to the day before `ORDERMENTUM_INGEST_SINCE`, and never creates orders or reservations.
