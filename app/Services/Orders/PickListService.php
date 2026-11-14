@@ -67,26 +67,9 @@ class PickListService
 
             foreach ($orders as $order) {
                 foreach ($order->lines as $line) {
-                    $need = $line->product->is_stock_tracked ? $line->outstandingBase() : 0; // services are not picked
-                    if ($need <= 0) {
-                        continue;
-                    }
-                    $result = $this->fefo->allocate($line->product, $need, $site, $allocated[$line->product_id] ?? [], $line->base_qty_per_unit);
-                    foreach ($result['lines'] as $alloc) {
-                        $b = $alloc['balance'];
-                        $pickList->lines()->create([
-                            'order_line_id' => $line->id, 'product_id' => $line->product_id, 'location_id' => $b->location_id,
-                            'batch_id' => $b->batch_id, 'batch_key' => $b->batch_key, 'qty_to_pick_base' => $alloc['qty'],
-                        ]);
-                        $key = "{$b->location_id}-{$b->batch_key}";
-                        $allocated[$line->product_id][$key] = ($allocated[$line->product_id][$key] ?? 0) + $alloc['qty'];
-                    }
-                    if ($result['shortfall'] > 0) {
-                        // On the list with no bin, so the picker sees it and confirms it short.
-                        $pickList->lines()->create([
-                            'order_line_id' => $line->id, 'product_id' => $line->product_id, 'no_stock' => true, 'qty_to_pick_base' => $result['shortfall'],
-                        ]);
-                        $shortfalls[] = ['order' => $order->number, 'sku' => $line->product->sku, 'short' => $result['shortfall']];
+                    $short = $this->allocateLine($pickList, $line, $line->outstandingBase(), $allocated);
+                    if ($short > 0) {
+                        $shortfalls[] = ['order' => $order->number, 'sku' => $line->product->sku, 'short' => $short];
                     }
                 }
                 $order->forceFill(['status' => OrderStatus::Picking])->save();
@@ -101,6 +84,52 @@ class PickListService
 
             return ['pickList' => $pickList, 'shortfalls' => $shortfalls];
         });
+    }
+
+    /**
+     * Put $need of one order line on the list, FEFO, around what open lists already plan
+     * to take. What can't be found goes on as a no-stock line for the picker to confirm short.
+     *
+     * @param  array<int, array<string, int>>  $allocated  updated in place
+     * @return int the shortfall
+     */
+    private function allocateLine(PickList $pickList, OrderLine $line, int $need, array &$allocated): int
+    {
+        $need = $line->product->is_stock_tracked ? $need : 0; // services are not picked
+        if ($need <= 0) {
+            return 0;
+        }
+        $result = $this->fefo->allocate($line->product, $need, $pickList->site, $allocated[$line->product_id] ?? [], $line->base_qty_per_unit);
+        foreach ($result['lines'] as $alloc) {
+            $b = $alloc['balance'];
+            $pickList->lines()->create([
+                'order_line_id' => $line->id, 'product_id' => $line->product_id, 'location_id' => $b->location_id,
+                'batch_id' => $b->batch_id, 'batch_key' => $b->batch_key, 'qty_to_pick_base' => $alloc['qty'],
+            ]);
+            $key = "{$b->location_id}-{$b->batch_key}";
+            $allocated[$line->product_id][$key] = ($allocated[$line->product_id][$key] ?? 0) + $alloc['qty'];
+        }
+        if ($result['shortfall'] > 0) {
+            // On the list with no bin, so the picker sees it and confirms it short.
+            $pickList->lines()->create([
+                'order_line_id' => $line->id, 'product_id' => $line->product_id, 'no_stock' => true, 'qty_to_pick_base' => $result['shortfall'],
+            ]);
+        }
+
+        return $result['shortfall'];
+    }
+
+    /**
+     * A line added to an order already on this open list (a substitute): allocated the same
+     * way, around every open list's plans. @return int the shortfall
+     */
+    public function addLine(PickList $pickList, OrderLine $line): int
+    {
+        $this->assert($pickList->isOpen(), "{$pickList->number} is {$pickList->status}.");
+        $pickList->loadMissing('site');
+        $allocated = $this->openAllocations($pickList->site);
+
+        return $this->allocateLine($pickList, $line->loadMissing('product'), $line->outstandingBase(), $allocated);
     }
 
     /**

@@ -7,6 +7,7 @@ import { Link } from '@inertiajs/vue3';
 import {
     Barcode,
     Boxes,
+    ArrowLeftRight,
     ChartColumn,
     ClipboardList,
     Combine,
@@ -74,7 +75,10 @@ const navGroups: NavGroup[] = [
     },
     {
         label: 'Reports',
-        items: [{ title: 'Stock value & margin', href: '/reports/margin', icon: ChartColumn, permission: 'reports.margin' }],
+        items: [
+            { title: 'Stock value & margin', href: '/reports/margin', icon: ChartColumn, permission: 'reports.margin' },
+            { title: 'Substitutions', href: '/reports/substitutions', icon: ArrowLeftRight, permission: 'reports.margin' },
+        ],
     },
     {
         label: 'Integrations',

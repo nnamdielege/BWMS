@@ -9,9 +9,12 @@ use App\Jobs\PushPortalStock;
 use App\Models\ChannelListing;
 use App\Models\ChannelUnmappedVariant;
 use App\Models\IntegrationInbox;
+use App\Models\OrderSubstitution;
 use App\Models\Product;
 use App\Models\SyncAttempt;
+use App\Services\Orders\SubstitutionService;
 use App\Support\Audit;
+use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +84,19 @@ class SyncController extends Controller
                     ->orWhereHas('product', fn ($p) => $p->where('sku', 'like', "%{$t}%")->orWhere('name', 'like', "%{$t}%"))))
                 ->orderBy('id')->paginate(50)->withQueryString()->through(fn (ChannelListing $l) => $this->listingRow($l)),
             'portal' => $this->portalSection(),
+            // BWMS can't change an Ordermentum order: staff make each substitution there by hand and tick it off.
+            'substitutions' => SubstitutionService::channelToDo(self::CHANNEL)->map(fn (OrderSubstitution $s) => [
+                'id' => $s->id,
+                'order' => ['id' => $s->order_id, 'number' => $s->order->number, 'external_ref' => $s->order->external_ref],
+                'original' => $s->originalProduct->only(['sku', 'name']),
+                'substitute' => $s->substituteProduct->only(['sku', 'name']),
+                'qty' => PackQty::label($s->substitute_qty_base, $s->substitute_per, $s->substituteUnit->name, $s->substituteProduct->base_unit),
+                'replaced_qty' => PackQty::label($s->original_qty_base, $s->original_per, $s->originalLine->unit->name, $s->originalProduct->base_unit),
+                'price_difference' => $s->price_difference,
+                'undone' => $s->undone_at !== null,
+                'by' => $s->creator?->name,
+                'at' => $s->created_at->toIso8601String(),
+            ]),
             'filters' => $filters,
             'canManage' => $request->user()->can('sync.manage'),
         ]);

@@ -35,6 +35,9 @@ class PickPackController extends Controller
 {
     private const ACTIVE = [OrderStatus::Open, OrderStatus::Picking, OrderStatus::PartiallyDispatched];
 
+    /** Enough of each order's lines to list its substitutes on a manifest. */
+    private const SUB_LINES = ['lines.product:id,sku,name', 'lines.substituteFor.product:id,sku,name'];
+
     public function __construct(private PickPackService $service) {}
 
     public function queue(Request $request): Response
@@ -106,6 +109,8 @@ class PickPackController extends Controller
             'lines' => $this->service->walkOrder($pickList)->map(fn (PickListLine $l) => $this->lineRow($l))->values(),
             'overrideReasons' => PickPackService::OVERRIDE_REASONS,
             'requireBinScan' => Setting::requiresBinScan(),
+            // Managers can substitute a short pick there and then.
+            'canSubstitute' => $request->user()->can('orders.manage'),
         ]);
     }
 
@@ -185,7 +190,7 @@ class PickPackController extends Controller
     {
         $order->load(['customer', 'deliveryRun.area']);
         $lines = $pickList->lines()->whereHas('orderLine', fn ($q) => $q->where('order_id', $order->id))
-            ->with(['product', 'orderLine.unit'])->get()->groupBy('order_line_id');
+            ->with(['product', 'orderLine.unit', 'orderLine.substituteFor.product:id,sku,name'])->get()->groupBy('order_line_id');
         abort_if($lines->isEmpty(), 404);
 
         $rows = $lines->map(function ($group) {
@@ -198,6 +203,7 @@ class PickPackController extends Controller
                 'sku' => $group->first()->product->sku, 'name' => $group->first()->product->name, 'chilled' => $group->first()->product->is_chilled,
                 'pack' => $ol->unit->name, 'ordered' => $this->packs($toPick, $per), 'packed' => $this->packs($picked, $per),
                 'short' => $picked < $toPick ? $this->packs($toPick - $picked, $per) : null,
+                'sub_label' => $ol->subLabel(),
             ];
         })->values();
 
@@ -212,7 +218,7 @@ class PickPackController extends Controller
     public function manifest(Request $request, DeliveryRun $run): Response
     {
         $run->load('area');
-        $orders = $run->orders()->with(['customer', 'packs'])->orderBy('id')->get();
+        $orders = $run->orders()->with(['customer', 'packs', ...self::SUB_LINES])->orderBy('id')->get();
 
         return Inertia::render('warehouse/RunManifest', [
             'nav' => WarehouseNav::for($request, $run->label(), route('pick.queue')),
@@ -225,7 +231,7 @@ class PickPackController extends Controller
     /** The day for the driver: runs grouped by trip label, each area its own trip without one. Only the grouping is shared. */
     public function trips(Request $request, string $date): Response
     {
-        $runs = DeliveryRun::with(['area:id,name,sort_order', 'orders' => fn ($q) => $q->whereIn('status', [...self::ACTIVE, OrderStatus::Dispatched])->with(['customer', 'packs'])->orderBy('id')])
+        $runs = DeliveryRun::with(['area:id,name,sort_order', 'orders' => fn ($q) => $q->whereIn('status', [...self::ACTIVE, OrderStatus::Dispatched])->with(['customer', 'packs', ...self::SUB_LINES])->orderBy('id')])
             ->whereDate('run_date', $date)->get()->sortBy('area.sort_order')->filter(fn (DeliveryRun $r) => $r->orders->isNotEmpty());
         $label = Carbon::parse($date)->format('D j M');
 
@@ -250,6 +256,9 @@ class PickPackController extends Controller
             'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(), 'hold' => $o->holdSummary(),
             'address' => trim(($o->delivery_street ?? $o->customer?->delivery_street).' '.($o->delivery_suburb ?? $o->customer?->delivery_suburb).' '.($o->delivery_postcode ?? $o->customer?->delivery_postcode)),
             'cartons' => (int) $o->packs->sum('cartons'), 'packed' => $o->packs->isNotEmpty(),
+            // So the driver knows what to tell the customer.
+            'substitutions' => $o->lines->filter(fn ($l) => $l->substitute_for_line_id !== null && $l->qty_base > $l->qty_cancelled_base)
+                ->map(fn ($l) => "{$l->product->sku} {$l->product->name}: ".$l->subLabel())->values(),
         ];
     }
 
@@ -268,6 +277,8 @@ class PickPackController extends Controller
 
         return [
             'id' => $l->id,
+            'order_line_id' => $ol->id,
+            'sub_label' => $ol->subLabel(),
             'order' => ['id' => $ol->order_id, 'number' => $ol->order->number, 'customer' => $ol->order->customer?->name, 'channel' => $ol->order->channel->value],
             'no_stock' => $l->no_stock,
             'bin' => $l->location ? ['code' => $l->location->code, 'path' => $l->location->path(), 'barcode' => $l->location->barcode] : null,
@@ -281,6 +292,8 @@ class PickPackController extends Controller
             'ticked' => $l->ticked_at !== null,
             'scanned' => (bool) ($l->bin_scanned_at && $l->product_scanned_at),
             'override_reason' => $l->override_reason,
+            // For a manager's substitute on a short pick; pickers don't see prices.
+            'unit_price' => request()->user()?->can('orders.manage') ? $ol->unit_price : null,
         ];
     }
 

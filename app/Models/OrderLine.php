@@ -19,6 +19,7 @@ class OrderLine extends Model
             'qty_base' => 'integer',
             'qty_dispatched_base' => 'integer',
             'qty_cancelled_base' => 'integer',
+            'qty_substituted_base' => 'integer',
             'unit_price' => 'decimal:4',
         ];
     }
@@ -36,6 +37,23 @@ class OrderLine extends Model
     public function unit(): BelongsTo
     {
         return $this->belongsTo(ProductUnit::class, 'product_unit_id');
+    }
+
+    /** The line this one replaces, when the customer accepted a substitute. */
+    public function substituteFor(): BelongsTo
+    {
+        return $this->belongsTo(OrderLine::class, 'substitute_for_line_id');
+    }
+
+    /** "SUB for SKU Name", for pick lists, slips and manifests; null on an ordinary line. */
+    public function subLabel(): ?string
+    {
+        if ($this->substitute_for_line_id === null) {
+            return null;
+        }
+        $original = $this->substituteFor?->product;
+
+        return $original ? "SUB for {$original->sku} {$original->name}" : 'SUB';
     }
 
     public function reservation(): HasOne

@@ -239,7 +239,8 @@ class OrderService
      */
     private function writeLines(Order $order, array $lines): void
     {
-        $existing = $order->lines()->get()->keyBy('line_ref');
+        // Substitute lines are BWMS's own: the channel never sends them and mustn't cancel them.
+        $existing = $order->lines()->whereNull('substitute_for_line_id')->get()->keyBy('line_ref');
         $seen = [];
 
         foreach (array_values($lines) as $i => $row) {
@@ -255,13 +256,21 @@ class OrderService
                 $order->flag('reduced_below_dispatched', 'A line was reduced below what was already dispatched.', always: true);
                 $order->save();
             }
+            // A re-send repeats the original line as ordered; what was substituted stays substituted.
+            $newQtyBase = max($qtyBase, $line->qty_dispatched_base ?? 0);
+            $substituted = min((int) $line->qty_substituted_base, $newQtyBase - (int) ($line->qty_dispatched_base ?? 0));
+            if ($substituted < (int) $line->qty_substituted_base) {
+                $order->flag('substitution_reduced', "{$order->channel->label()} reduced a line below what was substituted for it. Check the substitute is still wanted.", always: true);
+                $order->save();
+            }
             $line->forceFill([
                 'product_id' => $product->id,
                 'product_unit_id' => $unit->id,
                 'qty' => (int) $row['qty'],
                 'base_qty_per_unit' => $unit->base_qty,
-                'qty_base' => max($qtyBase, $line->qty_dispatched_base ?? 0),
-                'qty_cancelled_base' => 0,
+                'qty_base' => $newQtyBase,
+                'qty_cancelled_base' => $substituted,
+                'qty_substituted_base' => $substituted,
                 'unit_price' => $row['unit_price'] ?? null,
                 'sort_order' => $i,
             ])->save();

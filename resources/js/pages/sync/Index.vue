@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
 type Listing = {
@@ -51,10 +51,24 @@ type Props = {
         push_failures: Listing[];
         refused: { id: number; event: string; external_id: string | null; status: string; error: string | null; created_at: string }[];
     };
+    substitutions: {
+        id: number;
+        order: { id: number; number: string; external_ref: string | null };
+        original: { sku: string; name: string };
+        substitute: { sku: string; name: string };
+        qty: string;
+        replaced_qty: string;
+        price_difference: string | null;
+        undone: boolean;
+        by: string | null;
+        at: string;
+    }[];
     filters: { status?: string; q?: string };
     canManage: boolean;
 };
 const props = defineProps<Props>();
+const markSubDone = (id: number) => router.put(route('sync.substitutions.update', id), { done: true }, { preserveScroll: true });
+const signed = (v: string | null) => (v === null ? '—' : `${Number(v) < 0 ? '−' : Number(v) > 0 ? '+' : ''}$${Math.abs(Number(v)).toFixed(2)}`);
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Sync', href: '/sync' }];
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'never');
@@ -207,6 +221,36 @@ const submitMap = () => {
                         <span class="ml-1 text-muted-foreground">{{ l.remote_status === 'missing' ? '(not found)' : '' }}</span>
                     </li>
                 </ul>
+            </section>
+
+            <section v-if="substitutions.length" class="rounded-lg border border-amber-300 p-4">
+                <h2 class="mb-1 font-semibold text-amber-800">Substitutions to update in Ordermentum ({{ substitutions.length }})</h2>
+                <p class="mb-2 text-sm text-muted-foreground">
+                    BWMS can't change an Ordermentum order. Make each change there by hand, then tick it off. Ordermentum re-sending the order won't undo the substitution in BWMS.
+                </p>
+                <table class="w-full text-left text-sm">
+                    <thead class="border-b text-muted-foreground">
+                        <tr><th class="py-1">Order</th><th>Original</th><th>Substitute</th><th>Qty</th><th class="text-right">Price difference</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="s in substitutions" :key="s.id" class="border-b align-top">
+                            <td class="py-1.5">
+                                <Link :href="route('orders.show', s.order.id)" class="font-mono underline">{{ s.order.number }}</Link>
+                                <div class="text-xs text-muted-foreground">{{ s.order.external_ref }}</div>
+                            </td>
+                            <td><span class="font-mono">{{ s.original.sku }}</span> {{ s.original.name }}<div class="text-xs text-muted-foreground">{{ s.replaced_qty }}</div></td>
+                            <td><span class="font-mono">{{ s.substitute.sku }}</span> {{ s.substitute.name }}</td>
+                            <td>{{ s.qty }}</td>
+                            <td class="text-right tabular-nums">{{ signed(s.price_difference) }}</td>
+                            <td class="text-right">
+                                <span v-if="s.undone" class="mr-2 rounded bg-red-100 px-1.5 text-xs text-red-800">Undone in BWMS: put the original back</span>
+                                <label v-if="canManage" class="inline-flex items-center gap-1 whitespace-nowrap">
+                                    <input type="checkbox" @change="markSubDone(s.id)" /> Marked done in Ordermentum
+                                </label>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </section>
 
             <section v-if="unmappedVariants.length" class="rounded-lg border border-amber-300 p-4">

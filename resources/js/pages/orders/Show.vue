@@ -3,6 +3,7 @@ import HeldBadge, { type Hold } from '@/components/HeldBadge.vue';
 import InputError from '@/components/InputError.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
+import SubstituteDialog, { type SubstituteTarget } from '@/components/SubstituteDialog.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { packLabel, unitLabel, type Pack } from '@/lib/packs';
@@ -24,6 +25,21 @@ interface Line {
     cancelled: number;
     unit_price: string | null;
     pick_lists: { id: number; number: string; status: string }[];
+    substituted: number;
+    sub_label: string | null;
+    outstanding: number;
+}
+interface Substitution {
+    id: number;
+    original: { sku: string; name: string };
+    substitute: { sku: string; name: string };
+    qty: string;
+    price_difference: string | null;
+    note: string;
+    by: string | null;
+    at: string;
+    undone: { by: string | null; at: string } | null;
+    can_undo: boolean;
 }
 
 const props = defineProps<{
@@ -56,6 +72,7 @@ const props = defineProps<{
         created_at: string;
         created_by: string | null;
         lines: Line[];
+        substitutions: Substitution[];
     };
     can: { manage: boolean; release_hold: boolean };
     deliveryAreas: { id: number; name: string }[];
@@ -82,6 +99,23 @@ const cancel = () => {
     if (reason) router.post(route('orders.cancel', props.order.id), { reason }, { preserveScroll: true });
 };
 const clearFlags = () => router.post(route('orders.clear-flags', props.order.id), {}, { preserveScroll: true });
+
+const subTarget = ref<SubstituteTarget | null>(null);
+const substitute = (l: Line) =>
+    (subTarget.value = {
+        orderId: props.order.id,
+        lineId: l.id,
+        sku: l.product.sku,
+        name: l.product.name,
+        pack: l.pack,
+        unitPrice: l.unit_price,
+        outstanding: l.outstanding,
+        replaceBase: l.outstanding,
+    });
+const undoSubstitution = (s: Substitution) =>
+    confirm(`Undo: put ${s.original.sku} back and remove the ${s.substitute.sku} line?`) &&
+    router.post(route('orders.substitutions.undo', [props.order.id, s.id]), {}, { preserveScroll: true });
+const money = (v: string | null) => (v === null ? '—' : `${Number(v) < 0 ? '−' : Number(v) > 0 ? '+' : ''}$${Math.abs(Number(v)).toFixed(2)}`);
 </script>
 
 <template>
@@ -155,23 +189,56 @@ const clearFlags = () => router.post(route('orders.clear-flags', props.order.id)
                 <thead class="border-b text-muted-foreground">
                     <tr>
                         <th class="py-2">Product</th><th>Ordered</th><th class="text-right">Reserved</th><th class="text-right">Dispatched</th>
-                        <th class="text-right">Cancelled</th><th>Pick lists</th><th class="text-right">Price</th>
+                        <th class="text-right">Cancelled</th><th>Pick lists</th><th class="text-right">Price</th><th v-if="can.manage"></th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-for="l in order.lines" :key="l.id" class="border-b">
-                        <td class="py-2"><span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}</td>
-                        <td>{{ l.qty }} × {{ l.unit }}<span v-if="l.base_qty_per_unit > 1" class="text-xs text-muted-foreground"> ({{ l.qty_base }} {{ unitLabel(l.product.base_unit, l.qty_base) }})</span></td>
+                        <td class="py-2">
+                            <span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}
+                            <div v-if="l.sub_label" class="text-xs font-semibold text-amber-700 dark:text-amber-300">{{ l.sub_label }}</div>
+                        </td>
+                        <td>
+                            <template v-if="l.sub_label">{{ packLabel(l.qty_base, l.pack) }}</template>
+                            <template v-else>{{ l.qty }} × {{ l.unit }}<span v-if="l.base_qty_per_unit > 1" class="text-xs text-muted-foreground"> ({{ l.qty_base }} {{ unitLabel(l.product.base_unit, l.qty_base) }})</span></template>
+                        </td>
                         <td class="text-right tabular-nums" :class="{ 'text-amber-700 dark:text-amber-300': l.reserved % l.pack.per !== 0 }">{{ packLabel(l.reserved, l.pack) }}</td>
                         <td class="text-right tabular-nums" :class="{ 'text-amber-700 dark:text-amber-300': l.dispatched % l.pack.per !== 0 }">{{ packLabel(l.dispatched, l.pack) }}</td>
-                        <td class="text-right tabular-nums">{{ l.cancelled ? packLabel(l.cancelled, l.pack) : '' }}</td>
+                        <td class="text-right tabular-nums">
+                            {{ l.cancelled ? packLabel(l.cancelled, l.pack) : '' }}
+                            <div v-if="l.substituted" class="text-xs text-muted-foreground">{{ packLabel(l.substituted, l.pack) }} substituted</div>
+                        </td>
                         <td>
                             <Link v-for="p in l.pick_lists" :key="p.id" :href="route('pick-lists.show', p.id)" class="mr-2 font-mono underline">{{ p.number }}</Link>
                         </td>
                         <td class="text-right tabular-nums">{{ l.unit_price ? `$${Number(l.unit_price).toFixed(2)}` : '' }}</td>
+                        <td v-if="can.manage" class="text-right">
+                            <button v-if="l.outstanding > 0" class="text-xs underline" @click="substitute(l)">Substitute</button>
+                        </td>
                     </tr>
                 </tbody>
             </table>
+            <InputError :message="errors.substitute" />
+
+            <section v-if="order.substitutions.length" class="space-y-2">
+                <h2 class="font-semibold">Substitutions</h2>
+                <ul class="divide-y rounded-md border text-sm">
+                    <li v-for="s in order.substitutions" :key="s.id" class="flex flex-wrap items-start gap-x-4 gap-y-1 p-3" :class="{ 'opacity-60': s.undone }">
+                        <div class="flex-1">
+                            <div>
+                                <span class="font-mono">{{ s.original.sku }}</span> {{ s.original.name }} → <span class="font-mono">{{ s.substitute.sku }}</span> {{ s.substitute.name }} · {{ s.qty }}
+                                <span v-if="s.undone" class="ml-1 rounded bg-muted px-1.5 text-xs">undone</span>
+                            </div>
+                            <div class="text-xs text-muted-foreground">
+                                “{{ s.note }}” · {{ s.by }}, {{ fmt(s.at) }}<template v-if="s.undone"> · undone by {{ s.undone.by }}, {{ fmt(s.undone.at) }}</template>
+                            </div>
+                        </div>
+                        <div class="tabular-nums" title="Substitute value − original value, ex GST">{{ money(s.price_difference) }}</div>
+                        <button v-if="s.can_undo" class="text-xs underline" @click="undoSubstitution(s)">Undo</button>
+                    </li>
+                </ul>
+            </section>
+            <SubstituteDialog :target="subTarget" @close="subTarget = null" />
             <p class="text-xs text-muted-foreground">Reserved / dispatched / cancelled are in the line's pack plus loose units; amber means part of a pack. Stock leaves the ledger at dispatch; until then it is reserved.</p>
             <p v-if="order.notes" class="whitespace-pre-line text-sm"><span class="text-muted-foreground">Notes:</span> {{ order.notes }}</p>
             <p class="text-xs text-muted-foreground">Created {{ fmt(order.created_at) }}{{ order.created_by ? ` by ${order.created_by}` : '' }}</p>

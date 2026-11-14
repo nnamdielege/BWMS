@@ -18,6 +18,7 @@ interface Line {
     order: string;
     channel: string;
     customer: string | null;
+    sub_label: string | null;
     pack: Pack;
     qty_to_pick_base: number;
     qty_picked_base: number | null;
@@ -85,7 +86,10 @@ const cancel = () => confirm('Cancel this pick list? Orders go back to ready-to-
                 <tbody>
                     <tr v-for="l in pickList.lines" :key="l.id" class="border-b" :class="{ 'bg-amber-50 dark:bg-amber-950': l.qty_picked_base !== null && l.qty_picked_base < l.qty_to_pick_base }">
                         <td class="py-2 font-mono" :class="{ 'text-red-700 dark:text-red-300': l.no_stock }">{{ l.location }}</td>
-                        <td><span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}</td>
+                        <td>
+                            <span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}
+                            <div v-if="l.sub_label" class="text-xs font-bold text-amber-700 dark:text-amber-300">{{ l.sub_label }}</div>
+                        </td>
                         <td>{{ l.batch ?? '' }}</td>
                         <td>{{ l.order }} <SourceBadge :channel="l.channel" /><div class="text-xs text-muted-foreground">{{ l.customer }}</div></td>
                         <td class="text-right tabular-nums">

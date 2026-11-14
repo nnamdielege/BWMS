@@ -3,6 +3,7 @@ import InputError from '@/components/InputError.vue';
 import PackQtyInput from '@/components/PackQtyInput.vue';
 import ScanInput from '@/components/ScanInput.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
+import SubstituteDialog, { type SubstituteTarget } from '@/components/SubstituteDialog.vue';
 import WarehouseLayout from '@/layouts/WarehouseLayout.vue';
 import { isBlank, packLabel, toBase, type Pack, type PackEntry } from '@/lib/packs';
 import { catchVisitFailures } from '@/lib/visitFailures';
@@ -11,6 +12,9 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 type Line = {
     id: number;
+    order_line_id: number;
+    sub_label: string | null;
+    unit_price: string | null;
     order: { id: number; number: string; customer: string | null; channel: string };
     no_stock: boolean;
     bin: { code: string; path: string; barcode: string | null } | null;
@@ -29,7 +33,25 @@ const props = defineProps<{
     lines: Line[];
     overrideReasons: string[];
     requireBinScan: boolean;
+    canSubstitute: boolean;
 }>();
+
+// A manager can substitute what a short pick didn't find, there and then.
+const subTarget = ref<SubstituteTarget | null>(null);
+const openSubstitute = (l: Line, shortBase: number) => {
+    if (shortBase <= 0) return;
+    subTarget.value = {
+        orderId: l.order.id,
+        lineId: l.order_line_id,
+        sku: l.product.sku,
+        name: l.product.name,
+        pack: l.pack,
+        unitPrice: l.unit_price,
+        outstanding: shortBase,
+        replaceBase: shortBase,
+        pickListLineId: l.id,
+    };
+};
 
 const errors = computed(() => usePage().props.errors as Record<string, string>);
 const firstOpen = () => Math.max(0, props.lines.findIndex((l) => l.picked_base === null));
@@ -129,13 +151,20 @@ const blockedBy = computed(() => {
     return null;
 });
 // Also what Enter on the number pad does, so it drops the keyboard, which would hide the answer.
-const confirmManual = () => {
+const confirmManual = (thenSubstitute = false) => {
     (document.activeElement as HTMLElement | null)?.blur();
     if (blockedBy.value) return showProblem(blockedBy.value);
-    submit(manualQty.value);
+    submit(manualQty.value, thenSubstitute);
 };
 
-const submit = (qty: PackEntry) => {
+/** Confirm the short, then offer the substitute for what wasn't found. */
+const submit = (qty: PackEntry, thenSubstitute = false) => {
+    const current = line.value;
+    const after = thenSubstitute && current ? () => openSubstitute(current, current.to_pick_base - toBase(qty, current.pack.per)) : null;
+    record(qty, after);
+};
+
+const record = (qty: PackEntry, after: (() => void) | null) => {
     const l = line.value;
     if (!l) return;
     saving.value = true;
@@ -152,6 +181,7 @@ const submit = (qty: PackEntry) => {
                 const next = props.lines.findIndex((x, i) => i > index.value && x.picked_base === null);
                 index.value = next >= 0 ? next : firstOpen();
                 reset();
+                after?.();
             },
             onError: (errors) => showProblem(Object.values(errors)[0] ?? 'This line was not saved.'),
             onFinish: () => {
@@ -191,6 +221,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                     <span v-if="line.product.chilled" class="rounded bg-sky-100 px-2 text-xs font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">CHILLED</span>
                 </div>
                 <div class="font-mono text-sm text-muted-foreground">{{ line.product.sku }}</div>
+                <div v-if="line.sub_label" class="mt-1 inline-block rounded bg-amber-100 px-2 py-0.5 text-sm font-bold text-amber-900 dark:bg-amber-950 dark:text-amber-200">{{ line.sub_label }}</div>
                 <div v-if="line.batch" class="mt-1 text-sm">Lot {{ line.batch.lot }} · BB {{ line.batch.best_before ?? '—' }}</div>
 
                 <div class="mt-3 text-3xl font-bold tabular-nums">{{ line.no_stock ? 'Short' : 'Pick' }} {{ line.to_pick_label }}</div>
@@ -210,7 +241,10 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
 
             <div v-if="line.no_stock" class="mt-3">
                 <p class="mb-2 text-sm text-muted-foreground">There's nothing to pick for this line. The rest follows the order's short-pick rule at dispatch.</p>
-                <button class="h-12 w-full rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50" :disabled="saving || !pickList.mine" @click="submit({ packs: 0, each: 0 })">Confirm short</button>
+                <div class="grid gap-2" :class="canSubstitute ? 'grid-cols-2' : 'grid-cols-1'">
+                    <button class="h-12 w-full rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50" :disabled="saving || !pickList.mine" @click="submit({ packs: 0, each: 0 })">Confirm short</button>
+                    <button v-if="canSubstitute" class="h-12 w-full rounded-lg border font-semibold disabled:opacity-50" :disabled="saving || !pickList.mine" @click="submit({ packs: 0, each: 0 }, true)">Substitute…</button>
+                </div>
             </div>
 
             <div v-else-if="mode === 'scan'" class="mt-3">
@@ -221,7 +255,7 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                 </div>
             </div>
 
-            <form v-else class="mt-3 space-y-3 rounded-xl border p-3" novalidate @submit.prevent="confirmManual">
+            <form v-else class="mt-3 space-y-3 rounded-xl border p-3" novalidate @submit.prevent="confirmManual()">
                 <div class="font-semibold">{{ mode === 'short' ? 'How many did you find?' : 'Quantity picked' }}</div>
                 <PackQtyInput v-model="manualQty" :pack="line.pack" size="lg" />
                 <div v-if="needsReason && (manualBase ?? 0) > 0">
@@ -251,7 +285,16 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
                         class="h-12 rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50"
                         :disabled="saving"
                     >
-                        Confirm
+                        {{ mode === 'short' ? 'Confirm short' : 'Confirm' }}
+                    </button>
+                    <button
+                        v-if="mode === 'short' && canSubstitute"
+                        type="button"
+                        class="col-span-2 h-12 rounded-lg border font-semibold disabled:opacity-50"
+                        :disabled="saving || manualBase === null || manualBase >= line.to_pick_base"
+                        @click="confirmManual(true)"
+                    >
+                        Substitute…
                     </button>
                 </div>
             </form>
@@ -266,10 +309,18 @@ const reasonLabel = (r: string) => ({ label_missing: 'Label missing', label_dama
         <ol v-if="showList" class="mt-2 divide-y rounded-lg border text-sm">
             <li v-for="(l, i) in lines" :key="l.id" class="flex items-center gap-2 p-2" :class="{ 'bg-muted': i === index }" @click="index = i">
                 <span class="w-16 font-mono">{{ l.bin?.code ?? 'None' }}</span>
-                <span class="flex-1 truncate">{{ l.product.name }}</span>
+                <span class="flex-1 truncate">{{ l.product.name }}<span v-if="l.sub_label" class="block text-xs font-semibold text-amber-700 dark:text-amber-300">{{ l.sub_label }}</span></span>
                 <span v-if="l.product.chilled" class="text-xs text-sky-700 dark:text-sky-300">chilled</span>
                 <span class="tabular-nums">{{ l.picked_base === null ? l.to_pick_label : l.picked_base < l.to_pick_base ? 'short' : '✓' }}</span>
+                <button
+                    v-if="canSubstitute && pickList.status === 'open' && l.picked_base !== null && l.picked_base < l.to_pick_base"
+                    class="text-xs underline"
+                    @click.stop="openSubstitute(l, l.to_pick_base - (l.picked_base ?? 0))"
+                >
+                    Substitute
+                </button>
             </li>
         </ol>
+        <SubstituteDialog :target="subTarget" @close="subTarget = null" />
     </WarehouseLayout>
 </template>

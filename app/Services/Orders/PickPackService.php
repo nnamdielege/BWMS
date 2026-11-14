@@ -93,7 +93,7 @@ class PickPackService
     public function walkOrder(PickList $pickList): Collection
     {
         return $pickList->lines()
-            ->with(['product.units.barcodes', 'location.parent', 'batch', 'orderLine.order.customer', 'orderLine.unit'])
+            ->with(['product.units.barcodes', 'location.parent', 'batch', 'orderLine.order.customer', 'orderLine.unit', 'orderLine.substituteFor.product:id,sku,name'])
             ->get()
             ->sortBy(fn (PickListLine $l) => [
                 $l->no_stock ? 1 : 0, // nothing to walk to, so they come last

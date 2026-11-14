@@ -11,9 +11,11 @@ use App\Models\DeliveryRun;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\OrderLine;
+use App\Models\OrderSubstitution;
 use App\Services\Delivery\DeliveryScheduler;
 use App\Services\Orders\OrderService;
 use App\Services\Orders\PickPackService;
+use App\Services\Orders\SubstitutionService;
 use App\Services\Stock\Exceptions\StockException;
 use App\Support\Audit;
 use App\Support\BusinessDate;
@@ -121,9 +123,11 @@ class OrderController extends Controller
         return redirect()->route('orders.show', $order)->with('success', "{$order->number} created and stock reserved.");
     }
 
-    public function show(Request $request, Order $order, DeliveryScheduler $scheduler): Response
+    public function show(Request $request, Order $order, DeliveryScheduler $scheduler, SubstitutionService $substitutions): Response
     {
-        $order->load(['deliveryRun.area', 'customer', 'site', 'lines.product:id,sku,name,base_unit', 'lines.unit:id,name,base_qty', 'lines.reservation', 'lines.pickLines.pickList:id,number,status', 'creator:id,name']);
+        $order->load(['deliveryRun.area', 'customer', 'site', 'lines.product:id,sku,name,base_unit', 'lines.unit:id,name,base_qty', 'lines.reservation', 'lines.pickLines.pickList:id,number,status', 'lines.substituteFor.product:id,sku,name', 'creator:id,name']);
+        $subs = OrderSubstitution::where('order_id', $order->id)->with(['originalProduct:id,sku,name', 'substituteProduct:id,sku,name,base_unit', 'substituteUnit:id,name', 'substituteLine', 'creator:id,name', 'undoer:id,name'])->orderBy('id')->get();
+        $manage = $request->user()->can('orders.manage') && $order->status->isActive();
 
         return Inertia::render('orders/Show', [
             'order' => [
@@ -160,10 +164,25 @@ class OrderController extends Controller
                     'pack' => PackQty::forInput($l->base_qty_per_unit, $l->unit->name, $l->product->base_unit),
                     'unit_price' => $l->unit_price,
                     'pick_lists' => $l->pickLines->map(fn ($p) => $p->pickList->only(['id', 'number', 'status']))->unique('id')->values(),
+                    'substituted' => $l->qty_substituted_base,
+                    'sub_label' => $l->subLabel(),
+                    'outstanding' => $l->outstandingBase(),
+                ]),
+                'substitutions' => $subs->map(fn (OrderSubstitution $s) => [
+                    'id' => $s->id,
+                    'original' => $s->originalProduct->only(['sku', 'name']),
+                    'substitute' => $s->substituteProduct->only(['sku', 'name']),
+                    'qty' => PackQty::label($s->substitute_qty_base, $s->substitute_per, $s->substituteUnit->name, $s->substituteProduct->base_unit),
+                    'price_difference' => $s->price_difference,
+                    'note' => $s->note,
+                    'by' => $s->creator?->name,
+                    'at' => $s->created_at->toIso8601String(),
+                    'undone' => $s->undone_at ? ['by' => $s->undoer?->name, 'at' => $s->undone_at->toIso8601String()] : null,
+                    'can_undo' => $manage && $substitutions->canUndo($s),
                 ]),
             ],
             'can' => [
-                'manage' => $request->user()->can('orders.manage') && $order->status->isActive(),
+                'manage' => $manage,
                 'release_hold' => $request->user()->can('orders.manage') && $order->payment_hold && $order->status->isActive(),
             ],
             'deliveryAreas' => DeliveryArea::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),

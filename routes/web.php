@@ -15,6 +15,7 @@ use App\Http\Controllers\Orders\ConsolidationController;
 use App\Http\Controllers\Orders\CustomerController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\PickListController;
+use App\Http\Controllers\Orders\SubstitutionController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductCostController;
 use App\Http\Controllers\ProductImportController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\Purchasing\ReceiptController;
 use App\Http\Controllers\Purchasing\SupplierController;
 use App\Http\Controllers\RangeController;
 use App\Http\Controllers\Reports\MarginReportController;
+use App\Http\Controllers\Reports\SubstitutionReportController;
 use App\Http\Controllers\Stock\AdjustmentController;
 use App\Http\Controllers\Stock\CountTaskController;
 use App\Http\Controllers\Stock\MovementController;
@@ -165,6 +167,9 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::put('orders/{order}/delivery-date', [OrderController::class, 'changeDeliveryDate'])->middleware('can:orders.manage')->name('orders.delivery-date');
     Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->middleware('can:orders.manage')->name('orders.cancel');
     Route::post('orders/{order}/clear-flags', [OrderController::class, 'clearFlags'])->middleware('can:orders.manage')->name('orders.clear-flags');
+    // Substitutions: managers and admins, from the order page or a short pick on the handheld.
+    Route::post('orders/{order}/lines/{line}/substitute', [SubstitutionController::class, 'store'])->middleware('can:orders.manage')->name('orders.substitute');
+    Route::post('orders/{order}/substitutions/{substitution}/undo', [SubstitutionController::class, 'undo'])->middleware('can:orders.manage')->name('orders.substitutions.undo');
 
     Route::get('pick-lists', [PickListController::class, 'index'])->middleware('can:picking.perform')->name('pick-lists.index');
     Route::post('pick-lists', [PickListController::class, 'store'])->middleware('can:picking.perform')->name('pick-lists.store');
@@ -198,6 +203,10 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::get('export/{view}/{format}', [MarginReportController::class, 'export'])
             ->whereIn('view', ['stock', 'drops', 'real'])->whereIn('format', ['xlsx', 'csv'])->name('export');
     });
+    Route::middleware('can:reports.margin')->prefix('reports/substitutions')->name('reports.substitutions.')->group(function () {
+        Route::get('/', [SubstitutionReportController::class, 'index'])->name('index');
+        Route::get('export/{format}', [SubstitutionReportController::class, 'export'])->whereIn('format', ['xlsx', 'csv'])->name('export');
+    });
 
     Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');
     Route::post('sync/listings/{listing}/push', [SyncController::class, 'push'])->middleware('can:sync.manage')->name('sync.push');
@@ -206,6 +215,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::post('sync/retry-failed', [SyncController::class, 'retryFailed'])->middleware('can:sync.manage')->name('sync.retry-failed');
     Route::post('sync/inbox/{inbox}/replay', [SyncController::class, 'replay'])->middleware('can:sync.manage')->name('sync.inbox.replay');
     Route::post('sync/unmapped/{variant}/map', [SyncController::class, 'map'])->middleware('can:sync.manage')->name('sync.unmapped.map');
+    Route::put('sync/substitutions/{substitution}', [SubstitutionController::class, 'channelDone'])->middleware('can:sync.manage')->name('sync.substitutions.update');
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('settings', [SettingsController::class, 'edit'])->middleware('can:settings.manage')->name('settings.edit');

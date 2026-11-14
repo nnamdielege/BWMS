@@ -8,6 +8,7 @@
     .num { text-align: right; }
     .box { border: 0.8pt solid #111; padding: 6pt; }
     .chilled { font-size: 8pt; border: 0.6pt solid #06c; color: #06c; padding: 0 3pt; }
+    .sub { font-size: 8.5pt; font-weight: bold; color: #a40; }
 </style></head><body>
 <table style="margin-top:0"><tr>
     <td style="border:0; width:14%"><img src="{{ $logoPath }}" style="height:18mm" alt=""></td>
@@ -35,7 +36,8 @@
     @foreach ($rows as $r)
         <tr>
             <td>{{ $r['sku'] }}</td>
-            <td>{{ $r['name'] }} @if ($r['chilled'])<span class="chilled">CHILLED</span>@endif</td>
+            <td>{{ $r['name'] }} @if ($r['chilled'])<span class="chilled">CHILLED</span>@endif
+                @if ($r['sub_label'] ?? null)<br><span class="sub">{{ $r['sub_label'] }}</span>@endif</td>
             <td>{{ $r['pack'] }}</td>
             <td class="num">{{ $r['ordered'] }}</td>
             <td class="num">{{ $r['packed'] }}</td>

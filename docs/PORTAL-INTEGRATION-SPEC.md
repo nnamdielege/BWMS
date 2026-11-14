@@ -422,7 +422,7 @@ X-BWMS-Key-Id: …   X-BWMS-Timestamp: …   X-BWMS-Signature: …
 
 | Field | Meaning |
 |---|---|
-| `event` | `dispatched`, or `short_shipped` if less was picked than was planned on this pick list. `cancelled` has [its own rules](#cancelled-staff-cancelled-in-bwms). |
+| `event` | `dispatched`, or `short_shipped` if less was picked than was planned on this pick list. `cancelled` and `substituted` have their own rules: [cancelled](#cancelled-staff-cancelled-in-bwms), [substituted](#substituted-the-customer-accepted-another-product). |
 | `lines[].qty` | Sell units that left **in this dispatch**. Can be a decimal, or 0. |
 | `at` | When it left, UTC |
 
@@ -495,6 +495,52 @@ Delivery and retries are the same as the table in [11](#11-post-apibwmsv1order-e
 
 **BWMS sends no `cancelled` event for:** the portal's own cancel, or the rest of a short pick cancelled at dispatch, which the dispatch event already covers.
 
+### `substituted`: the customer accepted another product
+
+**Added 2026-11-14.** When a line is short, staff may call the customer and agree a different product instead. In BWMS the replaced quantity of the original line is cancelled ("substituted", not short), and a new line is added for the substitute, at its own price. BWMS tells the portal both, and the portal credits or charges the difference.
+
+```
+POST {PORTAL}/api/bwms/v1/order-events
+Idempotency-Key: bwms:order-event:ORD-7K2M9XQ4LP1A:substituted:42
+```
+
+```json
+{
+  "order_ref": "ORD-7K2M9XQ4LP1A",
+  "event": "substituted",
+  "substitution_id": 42,
+  "original": { "line_ref": "501", "qty": 12, "unit_price": "5.0000" },
+  "substitute": {
+    "line_ref": "bwms-sub-42", "portal_product_id": 702, "sku": "COF", "name": "Coffee",
+    "unit": "Carton", "unit_quantity": 6, "qty": 2, "unit_price": "24.0000"
+  },
+  "price_difference": "-12.00",
+  "at": "2026-11-13T23:00:00Z"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `substitution_id` | BWMS's id for this substitution. The same id comes back on an undo. |
+| `original.qty` | Sell units of the original line cancelled **by this substitution**. Can be a decimal. The rest of the line, if any, is still ordered. |
+| `original.unit_price`, `substitute.unit_price` | Per sell unit, ex GST, as BWMS holds them. Null when BWMS has no price for the line. Staff may have kept the original total (then `price_difference` is `0.00`). |
+| `substitute.line_ref` | A new line, made by BWMS, always starting `bwms-sub-`. From now on it appears in `dispatched` / `short_shipped` / `cancelled` events and in `GET /orders/{ref}` like any other line. |
+| `substitute.portal_product_id` | The portal product listed for the substitute, or null if it isn't sold on the portal. Use `sku` and `name` to show it either way. |
+| `price_difference` | Substitute value − original value, ex GST. Positive: the customer pays more. Null if either price is unknown. |
+
+**On a `substituted` event:**
+1. Dedupe on the `Idempotency-Key`.
+2. Add `original.qty` to that order item's `credited_qty`. It is not a short: don't credit it again at dispatch. Work out what's short at dispatch as **ordered − `dispatched_qty` − `credited_qty`** (see below).
+3. Add an order item for the substitute: `line_ref`, product, `qty`, `unit_price`. Its dispatch arrives in the dispatch events like any line.
+4. **Not yet charged:** invoice what ships, at the new line's price. Nothing else to do.
+5. **Already charged:** if `price_difference` is negative, refund it (Xero credit note and/or Stripe partial refund, including GST); if positive, charge it or add it to the next invoice, as for any order change. Email the customer the change.
+
+**`substitution_undone`.** Staff can undo a substitution until the substitute is picked. BWMS then sends the same body with `"event": "substitution_undone"` and `at` set to the undo time, keyed `bwms:order-event:{ref}:substitution_undone:{id}`. Reverse it: take `original.qty` off `credited_qty`, remove the `bwms-sub-` item, and reverse any refund or charge made for the difference.
+
+**Re-sends.** A `PUT /orders/{ref}` repeats the original line as the customer ordered it; BWMS keeps the substitution, so don't change your line to match. Never send `bwms-sub-` lines back in a `PUT`: BWMS owns them, and a line left out of a `PUT` does not cancel them.
+
+**Short at dispatch** now means **ordered − `dispatched_qty` − `credited_qty`** for each line, so a substituted quantity is never credited twice.
+
 ## 12. Changes in the portal code
 
 Line numbers are as of commit `6bccbc2`.
@@ -559,7 +605,11 @@ Build tests for these against a stub of BWMS:
 - [ ] A `cancelled` event credits `qty` per line, and sends no cancel back.
 - [ ] A `cancelled` event on a line already credited at dispatch credits nothing more.
 - [ ] A `cancelled` event on an unpaid order credits nothing and stops its payment link.
-- [ ] A short event credits ordered − `dispatched_qty` per line and sends nothing back to BWMS.
+- [ ] A short event credits ordered − `dispatched_qty` − `credited_qty` per line and sends nothing back to BWMS.
+- [ ] A `substituted` event adds the `bwms-sub-` line, adds `original.qty` to the original's `credited_qty`, and credits or charges `price_difference` once.
+- [ ] A dispatch after a substitution doesn't credit the substituted quantity again.
+- [ ] A `substitution_undone` event reverses both the line and the money.
+- [ ] A `PUT` after a substitution never includes `bwms-sub-` lines.
 - [ ] A `dispatched` event missing a line credits that line in full.
 - [ ] An unpaid checkout order is released and cancelled in BWMS about 30 minutes after placing.
 - [ ] A `payment_failed` order is cancelled in BWMS.

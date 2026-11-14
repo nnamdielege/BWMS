@@ -15,6 +15,7 @@ export type ManifestRow = {
     address: string;
     cartons: number;
     packed: boolean;
+    substitutions: string[];
 };
 
 defineProps<{ order: ManifestRow }>();
@@ -30,6 +31,9 @@ defineProps<{ order: ManifestRow }>();
             <div class="text-xs text-muted-foreground">{{ order.address || 'No address' }}</div>
             <MovedBadge :from="order.moved_from" />
             <HeldBadge :hold="order.hold" />
+            <ul v-if="order.substitutions.length" class="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                <li v-for="s in order.substitutions" :key="s">{{ s }}</li>
+            </ul>
         </div>
         <div class="text-right text-sm">
             <div class="tabular-nums">{{ order.cartons }} ctn</div>

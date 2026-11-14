@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 type PackLine = {
     id: number;
     product: { sku: string; name: string; chilled: boolean; base_unit: string };
+    sub_label: string | null;
     pack: Pack;
     to_pick_base: number;
     to_pick_label: string;
@@ -172,6 +173,7 @@ const allPacked = computed(() => props.orders.every((o) => o.pack));
                             {{ l.product.name }}
                             <span v-if="l.product.chilled" class="ml-1 rounded bg-sky-100 px-1.5 text-xs text-sky-800 dark:bg-sky-950 dark:text-sky-200">CHILLED</span>
                             <span class="block font-mono text-xs text-muted-foreground">{{ l.product.sku }}</span>
+                            <span v-if="l.sub_label" class="block text-xs font-bold text-amber-700 dark:text-amber-300">{{ l.sub_label }}</span>
                         </span>
                         <span class="text-right tabular-nums">
                             {{ packed(l) }}

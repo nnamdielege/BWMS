@@ -70,7 +70,7 @@ class PickListController extends Controller
 
     public function show(Request $request, PickList $pickList): Response
     {
-        $pickList->load(['site', 'lines.product:id,sku,name,base_unit', 'lines.location.parent', 'lines.batch', 'lines.orderLine.order.customer:id,name', 'lines.orderLine.unit:id,name,base_qty', 'deliveryRun.area']);
+        $pickList->load(['site', 'lines.product:id,sku,name,base_unit', 'lines.location.parent', 'lines.batch', 'lines.orderLine.order.customer:id,name', 'lines.orderLine.unit:id,name,base_qty', 'lines.orderLine.substituteFor.product:id,sku,name', 'deliveryRun.area']);
 
         return Inertia::render('pick-lists/Show', [
             'pickList' => [
@@ -88,6 +88,7 @@ class PickListController extends Controller
                         'order' => $l->orderLine->order->number,
                         'channel' => $l->orderLine->order->channel->value,
                         'customer' => $l->orderLine->order->customer?->name,
+                        'sub_label' => $l->orderLine->subLabel(),
                         'pack' => PackQty::forInput($l->orderLine->base_qty_per_unit, $l->orderLine->unit->name, $l->product->base_unit),
                         'qty_to_pick_base' => $l->qty_to_pick_base,
                         'qty_picked_base' => $l->qty_picked_base,
