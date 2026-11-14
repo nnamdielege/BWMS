@@ -271,14 +271,14 @@ class PortalIntegrationTest extends TestCase
         $this->signed('GET', '/api/portal/v1/orders/P-1001')->assertJson(['bwms_status' => 'dispatched', 'lines' => [['reserved_qty' => 0, 'dispatched_qty' => 1]]]);
     }
 
-    public function test_other_channels_keep_their_backorder_default()
+    public function test_ordermentum_orders_cancel_the_rest_too()
     {
         $order = app(OrderService::class)->upsertFromChannel(new ChannelOrderData(
             channel: OrderChannel::Ordermentum, externalRef: 'om-1', version: 1, status: 'confirmed', siteId: $this->site()->id,
             lines: [['line_ref' => '1', 'product_id' => $this->product->id, 'product_unit_id' => $this->product->units()->value('id'), 'qty' => 1]],
         ));
 
-        $this->assertSame('backorder', $order->short_ship_policy);
+        $this->assertSame('cancel', $order->short_ship_policy); // since 2026-11-15, like portal orders
     }
 
     public function test_bulk_mapping_command()

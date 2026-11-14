@@ -127,6 +127,10 @@ Other inbound behaviour:
    2. Click "Enable all". This queues a forced push of every listing it enables.
    3. Optionally, run `php artisan channels:ordermentum push` to re-send everything.
 
+## Short picks
+
+From 2026-11-15, new Ordermentum orders are set to **Cancel the rest**, like portal orders: what isn't picked is cancelled at dispatch and its stock released, not kept on backorder. Orders created before then keep the setting they have.
+
 ## Substitutions
 
 BWMS can't change an Ordermentum order. When staff substitute a line on one (order page, or a short pick on the handheld), it appears on **Integrations → Sync → Substitutions to update in Ordermentum** with the order, original, substitute, quantity and price difference. Make the change in Ordermentum by hand, then tick **Marked done in Ordermentum**. If the substitution is undone in BWMS after that, it comes back on the list, flagged, so the original can be put back in Ordermentum.

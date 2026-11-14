@@ -4,6 +4,7 @@ namespace Tests\Feature\Orders;
 
 use App\Authorization\Permissions;
 use App\Enums\MovementType;
+use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Events\OrderDispatched;
 use App\Models\Location;
@@ -132,6 +133,35 @@ class PickAndDispatchTest extends TestCase
         $this->assertSame(OrderStatus::Dispatched, $order->status);
         $this->assertSame(2, $order->lines->first()->qty_cancelled_base);
         $this->assertSame(6, app(AvailabilityService::class)->available($p));
+    }
+
+    public function test_an_ordermentum_order_cancels_the_rest_of_a_short_pick_like_a_portal_order()
+    {
+        $p = Product::factory()->create();
+        $this->stockIn($p, 10, $this->bin('STOCK'));
+        $order = $this->channelOrder(OrderChannel::Ordermentum, 'OM-NEW', 1, [[$p, 6]]);
+        $this->assertSame('cancel', $order->short_ship_policy);
+        $this->assertSame('backorder', $this->manualOrder($this->manager, $p, 1)->short_ship_policy, 'manual orders still backorder');
+
+        $list = $this->picks()->create($this->picker, $this->site(), [$order->id])['pickList'];
+        $this->picks()->recordPicked($list, [$list->lines()->value('id') => 4]);
+        $this->picks()->dispatch($list, $this->picker);
+
+        $order->refresh();
+        $this->assertSame(OrderStatus::Dispatched, $order->status);
+        $this->assertSame(2, $order->lines->first()->qty_cancelled_base);
+    }
+
+    public function test_an_existing_ordermentum_order_keeps_its_backorder_policy_when_resent()
+    {
+        $p = Product::factory()->create();
+        $this->stockIn($p, 10, $this->bin('STOCK'));
+        $order = $this->channelOrder(OrderChannel::Ordermentum, 'OM-OLD', 1, [[$p, 6]]);
+        $order->forceFill(['short_ship_policy' => 'backorder'])->save(); // as created before the change
+
+        $this->channelOrder(OrderChannel::Ordermentum, 'OM-OLD', 2, [[$p, 5]]);
+
+        $this->assertSame('backorder', $order->fresh()->short_ship_policy);
     }
 
     public function test_cannot_over_pick()

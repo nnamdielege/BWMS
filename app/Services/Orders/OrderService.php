@@ -253,8 +253,10 @@ class OrderService
             'external_ref' => $externalRef,
             'status' => OrderStatus::Open,
             'created_by' => $actor?->id,
-            // The portal credits a short at dispatch, so what didn't go isn't kept on backorder.
-            'short_ship_policy' => $channel === OrderChannel::Portal ? 'cancel' : 'backorder',
+            // Channel orders cancel what didn't go at dispatch rather than keep it on backorder:
+            // the portal credits a short at dispatch, and Ordermentum customers re-order. Set once,
+            // when the order is created, so orders already in BWMS keep theirs.
+            'short_ship_policy' => in_array($channel, [OrderChannel::Portal, OrderChannel::Ordermentum], true) ? 'cancel' : 'backorder',
         ])->save();
 
         return $order;
