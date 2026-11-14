@@ -2,11 +2,12 @@
 import HeldBadge, { type Hold } from '@/components/HeldBadge.vue';
 import InputError from '@/components/InputError.vue';
 import MovedBadge from '@/components/MovedBadge.vue';
+import PackQtyInput from '@/components/PackQtyInput.vue';
 import SourceBadge from '@/components/SourceBadge.vue';
 import SubstituteDialog, { type SubstituteTarget } from '@/components/SubstituteDialog.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { packLabel, unitLabel, type Pack } from '@/lib/packs';
+import { fromBase, packLabel, unitLabel, type Pack, type PackEntry } from '@/lib/packs';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -28,6 +29,8 @@ interface Line {
     substituted: number;
     sub_label: string | null;
     outstanding: number;
+    oversold: number;
+    oversold_label: string | null;
 }
 interface Substitution {
     id: number;
@@ -74,7 +77,7 @@ const props = defineProps<{
         lines: Line[];
         substitutions: Substitution[];
     };
-    can: { manage: boolean; release_hold: boolean };
+    can: { manage: boolean; release_hold: boolean; view_stock: boolean };
     deliveryAreas: { id: number; name: string }[];
 }>();
 const runForm = useForm({ delivery_area_id: props.order.run?.area_id ?? null, run_date: props.order.run?.date ?? '' });
@@ -101,7 +104,7 @@ const cancel = () => {
 const clearFlags = () => router.post(route('orders.clear-flags', props.order.id), {}, { preserveScroll: true });
 
 const subTarget = ref<SubstituteTarget | null>(null);
-const substitute = (l: Line) =>
+const substitute = (l: Line, replaceBase?: number) =>
     (subTarget.value = {
         orderId: props.order.id,
         lineId: l.id,
@@ -110,8 +113,24 @@ const substitute = (l: Line) =>
         pack: l.pack,
         unitPrice: l.unit_price,
         outstanding: l.outstanding,
-        replaceBase: l.outstanding,
+        replaceBase: replaceBase ?? l.outstanding,
     });
+
+// Cancel part of a line, starting from what's oversold.
+const cancelling = ref<Line | null>(null);
+const cancelForm = useForm({ qty: { packs: null, each: null } as PackEntry, reason: '' });
+const startCancel = (l: Line, base: number) => {
+    cancelForm.reset();
+    cancelForm.qty = fromBase(base, l.pack.per);
+    cancelling.value = l;
+};
+const submitCancel = () => {
+    const l = cancelling.value;
+    if (!l) return;
+    cancelForm
+        .transform((d) => ({ packs: d.qty.packs, each: d.qty.each, reason: d.reason }))
+        .post(route('orders.lines.cancel-qty', [props.order.id, l.id]), { preserveScroll: true, onSuccess: () => (cancelling.value = null) });
+};
 const undoSubstitution = (s: Substitution) =>
     confirm(`Undo: put ${s.original.sku} back and remove the ${s.substitute.sku} line?`) &&
     router.post(route('orders.substitutions.undo', [props.order.id, s.id]), {}, { preserveScroll: true });
@@ -197,6 +216,22 @@ const money = (v: string | null) => (v === null ? '—' : `${Number(v) < 0 ? '�
                         <td class="py-2">
                             <span class="font-mono">{{ l.product.sku }}</span> {{ l.product.name }}
                             <div v-if="l.sub_label" class="text-xs font-semibold text-amber-700 dark:text-amber-300">{{ l.sub_label }}</div>
+                            <div v-if="l.oversold" class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                                <span class="rounded bg-red-600 px-1.5 py-0.5 font-semibold text-white">OVERSOLD</span>
+                                <span class="font-medium text-red-700 dark:text-red-300">short {{ l.oversold_label }}</span>
+                                <template v-if="can.manage">
+                                    <button class="underline" @click="substitute(l, l.oversold)">Substitute…</button>
+                                    <button class="underline" @click="startCancel(l, l.oversold)">Cancel line qty</button>
+                                </template>
+                                <Link v-if="can.view_stock" :href="route('stock.show', l.product.id)" class="underline">View stock</Link>
+                            </div>
+                            <form v-if="cancelling?.id === l.id" class="mt-2 flex flex-wrap items-end gap-2 text-xs" novalidate @submit.prevent="submitCancel">
+                                <PackQtyInput v-model="cancelForm.qty" :pack="l.pack" />
+                                <input v-model="cancelForm.reason" type="text" maxlength="255" placeholder="Why (e.g. customer declined)" class="h-8 w-56 rounded-md border bg-background px-2" />
+                                <button type="submit" class="h-8 rounded-md border px-3" :disabled="!cancelForm.reason.trim() || cancelForm.processing">Cancel qty</button>
+                                <button type="button" class="h-8 px-2 underline" @click="cancelling = null">Back</button>
+                                <InputError :message="errors.line" class="w-full" />
+                            </form>
                         </td>
                         <td>
                             <template v-if="l.sub_label">{{ packLabel(l.qty_base, l.pack) }}</template>

@@ -12,7 +12,7 @@ use App\Models\Order;
 class SendPortalCancelEvent extends SendsPortalOrderEvent
 {
     /** @param  list<array{line_ref: string, qty: int|float}>  $lines  sell units cancelled */
-    public function __construct(public int $orderId, public array $lines, public ?string $reason, public string $at) {}
+    public function __construct(public int $orderId, public array $lines, public ?string $reason, public string $at, public ?string $scope = null) {}
 
     protected function order(): ?Order
     {
@@ -26,6 +26,7 @@ class SendPortalCancelEvent extends SendsPortalOrderEvent
 
     protected function idempotencyKey(Order $order): string
     {
-        return "bwms:order-event:{$order->external_ref}:cancelled";
+        // A line cancelled on its own (scope "line-…") has a key of its own; the whole order is cancelled once.
+        return "bwms:order-event:{$order->external_ref}:cancelled".($this->scope ? ":{$this->scope}" : '');
     }
 }

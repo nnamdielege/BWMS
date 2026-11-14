@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  */
 class ReservationService
 {
-    public function __construct(private AvailabilityService $availability) {}
+    public function __construct(private AvailabilityService $availability, private OversoldCheck $oversold) {}
 
     public function syncOrder(Order $order, bool $allowOversell): void
     {
@@ -89,6 +89,8 @@ class ReservationService
                 $order->forceFill(['oversold' => true, 'oversold_at' => $order->oversold_at ?? now()])->save();
                 Audit::record('order_oversold', $order, meta: ['skus' => $oversoldProducts, 'channel' => $order->channel->value]);
                 OrderOversold::dispatch($order->id, $oversoldProducts);
+                // Which lines, and by how much. Other orders' lines follow via StockChanged.
+                $this->oversold->refresh($order, 'oversold');
             }
 
             if ($changed !== []) {

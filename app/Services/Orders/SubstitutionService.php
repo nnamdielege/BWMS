@@ -5,7 +5,6 @@ namespace App\Services\Orders;
 use App\Events\OrderSubstitutionChanged;
 use App\Models\Order;
 use App\Models\OrderLine;
-use App\Models\OrderPack;
 use App\Models\OrderSubstitution;
 use App\Models\PickList;
 use App\Models\PickListLine;
@@ -59,7 +58,7 @@ class SubstitutionService
             $qtyBase = (int) $data['qty_base'];
             $this->assert($qtyBase > 0, 'Enter how much of the substitute.');
 
-            $pickList = $this->takeOffPickList($order, $original, $replace, $shortLine);
+            $pickList = $this->picks->takeOff($order, $original, $replace, $shortLine);
 
             $price = $this->price($original, $replace, $product, $unit->base_qty, $qtyBase, $data);
             $originalValue = OrderSubstitution::value($replace, $original->base_qty_per_unit, $original->unit_price);
@@ -213,56 +212,6 @@ class SubstitutionService
                 ->orWhere(fn ($w) => $w->whereNotNull('undone_at')->whereNotNull('channel_done_at')->whereNull('channel_undo_done_at')))
             ->with(['order:id,number,external_ref', 'originalLine.unit:id,name', 'originalProduct:id,sku,name,base_unit', 'substituteProduct:id,sku,name,base_unit', 'substituteUnit:id,name', 'creator:id,name'])
             ->orderBy('id')->limit(200)->get();
-    }
-
-    /**
-     * The quantity to replace comes off the open pick list the original is on: the short
-     * pick being substituted first, then lines with no stock, then shorts already counted,
-     * then lines not picked yet. Returns that list, which the substitute is then added to.
-     */
-    private function takeOffPickList(Order $order, OrderLine $original, int $replace, ?PickListLine $shortLine): ?PickList
-    {
-        $lines = PickListLine::where('order_line_id', $original->id)->whereHas('pickList', fn ($q) => $q->where('status', PickList::STATUS_OPEN))
-            ->lockForUpdate()->with('pickList')->get();
-        if ($shortLine) {
-            $this->assert($lines->contains('id', $shortLine->id), 'That pick line is not for this order line, or its list is closed.');
-        }
-        if ($lines->isEmpty()) {
-            return null;
-        }
-        $pickList = $lines->first()->pickList;
-        $this->assert(! OrderPack::where('pick_list_id', $pickList->id)->where('order_id', $order->id)->exists(), "{$order->number} is already packed on {$pickList->number}.");
-
-        // Anything of the line not planned on the list (normally nothing) goes first.
-        $left = max(0, $replace - max(0, $original->outstandingBase() - (int) $lines->sum('qty_to_pick_base')));
-        $ordered = $lines->sortBy(fn (PickListLine $l) => [
-            $l->id === $shortLine?->id ? 0 : 1,
-            $l->no_stock ? 0 : 1,
-            $l->qty_picked_base !== null ? 0 : 1,
-            -$l->id,
-        ]);
-        $room = $ordered->sum(fn (PickListLine $l) => $l->qty_to_pick_base - ($l->no_stock ? 0 : (int) $l->qty_picked_base));
-        $this->assert($room >= $left, "Only {$this->label($room, $original)} of this line is still short or unpicked on {$pickList->number}; the rest has been picked.");
-
-        foreach ($ordered as $l) {
-            if ($left <= 0) {
-                break;
-            }
-            $picked = $l->no_stock ? 0 : (int) $l->qty_picked_base;
-            $take = min($left, $l->qty_to_pick_base - $picked);
-            if ($take <= 0) {
-                continue;
-            }
-            $left -= $take;
-            $remaining = $l->qty_to_pick_base - $take;
-            if ($remaining === 0) {
-                $l->delete();
-            } else {
-                $l->forceFill(['qty_to_pick_base' => $remaining])->save();
-            }
-        }
-
-        return $pickList;
     }
 
     /** Per pack of the substitute: as entered, or what keeps the customer's total the same, or the default sell price. */

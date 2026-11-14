@@ -16,7 +16,7 @@ class NotifyPortalOfCancel
             return;
         }
         if (Order::whereKey($event->orderId)->where('channel', OrderChannel::Portal)->exists()) {
-            SendPortalCancelEvent::dispatch($event->orderId, $event->lines, $event->reason, $event->at);
+            SendPortalCancelEvent::dispatch($event->orderId, $event->lines, $event->reason, $event->at, $event->scope);
         }
     }
 }

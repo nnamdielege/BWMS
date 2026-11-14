@@ -481,7 +481,9 @@ Idempotency-Key: bwms:order-event:ORD-7K2M9XQ4LP1A:cancelled
 | `lines[].qty` | Sell units cancelled **by this cancel**, not the line's total. Can be a decimal. Lines with nothing cancelled are left out. |
 | `at` | When it was cancelled, UTC |
 
-Delivery and retries are the same as the table in [11](#11-post-apibwmsv1order-events-order-events). A retry sends exactly the same body. An order is only cancelled once, so there's one of these per order at most.
+Delivery and retries are the same as the table in [11](#11-post-apibwmsv1order-events-order-events). A retry sends exactly the same body. An order is only cancelled once, keyed `bwms:order-event:{ref}:cancelled`.
+
+**Part of one line** (added 2026-11-15): staff can also cancel some of a single line, typically an oversold one the customer no longer wants. That sends the same `cancelled` body with just that line, under a key of its own, `bwms:order-event:{ref}:cancelled:line-{id}-{time}`, so an order can have several. Handle each the same way; the cap below stops any double credit.
 
 **On a `cancelled` event:**
 1. Dedupe on the `Idempotency-Key`.

@@ -53,14 +53,14 @@ class OrderController extends Controller
             ->when(($filters['flag'] ?? null) === 'review', fn ($q) => $q->where('needs_review', true))
             ->when($status === 'active', fn ($q) => $q->whereIn('status', ['open', 'picking', 'partially_dispatched']))
             ->when(! in_array($status, ['active', 'all'], true), fn ($q) => $q->where('status', $status))
-            ->with('deliveryRun.area:id,name,sort_order')
+            ->with(['deliveryRun.area:id,name,sort_order', 'oversoldLines.product:id,sku'])
             ->orderByRaw('delivery_date IS NULL, delivery_date')->latest('id')
             ->paginate(50)->withQueryString()
             ->through(fn (Order $o) => [
                 'id' => $o->id, 'number' => $o->number, 'channel' => $o->channel->value, 'external_ref' => $o->external_ref,
                 'customer' => $o->customer?->name, 'site' => $o->site->name, 'site_id' => $o->site_id,
                 'status' => $o->status->value, 'status_label' => $o->status->label(),
-                'oversold' => $o->oversold, 'needs_review' => $o->needs_review,
+                'oversold' => $o->oversold, 'oversold_skus' => $o->oversoldSkus(), 'needs_review' => $o->needs_review,
                 'delivery_date' => $o->delivery_date?->toDateString(),
                 'moved_from' => $o->original_delivery_date?->toDateString(),
                 'hold' => $o->holdSummary(),
@@ -167,6 +167,10 @@ class OrderController extends Controller
                     'substituted' => $l->qty_substituted_base,
                     'sub_label' => $l->subLabel(),
                     'outstanding' => $l->outstandingBase(),
+                    // Short of stock: shown only while the order is open.
+                    'oversold' => $order->status->isActive() ? $l->oversold_base : 0,
+                    'oversold_label' => $order->status->isActive() && $l->oversold_base > 0
+                        ? PackQty::label($l->oversold_base, $l->base_qty_per_unit, $l->unit->name, $l->product->base_unit) : null,
                 ]),
                 'substitutions' => $subs->map(fn (OrderSubstitution $s) => [
                     'id' => $s->id,
@@ -183,6 +187,7 @@ class OrderController extends Controller
             ],
             'can' => [
                 'manage' => $manage,
+                'view_stock' => $request->user()->can('stock.view'),
                 'release_hold' => $request->user()->can('orders.manage') && $order->payment_hold && $order->status->isActive(),
             ],
             'deliveryAreas' => DeliveryArea::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
@@ -251,10 +256,25 @@ class OrderController extends Controller
         return back()->with('success', "{$order->number} cancelled; reserved stock released.");
     }
 
+    /** Cancel part of one line (an oversold line the customer no longer wants, say). */
+    public function cancelLineQty(Request $request, Order $order, OrderLine $line): RedirectResponse
+    {
+        abort_unless($line->order_id === $order->id, 404);
+        $data = $request->validate([...PackQty::rules(), 'reason' => ['required', 'string', 'max:255']]);
+        try {
+            $this->orders->cancelLineQty($line, PackQty::toBase($data, $line->base_qty_per_unit), $request->user(), $data['reason']);
+        } catch (StockException $e) {
+            throw ValidationException::withMessages(['line' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Line quantity cancelled; its stock is released.');
+    }
+
     /** Acknowledge an oversold / needs-review flag after a human has dealt with it. */
     public function clearFlags(Order $order): RedirectResponse
     {
         $order->forceFill(['oversold' => false, 'needs_review' => false])->save();
+        $order->lines()->where('oversold_base', '>', 0)->update(['oversold_base' => 0]);
 
         return back()->with('success', 'Flags cleared.');
     }

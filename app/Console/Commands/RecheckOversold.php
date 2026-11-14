@@ -6,14 +6,15 @@ use App\Services\Orders\OversoldCheck;
 use Illuminate\Console\Command;
 
 /**
- * One-off: clears oversold flags left from before they re-checked themselves.
+ * One-off: clears oversold flags left from before they re-checked themselves, and fills
+ * in which lines are short (order_lines.oversold_base) on orders flagged before lines were.
  * The same check runs on every stock change from now on.
  */
 class RecheckOversold extends Command
 {
     protected $signature = 'orders:recheck-oversold {--dry-run : List what would be cleared, change nothing}';
 
-    protected $description = 'Clear the oversold flag on open orders that stock now covers';
+    protected $description = 'Clear the oversold flag on open orders that stock now covers, and set how much each line is short';
 
     public function handle(OversoldCheck $check): int
     {

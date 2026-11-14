@@ -24,6 +24,7 @@ interface Row {
     status: string;
     status_label: string;
     oversold: boolean;
+    oversold_skus: string[];
     needs_review: boolean;
     delivery_date: string | null;
     moved_from: string | null;
@@ -121,7 +122,7 @@ const groups = computed(() => dayGroups(props.orders.data, (o) => o.delivery_dat
                         <td>{{ o.run ?? '' }}<span v-if="group.overdue" class="text-muted-foreground"> {{ o.delivery_date }}</span></td>
                         <td>{{ o.status_label }}</td>
                         <td class="space-x-1">
-                            <span v-if="o.oversold" class="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">oversold</span>
+                            <span v-if="o.oversold" class="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">{{ o.oversold_skus.length ? `Oversold: ${o.oversold_skus.join(', ')}` : 'oversold' }}</span>
                             <span v-if="o.needs_review" class="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900" :title="o.review_notes.join(' ')">review</span>
                         </td>
                     </tr>

@@ -10,6 +10,7 @@ use App\Models\DeliveryRun;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\OrderLine;
+use App\Models\OrderPack;
 use App\Models\PickList;
 use App\Models\PickListLine;
 use App\Models\Product;
@@ -117,6 +118,58 @@ class PickListService
         }
 
         return $result['shortfall'];
+    }
+
+    /**
+     * Takes $qty of an order line off the open pick list it's on, when part of it is
+     * substituted or cancelled: the short pick being dealt with first, then lines with no
+     * stock, then shorts already counted, then lines not picked yet. Goods already picked
+     * stay. Returns that list, or null when the line isn't on one.
+     */
+    public function takeOff(Order $order, OrderLine $line, int $qty, ?PickListLine $shortLine = null): ?PickList
+    {
+        $lines = PickListLine::where('order_line_id', $line->id)->whereHas('pickList', fn ($q) => $q->where('status', PickList::STATUS_OPEN))
+            ->lockForUpdate()->with('pickList')->get();
+        if ($shortLine) {
+            $this->assert($lines->contains('id', $shortLine->id), 'That pick line is not for this order line, or its list is closed.');
+        }
+        if ($lines->isEmpty()) {
+            return null;
+        }
+        $pickList = $lines->first()->pickList;
+        $this->assert(! OrderPack::where('pick_list_id', $pickList->id)->where('order_id', $order->id)->exists(), "{$order->number} is already packed on {$pickList->number}.");
+
+        // Anything of the line not planned on the list (normally nothing) goes first.
+        $left = max(0, $qty - max(0, $line->outstandingBase() - (int) $lines->sum('qty_to_pick_base')));
+        $ordered = $lines->sortBy(fn (PickListLine $l) => [
+            $l->id === $shortLine?->id ? 0 : 1,
+            $l->no_stock ? 0 : 1,
+            $l->qty_picked_base !== null ? 0 : 1,
+            -$l->id,
+        ]);
+        $room = $ordered->sum(fn (PickListLine $l) => $l->qty_to_pick_base - ($l->no_stock ? 0 : (int) $l->qty_picked_base));
+        $line->loadMissing(['unit', 'product']);
+        $this->assert($room >= $left, 'Only '.$this->shortLabel($line, $room)." of this line is still short or unpicked on {$pickList->number}; the rest has been picked.");
+
+        foreach ($ordered as $l) {
+            if ($left <= 0) {
+                break;
+            }
+            $picked = $l->no_stock ? 0 : (int) $l->qty_picked_base;
+            $take = min($left, $l->qty_to_pick_base - $picked);
+            if ($take <= 0) {
+                continue;
+            }
+            $left -= $take;
+            $remaining = $l->qty_to_pick_base - $take;
+            if ($remaining === 0) {
+                $l->delete();
+            } else {
+                $l->forceFill(['qty_to_pick_base' => $remaining])->save();
+            }
+        }
+
+        return $pickList;
     }
 
     /**

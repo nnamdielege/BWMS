@@ -11,5 +11,5 @@ class OrderCancelledByStaff implements ShouldDispatchAfterCommit
     use Dispatchable;
 
     /** @param  list<array{line_ref: string, qty: int|float}>  $lines  sell units cancelled */
-    public function __construct(public readonly int $orderId, public readonly array $lines, public readonly ?string $reason, public readonly string $at) {}
+    public function __construct(public readonly int $orderId, public readonly array $lines, public readonly ?string $reason, public readonly string $at, public readonly ?string $scope = null) {}
 }

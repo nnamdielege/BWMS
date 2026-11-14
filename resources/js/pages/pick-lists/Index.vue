@@ -18,6 +18,7 @@ interface Row {
     lines: number;
     created_by: string;
     created_at: string;
+    oversold_skus?: string[];
 }
 
 const props = defineProps<{ view: 'open' | 'history'; open: Row[]; history: Paginated<Row> | null; today: string }>();
@@ -50,6 +51,7 @@ const fmt = (iso: string) => new Date(iso).toLocaleString('en-AU', { timeZone: '
                         <span v-if="group.overdue" class="text-muted-foreground">{{ p.delivery_date }}</span>
                         <span class="rounded bg-muted px-2 py-0.5 text-xs">{{ p.stage.label }}</span>
                         <span class="text-muted-foreground">{{ p.lines }} line(s) · {{ p.created_by }}</span>
+                        <span v-if="p.oversold_skus?.length" class="rounded bg-red-100 px-1.5 py-0.5 text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-200">Oversold: {{ p.oversold_skus.join(', ') }}</span>
                     </li>
                 </ul>
             </section>

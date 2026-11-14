@@ -8,6 +8,7 @@ use App\Events\OrderCancelledByStaff;
 use App\Jobs\SendsPortalOrderEvent;
 use App\Models\Location;
 use App\Models\Order;
+use App\Models\OrderLine;
 use App\Models\PickListLine;
 use App\Models\Product;
 use App\Models\User;
@@ -15,6 +16,7 @@ use App\Services\Delivery\DeliveryScheduler;
 use App\Services\Stock\Exceptions\InvalidMovement;
 use App\Support\Audit;
 use App\Support\NumberSequence;
+use App\Support\PackQty;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -208,6 +210,34 @@ class OrderService
             }
 
             return $order;
+        });
+    }
+
+    /**
+     * Cancels part of one line that isn't dispatched (an oversold line the customer
+     * no longer wants, say) and releases its stock. Taken off an open pick list first:
+     * short and unpicked quantities only, never goods already picked.
+     */
+    public function cancelLineQty(OrderLine $line, int $qtyBase, User $actor, string $reason): OrderLine
+    {
+        return DB::transaction(function () use ($line, $qtyBase, $actor, $reason) {
+            $order = Order::lockForUpdate()->findOrFail($line->order_id);
+            $line = OrderLine::lockForUpdate()->with(['product', 'unit'])->findOrFail($line->id);
+            $this->assert($order->status->isActive(), "{$order->number} is {$order->status->label()}.");
+            $outstanding = $line->outstandingBase();
+            $label = fn (int $base) => PackQty::label($base, $line->base_qty_per_unit, $line->unit->name, $line->product->base_unit);
+            $this->assert($qtyBase > 0 && $qtyBase <= $outstanding, 'Cancel between 1 and '.$label(max(1, $outstanding)).'.');
+
+            app(PickListService::class)->takeOff($order, $line, $qtyBase);
+            $line->forceFill(['qty_cancelled_base' => $line->qty_cancelled_base + $qtyBase])->save();
+            $this->reservations->syncOrder($order, true);
+
+            Audit::record('order_line_qty_cancelled', $order, old: ['outstanding' => $label($outstanding)], new: ['outstanding' => $label($outstanding - $qtyBase)],
+                meta: ['line_id' => $line->id, 'line_ref' => $line->line_ref, 'sku' => $line->product->sku, 'cancelled' => $label($qtyBase), 'reason' => $reason], userId: $actor->id);
+            OrderCancelledByStaff::dispatch($order->id, [['line_ref' => $line->line_ref, 'qty' => SendsPortalOrderEvent::packs($qtyBase, $line->base_qty_per_unit)]],
+                $reason, now()->utc()->format('Y-m-d\TH:i:s\Z'), 'line-'.$line->id.'-'.now()->format('YmdHisv'));
+
+            return $line;
         });
     }
 

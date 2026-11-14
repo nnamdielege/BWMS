@@ -97,6 +97,22 @@ class Order extends Model
         return $this->hasMany(OrderLine::class)->orderBy('sort_order')->orderBy('id');
     }
 
+    /** Lines short of stock (OversoldCheck keeps oversold_base). */
+    public function oversoldLines(): HasMany
+    {
+        return $this->hasMany(OrderLine::class)->where('oversold_base', '>', 0);
+    }
+
+    /** "MLKALM, MLKOAT": the SKUs it's oversold on. Load oversoldLines.product first. @return list<string> */
+    public function oversoldSkus(): array
+    {
+        if (! $this->status->isActive()) {
+            return [];
+        }
+
+        return $this->oversoldLines->map(fn (OrderLine $l) => $l->product->sku)->unique()->sort()->values()->all();
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

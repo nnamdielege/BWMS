@@ -20,6 +20,7 @@ class OrderLine extends Model
             'qty_dispatched_base' => 'integer',
             'qty_cancelled_base' => 'integer',
             'qty_substituted_base' => 'integer',
+            'oversold_base' => 'integer',
             'unit_price' => 'decimal:4',
         ];
     }

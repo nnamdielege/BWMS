@@ -167,6 +167,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::put('orders/{order}/delivery-date', [OrderController::class, 'changeDeliveryDate'])->middleware('can:orders.manage')->name('orders.delivery-date');
     Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->middleware('can:orders.manage')->name('orders.cancel');
     Route::post('orders/{order}/clear-flags', [OrderController::class, 'clearFlags'])->middleware('can:orders.manage')->name('orders.clear-flags');
+    Route::post('orders/{order}/lines/{line}/cancel-qty', [OrderController::class, 'cancelLineQty'])->middleware('can:orders.manage')->name('orders.lines.cancel-qty');
     // Substitutions: managers and admins, from the order page or a short pick on the handheld.
     Route::post('orders/{order}/lines/{line}/substitute', [SubstitutionController::class, 'store'])->middleware('can:orders.manage')->name('orders.substitute');
     Route::post('orders/{order}/substitutions/{substitution}/undo', [SubstitutionController::class, 'undo'])->middleware('can:orders.manage')->name('orders.substitutions.undo');

@@ -17,7 +17,7 @@ type Run = {
     area: string;
     waiting: number;
     active: number;
-    orders: { id: number; number: string; customer: string | null; channel: string; moved_from: string | null; hold: Hold | null }[];
+    orders: { id: number; number: string; customer: string | null; channel: string; moved_from: string | null; hold: Hold | null; oversold_skus: string[] }[];
     held: number;
     waiting_stock: StockWait[];
     lists: { id: number; number: string; claimed_by: string | null; mine: boolean; lines: number; stage: { key: string; label: string } }[];
@@ -60,7 +60,7 @@ const claim = (id: number, takeOver = false) => {
                 <ul v-if="run.orders.length" class="mt-2 space-y-1 text-sm">
                     <li v-for="o in run.orders" :key="o.id" class="flex items-center justify-between gap-2">
                         <span class="min-w-0 truncate"><span class="font-mono">{{ o.number }}</span> {{ o.customer }}</span>
-                        <span class="flex shrink-0 items-center gap-1"><HeldBadge :hold="o.hold" /><MovedBadge :from="o.moved_from" /><SourceBadge :channel="o.channel" /></span>
+                        <span class="flex shrink-0 items-center gap-1"><span v-if="o.oversold_skus.length" class="rounded bg-red-100 px-1.5 text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-200">Oversold: {{ o.oversold_skus.join(', ') }}</span><HeldBadge :hold="o.hold" /><MovedBadge :from="o.moved_from" /><SourceBadge :channel="o.channel" /></span>
                     </li>
                 </ul>
 

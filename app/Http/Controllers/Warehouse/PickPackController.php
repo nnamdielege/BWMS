@@ -56,7 +56,7 @@ class PickPackController extends Controller
             'runs' => $runs->map(function (DeliveryRun $run) {
                 $lists = $run->openPickLists()->with('claimer:id,name')->withCount('lines')->get();
                 $readiness = $this->service->readiness($run);
-                $active = $run->orders()->whereIn('status', self::ACTIVE)->with('customer:id,name')->orderBy('id')->get();
+                $active = $run->orders()->whereIn('status', self::ACTIVE)->with(['customer:id,name', 'oversoldLines.product:id,sku'])->orderBy('id')->get();
 
                 return [
                     'id' => $run->id,
@@ -66,7 +66,7 @@ class PickPackController extends Controller
                     'waiting' => $readiness['ready']->count(),
                     'waiting_stock' => $this->service->stockRows($readiness['waiting']),
                     'active' => $active->count(),
-                    'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(), 'hold' => $o->holdSummary()])->values(),
+                    'orders' => $active->map(fn (Order $o) => ['id' => $o->id, 'number' => $o->number, 'customer' => $o->customer?->name, 'channel' => $o->channel->value, 'moved_from' => $o->original_delivery_date?->toDateString(), 'hold' => $o->holdSummary(), 'oversold_skus' => $o->oversoldSkus()])->values(),
                     'held' => $active->where('payment_hold', true)->count(),
                     'lists' => $lists->map(fn (PickList $l) => [
                         'id' => $l->id, 'number' => $l->number, 'claimed_by' => $l->claimer?->name,

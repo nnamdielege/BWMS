@@ -13,6 +13,8 @@ use App\Support\BusinessDate;
 use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -38,12 +40,30 @@ class PickListController extends Controller
             'today' => BusinessDate::today(),
             'view' => $view,
             'open' => $view === 'open'
-                ? (clone $lists)->where('status', PickList::STATUS_OPEN)->orderByRaw('delivery_date IS NULL, delivery_date')->orderBy('delivery_run_id')->get()->map($row)->values()
+                ? $this->withOversold((clone $lists)->where('status', PickList::STATUS_OPEN)->orderByRaw('delivery_date IS NULL, delivery_date')->orderBy('delivery_run_id')->get()->map($row)->values())
                 : [],
             'history' => $view === 'history'
                 ? $lists->where('status', '!=', PickList::STATUS_OPEN)->latest('id')->paginate(30)->withQueryString()->through($row)
                 : null,
         ]);
+    }
+
+    /** Each open list's orders' oversold SKUs, as on the order flag ("Oversold: MLKALM, MLKOAT"). */
+    private function withOversold(Collection $rows): Collection
+    {
+        $skus = DB::table('pick_list_lines')
+            ->join('order_lines as listed', 'listed.id', '=', 'pick_list_lines.order_line_id')
+            ->join('orders', 'orders.id', '=', 'listed.order_id')
+            ->join('order_lines as short', 'short.order_id', '=', 'orders.id')
+            ->join('products', 'products.id', '=', 'short.product_id')
+            ->whereIn('pick_list_lines.pick_list_id', $rows->pluck('id'))
+            ->where('short.oversold_base', '>', 0)
+            ->whereIn('orders.status', ['open', 'picking', 'partially_dispatched'])
+            ->distinct()->orderBy('products.sku')
+            ->get(['pick_list_lines.pick_list_id', 'products.sku'])
+            ->groupBy('pick_list_id');
+
+        return $rows->map(fn (array $r) => $r + ['oversold_skus' => ($skus[$r['id']] ?? collect())->pluck('sku')->values()->all()]);
     }
 
     public function store(Request $request): RedirectResponse
