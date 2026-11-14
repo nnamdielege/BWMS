@@ -30,6 +30,9 @@ return [
         // not already in BWMS is recorded as ignored_historical and never becomes an order:
         // Ordermentum re-sends old orders whenever their updatedAt changes. Empty = no guard.
         'ingest_since' => env('ORDERMENTUM_INGEST_SINCE', '2026-11-06') ?: null,
+        // Sales history import (channels:ordermentum-history): order statuses that count as sold.
+        // Ordermentum reports finished orders as "Paid" (seen 2026-11-16); cancelled never counts.
+        'history_statuses' => array_filter(array_map('trim', explode(',', (string) env('ORDERMENTUM_HISTORY_STATUSES', 'paid,invoiced,delivered,complete,completed')))),
         // Secret path token. Optional once signatures are verified on a real event (set
         // ORDERMENTUM_WEBHOOK_REQUIRE_TOKEN=false); only honoured while signatures are enforced.
         'webhook_token' => env('ORDERMENTUM_WEBHOOK_TOKEN'),

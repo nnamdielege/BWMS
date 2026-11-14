@@ -43,6 +43,10 @@ class ProductRequest extends FormRequest
             'short_dated_days' => ['nullable', 'integer', 'min:0', 'max:3650'],
             'reorder_point' => ['nullable', 'integer', 'min:0'],
             'reorder_qty' => ['nullable', 'integer', 'min:0'],
+            // Reorder suggestions: the usual supplier, a lead-time override, the supplier's order multiple.
+            'supplier_id' => ['sometimes', 'nullable', 'integer', 'exists:suppliers,id'],
+            'lead_time_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:365'],
+            'order_multiple_base' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:100000'],
             'sell_price' => ['nullable', 'numeric', 'min:0', 'max:9999999'],
             'is_active' => ['boolean'],
             'sell_channels' => ['sometimes', Rule::in(Product::SELL_CHANNELS)],

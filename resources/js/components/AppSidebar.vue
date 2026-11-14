@@ -17,6 +17,7 @@ import {
     Layers,
     LayoutGrid,
     ListChecks,
+    ListRestart,
     MapPin,
     Package,
     RefreshCw,
@@ -58,6 +59,7 @@ const navGroups: NavGroup[] = [
         label: 'Purchasing',
         items: [
             { title: 'Purchase orders', href: '/purchase-orders', icon: FileText, permission: 'purchase_orders.view' },
+            { title: 'Reorder suggestions', href: '/purchasing/reorder', icon: ListRestart, permission: 'purchase_orders.view' },
             { title: 'Suppliers', href: '/suppliers', icon: Truck, permission: 'suppliers.view' },
         ],
     },

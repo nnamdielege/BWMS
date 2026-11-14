@@ -22,7 +22,7 @@ class Product extends Model
     protected $fillable = [
         'sku', 'name', 'description', 'category_id', 'range_id', 'base_unit', 'is_batch_tracked',
         'shelf_life_days', 'short_dated_days', 'reorder_point', 'reorder_qty', 'sell_price', 'is_active',
-        'sell_channels', 'is_stock_tracked', 'is_chilled',
+        'sell_channels', 'is_stock_tracked', 'is_chilled', 'supplier_id', 'lead_time_days', 'order_multiple_base',
     ];
 
     public const SELL_CHANNELS = ['none', 'portal', 'ordermentum', 'both'];
@@ -71,6 +71,12 @@ class Product extends Model
     public function range(): BelongsTo
     {
         return $this->belongsTo(Range::class);
+    }
+
+    /** The usual supplier, for reorder suggestions. */
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
     }
 
     public function units(): HasMany

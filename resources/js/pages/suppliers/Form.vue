@@ -19,6 +19,10 @@ interface Supplier {
     address: string | null;
     payment_terms: string | null;
     lead_time_days: number | null;
+    order_days: string | null;
+    review_period_days: number | null;
+    min_order_value: string | null;
+    moq_packs: number | null;
     notes: string | null;
     is_active: boolean;
 }
@@ -45,9 +49,15 @@ const form = useForm({
     address: s?.address ?? '',
     payment_terms: s?.payment_terms ?? '',
     lead_time_days: s?.lead_time_days ?? null,
+    order_days: (s?.order_days ?? '').split(',').filter(Boolean).map(Number),
+    review_period_days: s?.review_period_days ?? null,
+    min_order_value: s?.min_order_value ?? null,
+    moq_packs: s?.moq_packs ?? null,
     notes: s?.notes ?? '',
     is_active: s?.is_active ?? true,
 });
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const toggleDay = (d: number) => (form.order_days = form.order_days.includes(d) ? form.order_days.filter((x) => x !== d) : [...form.order_days, d].sort((a, b) => a - b));
 const submit = () => (s ? form.put(route('suppliers.update', s.id), { preserveScroll: true }) : form.post(route('suppliers.store')));
 </script>
 
@@ -64,7 +74,27 @@ const submit = () => (s ? form.put(route('suppliers.update', s.id), { preserveSc
                 <div class="grid gap-1"><Label>Order email (POs are sent here)</Label><Input v-model="form.email" type="email" /><InputError :message="form.errors.email" /></div>
                 <div class="grid gap-1"><Label>CC emails (comma-separated)</Label><Input v-model="form.cc_emails" /><InputError :message="form.errors.cc_emails" /></div>
                 <div class="grid gap-1"><Label>Payment terms</Label><Input v-model="form.payment_terms" placeholder="e.g. 30 days EOM" /></div>
-                <div class="grid gap-1"><Label>Lead time (days)</Label><Input v-model.number="form.lead_time_days" type="number" min="0" /></div>
+                <div class="grid gap-1"><Label>Lead time (days)</Label><Input v-model.number="form.lead_time_days" type="number" min="0" /><InputError :message="form.errors.lead_time_days" /></div>
+                <div class="grid gap-1 sm:col-span-2">
+                    <Label>Order days (for reorder suggestions)</Label>
+                    <div class="flex flex-wrap gap-1">
+                        <button
+                            v-for="(d, i) in WEEKDAYS"
+                            :key="d"
+                            type="button"
+                            class="h-8 rounded-md border px-2 text-sm"
+                            :class="{ 'border-primary bg-primary/10 font-semibold': form.order_days.includes(i + 1) }"
+                            @click="toggleDay(i + 1)"
+                        >
+                            {{ d }}
+                        </button>
+                    </div>
+                    <span class="text-xs text-muted-foreground">The days you order from them. Leave empty to use a review period instead.</span>
+                    <InputError :message="form.errors.order_days" />
+                </div>
+                <div class="grid gap-1"><Label>Review period (days)</Label><Input v-model.number="form.review_period_days" type="number" min="0" :disabled="form.order_days.length > 0" placeholder="used without order days" /><InputError :message="form.errors.review_period_days" /></div>
+                <div class="grid gap-1"><Label>Minimum order ($ ex GST)</Label><Input v-model="form.min_order_value" type="number" min="0" step="0.01" /><InputError :message="form.errors.min_order_value" /></div>
+                <div class="grid gap-1"><Label>MOQ per line (supplier packs)</Label><Input v-model.number="form.moq_packs" type="number" min="0" /><InputError :message="form.errors.moq_packs" /></div>
                 <div class="grid gap-1 sm:col-span-2"><Label>Address</Label><textarea v-model="form.address" rows="3" class="rounded-md border bg-background p-2 text-sm" /></div>
                 <div class="grid gap-1 sm:col-span-2"><Label>Notes</Label><textarea v-model="form.notes" rows="2" class="rounded-md border bg-background p-2 text-sm" /></div>
                 <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_active" /> Active</label>

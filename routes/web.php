@@ -22,6 +22,7 @@ use App\Http\Controllers\ProductImportController;
 use App\Http\Controllers\ProductPackController;
 use App\Http\Controllers\Purchasing\PurchaseOrderController;
 use App\Http\Controllers\Purchasing\ReceiptController;
+use App\Http\Controllers\Purchasing\ReorderController;
 use App\Http\Controllers\Purchasing\SupplierController;
 use App\Http\Controllers\RangeController;
 use App\Http\Controllers\Reports\MarginReportController;
@@ -128,6 +129,11 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::post('suppliers', [SupplierController::class, 'store'])->middleware('can:suppliers.manage')->name('suppliers.store');
     Route::get('suppliers/{supplier}/edit', [SupplierController::class, 'edit'])->middleware('can:suppliers.view')->name('suppliers.edit');
     Route::put('suppliers/{supplier}', [SupplierController::class, 'update'])->middleware('can:suppliers.manage')->name('suppliers.update');
+
+    // Reorder suggestions: anyone who sees POs; drafts and settings need purchase_orders.manage.
+    Route::get('purchasing/reorder', [ReorderController::class, 'index'])->middleware('can:purchase_orders.view')->name('reorder.index');
+    Route::put('purchasing/reorder/settings', [ReorderController::class, 'settings'])->middleware('can:purchase_orders.manage')->name('reorder.settings');
+    Route::post('purchasing/reorder/draft', [ReorderController::class, 'draft'])->middleware('can:purchase_orders.manage')->name('reorder.draft');
 
     Route::get('purchase-orders', [PurchaseOrderController::class, 'index'])->middleware('can:purchase_orders.view')->name('purchase-orders.index');
     Route::get('purchase-orders/create', [PurchaseOrderController::class, 'create'])->middleware('can:purchase_orders.manage')->name('purchase-orders.create');

@@ -34,6 +34,9 @@ interface ProductData {
     short_dated_days: number | null;
     reorder_point: number | null;
     reorder_qty: number | null;
+    supplier_id: number | null;
+    lead_time_days: number | null;
+    order_multiple_base: number | null;
     sell_price: string | null;
     is_active: boolean;
     sell_channels: string;
@@ -46,6 +49,7 @@ const props = defineProps<{
     product: ProductData | null;
     categories: { id: number; name: string }[];
     ranges: { id: number; name: string }[];
+    suppliers: { id: number; name: string }[];
     holdsStock?: boolean;
 }>();
 
@@ -71,6 +75,9 @@ const form = useForm({
     short_dated_days: p?.short_dated_days ?? null,
     reorder_point: p?.reorder_point ?? null,
     reorder_qty: p?.reorder_qty ?? null,
+    supplier_id: p?.supplier_id ?? null,
+    lead_time_days: p?.lead_time_days ?? null,
+    order_multiple_base: p?.order_multiple_base ?? null,
     sell_price: p?.sell_price ?? null,
     is_active: p?.is_active ?? true,
     sell_channels: p?.sell_channels ?? 'ordermentum',
@@ -149,6 +156,25 @@ const unitErrors = computed(() =>
                 <div class="grid gap-1">
                     <Label for="reorder_qty">Reorder quantity (base units)</Label>
                     <Input id="reorder_qty" v-model.number="form.reorder_qty" type="number" min="0" />
+                </div>
+                <div class="grid gap-1">
+                    <Label for="supplier_id">Preferred supplier</Label>
+                    <select id="supplier_id" v-model="form.supplier_id" class="h-9 rounded-md border bg-background px-2 text-sm">
+                        <option :value="null">— (use the last PO's)</option>
+                        <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    </select>
+                    <InputError :message="form.errors.supplier_id" />
+                </div>
+                <div class="grid gap-1">
+                    <Label for="lead_time_days">Lead time override (days)</Label>
+                    <Input id="lead_time_days" v-model.number="form.lead_time_days" type="number" min="0" placeholder="the supplier's" />
+                    <InputError :message="form.errors.lead_time_days" />
+                </div>
+                <div class="grid gap-1">
+                    <Label for="order_multiple_base">Supplier pack / order multiple ({{ form.base_unit }})</Label>
+                    <Input id="order_multiple_base" v-model.number="form.order_multiple_base" type="number" min="1" placeholder="the default purchase pack" />
+                    <span class="text-xs text-muted-foreground">Reorder suggestions round up to this.</span>
+                    <InputError :message="form.errors.order_multiple_base" />
                 </div>
                 <div class="grid gap-1">
                     <Label for="sell_price">Default sell price</Label>

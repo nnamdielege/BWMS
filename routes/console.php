@@ -17,6 +17,9 @@ Schedule::command('bwms:check-triggers')->dailyAt('02:10')->timezone($tz);
 Schedule::command('channels:poll-ordermentum')->everyTenMinutes()->withoutOverlapping();
 Schedule::command('channels:ordermentum reconcile')->dailyAt('03:00')->timezone($tz)->withoutOverlapping();
 
+// Reorder summary for managers; does nothing unless switched on in the reorder settings.
+Schedule::command('reorder:daily-email')->dailyAt('07:00')->timezone($tz);
+
 // NFR-12: sync_attempts are kept 90 days.
 Schedule::command('model:prune', ['--model' => [SyncAttempt::class]])->dailyAt('03:30')->timezone($tz);
 

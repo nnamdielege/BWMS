@@ -9,6 +9,7 @@ defineProps<{
         oversold?: { id: number; number: string; channel: string; oversold: boolean; needs_review: boolean }[];
         awaiting_pick?: number;
         overdue_pos?: number;
+        stockout_risk?: number;
         awaiting_putaway?: number;
         sync_failures_24h?: number;
         negative_bins?: { total: number; rows: { product_id: number; sku: string; name: string; on_hand: number; bin: string }[] };
@@ -54,6 +55,11 @@ const dismiss = (id: number) => {
                 <Link v-if="widgets.overdue_pos !== undefined" :href="route('purchase-orders.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Overdue purchase orders</div>
                     <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.overdue_pos }">{{ widgets.overdue_pos }}</div>
+                </Link>
+                <Link v-if="widgets.stockout_risk !== undefined" :href="route('reorder.index', { stockout_only: 1, only_needed: 0 })" class="rounded-lg border p-4 hover:bg-muted">
+                    <div class="text-sm text-muted-foreground">Will run out before their next delivery</div>
+                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.stockout_risk }">{{ widgets.stockout_risk }}</div>
+                    <div class="text-xs text-muted-foreground">{{ widgets.stockout_risk === 1 ? 'product' : 'products' }} · reorder suggestions</div>
                 </Link>
                 <Link v-if="widgets.sync_failures_24h !== undefined" :href="route('sync.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Sync failures (last 24 h)</div>

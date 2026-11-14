@@ -127,6 +127,10 @@ Other inbound behaviour:
    2. Click "Enable all". This queues a forced push of every listing it enables.
    3. Optionally, run `php artisan channels:ordermentum push` to re-send everything.
 
+## Sales history for reorder suggestions
+
+`php artisan channels:ordermentum-history [--dry-run]` reads past orders (read-only) into `sales_history` for [reorder suggestions](REORDER.md). It covers the 12 months up to the day before `ORDERMENTUM_INGEST_SINCE`, and never creates orders or reservations.
+
 ## Short picks
 
 From 2026-11-15, new Ordermentum orders are set to **Cancel the rest**, like portal orders: what isn't picked is cancelled at dispatch and its stock released, not kept on backorder. Orders created before then keep the setting they have.

@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\Range;
 use App\Models\StockBalance;
+use App\Models\Supplier;
 use App\Services\Catalogue\ProductService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -50,6 +51,7 @@ class ProductController extends Controller
             'product' => null,
             'categories' => Category::orderBy('name')->get(['id', 'name']),
             'ranges' => Range::orderBy('name')->get(['id', 'name']),
+            'suppliers' => Supplier::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -67,6 +69,7 @@ class ProductController extends Controller
             'holdsStock' => StockBalance::where('product_id', $product->id)->where('on_hand', '!=', 0)->exists(),
             'categories' => Category::orderBy('name')->get(['id', 'name']),
             'ranges' => Range::orderBy('name')->get(['id', 'name']),
+            'suppliers' => Supplier::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

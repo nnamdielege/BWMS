@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\PurchaseOrder;
 use App\Models\StockBalance;
 use App\Models\SyncAttempt;
+use App\Services\Purchasing\ReorderPlanner;
 use App\Support\BusinessDate;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -34,6 +35,8 @@ class DashboardController extends Controller
         if ($user->can('purchase_orders.view')) {
             $widgets['overdue_pos'] = PurchaseOrder::whereIn('status', ['sent', 'partially_received'])
                 ->whereDate('expected_date', '<', BusinessDate::today())->count();
+            // Reorder suggestions: products that run out before their next delivery could arrive.
+            $widgets['stockout_risk'] = app(ReorderPlanner::class)->stockOutCount();
         }
 
         if ($user->can('stock.view')) {

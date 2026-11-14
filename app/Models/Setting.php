@@ -34,6 +34,36 @@ class Setting extends Model
 
     public const DROP_FREE_DELIVERY_MIN = 'drops.free_delivery_min';
 
+    /**
+     * Reorder suggestions. Safety stock is either days of demand ("days") or
+     * z × demand std-dev × √lead time ("z"). Lead time and review period fall back to
+     * these when a supplier has none. The 7am email is off until switched on.
+     */
+    public const REORDER_SAFETY_MODE = 'reorder.safety_mode';
+
+    public const REORDER_SAFETY_DAYS = 'reorder.safety_days';
+
+    public const REORDER_SAFETY_Z = 'reorder.safety_z';
+
+    public const REORDER_DEFAULT_LEAD_DAYS = 'reorder.default_lead_days';
+
+    public const REORDER_DEFAULT_REVIEW_DAYS = 'reorder.default_review_days';
+
+    public const REORDER_EMAIL = 'reorder.daily_email';
+
+    /** @return array{safety_mode: string, safety_days: float, safety_z: float, default_lead_days: int, default_review_days: int, daily_email: bool} */
+    public static function reorder(): array
+    {
+        return [
+            'safety_mode' => self::get(self::REORDER_SAFETY_MODE, 'days') === 'z' ? 'z' : 'days',
+            'safety_days' => (float) self::get(self::REORDER_SAFETY_DAYS, '3'),
+            'safety_z' => (float) self::get(self::REORDER_SAFETY_Z, '1.65'),
+            'default_lead_days' => (int) self::get(self::REORDER_DEFAULT_LEAD_DAYS, '7'),
+            'default_review_days' => (int) self::get(self::REORDER_DEFAULT_REVIEW_DAYS, '7'),
+            'daily_email' => self::get(self::REORDER_EMAIL, '0') === '1',
+        ];
+    }
+
     public static function dropDeliveryCost(): float
     {
         return (float) self::get(self::DROP_DELIVERY_COST, '30');

@@ -70,9 +70,18 @@ class SupplierController extends Controller
             'address' => ['nullable', 'string', 'max:2000'],
             'payment_terms' => ['nullable', 'string', 'max:100'],
             'lead_time_days' => ['nullable', 'integer', 'min:0', 'max:365'],
+            'order_days' => ['nullable', 'array', 'max:7'],
+            'order_days.*' => ['integer', 'between:1,7', 'distinct'],
+            'review_period_days' => ['nullable', 'integer', 'min:0', 'max:90'],
+            'min_order_value' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
+            'moq_packs' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'is_active' => ['boolean'],
         ]);
+        // Stored as ISO weekdays "1,4".
+        $days = array_map('intval', $data['order_days'] ?? []);
+        sort($days);
+        $data['order_days'] = $days === [] ? null : implode(',', $days);
 
         foreach (array_filter(array_map('trim', explode(',', (string) ($data['cc_emails'] ?? '')))) as $cc) {
             if (! filter_var($cc, FILTER_VALIDATE_EMAIL)) {
