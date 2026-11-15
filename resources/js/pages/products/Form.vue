@@ -216,7 +216,7 @@ const unitErrors = computed(() =>
                     <Label for="sell_price">Default sell price</Label>
                     <Input id="sell_price" v-model="form.sell_price" type="number" min="0" step="0.01" />
                 </div>
-                <div class="flex items-end gap-6">
+                <div class="flex flex-wrap items-end gap-x-6 gap-y-2 sm:col-span-2">
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_active" /> Active</label>
                     <Link
                         v-if="holdsStock && !product?.is_batch_tracked"
