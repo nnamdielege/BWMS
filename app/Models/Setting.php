@@ -51,6 +51,20 @@ class Setting extends Model
 
     public const REORDER_EMAIL = 'reorder.daily_email';
 
+    /** Who gets the 7am reorder email: comma-separated addresses. Not set: config bwms.reorder_email_to. */
+    public const REORDER_EMAIL_TO = 'reorder.email_to';
+
+    /** @return list<string> the valid addresses the 7am reorder email goes to (none if cleared) */
+    public static function reorderEmailTo(): array
+    {
+        $raw = self::get(self::REORDER_EMAIL_TO) ?? (string) config('bwms.reorder_email_to');
+
+        return array_values(array_unique(array_filter(
+            array_map(fn ($a) => strtolower(trim($a)), explode(',', $raw)),
+            fn ($a) => filter_var($a, FILTER_VALIDATE_EMAIL) !== false,
+        )));
+    }
+
     /** @return array{safety_mode: string, safety_days: float, safety_z: float, default_lead_days: int, default_review_days: int, daily_email: bool} */
     public static function reorder(): array
     {

@@ -2,21 +2,19 @@
 
 namespace App\Console\Commands;
 
-use App\Authorization\Permissions;
 use App\Mail\ReorderSummaryMail;
 use App\Models\Setting;
-use App\Models\User;
 use App\Services\Purchasing\ReorderPlanner;
 use App\Support\BusinessDate;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 
-/** Daily at 7am (Brisbane), when switched on in the reorder settings: the summary to managers and admins. */
+/** Daily at 7am (Brisbane), when switched on in the reorder settings: the summary to the recipients in Company settings. */
 class SendReorderSummary extends Command
 {
     protected $signature = 'reorder:daily-email {--force : Send even when the setting is off}';
 
-    protected $description = 'Email managers the reorder suggestions summary';
+    protected $description = 'Email the reorder suggestions summary to the recipients in Company settings';
 
     public function handle(ReorderPlanner $planner): int
     {
@@ -45,16 +43,17 @@ class SendReorderSummary extends Command
             ];
         }
 
-        $to = User::role([Permissions::ROLE_ADMIN, Permissions::ROLE_WAREHOUSE_MANAGER])->where('is_active', true)->pluck('email')->filter()->unique()->values();
+        // Company settings → Reorder email: just the owner unless changed there.
+        $to = collect(Setting::reorderEmailTo());
         if ($to->isEmpty()) {
-            $this->warn('No active managers to email.');
+            $this->warn('No reorder email recipients are set (Company settings).');
 
             return self::SUCCESS;
         }
         foreach ($to as $email) {
             Mail::to($email)->send(new ReorderSummaryMail($suppliers, $stockouts, BusinessDate::today()));
         }
-        $this->info("Sent to {$to->count()} manager(s).");
+        $this->info('Sent to '.$to->implode(', ').'.');
 
         return self::SUCCESS;
     }

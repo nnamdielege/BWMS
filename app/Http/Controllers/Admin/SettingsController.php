@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Mail\TestMail;
 use App\Models\Setting;
+use App\Support\Audit;
 use App\Support\Branding;
 use App\Support\MailHealth;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +22,8 @@ class SettingsController extends Controller
         return Inertia::render('admin/settings/Company', [
             'settings' => collect(Setting::COMPANY_KEYS)->mapWithKeys(fn ($k) => [$k => Setting::get($k, '')]),
             'requireBinScan' => Setting::requiresBinScan(),
+            'reorderEmailTo' => implode(', ', Setting::reorderEmailTo()),
+            'reorderEmailOn' => Setting::reorder()['daily_email'],
             'logo' => ['url' => Branding::logoUrl(), 'uploaded' => Branding::hasUploadedLogo()],
             'mail' => ['mailer' => MailHealth::mailer(), 'problem' => MailHealth::problem(), 'from' => config('mail.from.address')],
             'testEmail' => session('test_email'),
@@ -33,11 +36,26 @@ class SettingsController extends Controller
         $rules['company_name'] = ['required', 'string', 'max:255'];
         $rules['company_email'] = ['nullable', 'email', 'max:255'];
         $rules['require_bin_scan'] = ['sometimes', 'boolean'];
+        $rules['reorder_email_to'] = ['sometimes', 'nullable', 'string', 'max:1000', function (string $attr, mixed $value, \Closure $fail) {
+            foreach (array_filter(array_map('trim', explode(',', (string) $value))) as $address) {
+                if (filter_var($address, FILTER_VALIDATE_EMAIL) === false) {
+                    $fail("\"{$address}\" is not a valid email address.");
+                }
+            }
+        }];
         $data = $request->validate($rules);
 
         Setting::put(collect(Setting::COMPANY_KEYS)->mapWithKeys(fn ($k) => [$k => $data[str_replace('.', '_', $k)] ?? ''])->all());
         if (array_key_exists('require_bin_scan', $data)) {
             Setting::put([Setting::REQUIRE_BIN_SCAN => $data['require_bin_scan'] ? '1' : '0']);
+        }
+        if (array_key_exists('reorder_email_to', $data)) {
+            $to = implode(', ', array_values(array_unique(array_map('strtolower', array_filter(array_map('trim', explode(',', (string) $data['reorder_email_to'])))))));
+            $before = implode(', ', Setting::reorderEmailTo());
+            Setting::put([Setting::REORDER_EMAIL_TO => $to]);
+            if ($to !== $before) {
+                Audit::record('reorder_email_recipients_changed', null, old: ['to' => $before], new: ['to' => $to]);
+            }
         }
 
         return back()->with('success', 'Company details saved.');

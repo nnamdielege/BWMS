@@ -191,13 +191,12 @@ class ReorderTest extends TestCase
         $this->actingAs($this->manager)->get(route('dashboard'))->assertInertia(fn (AssertableInertia $p) => $p->where('widgets.stockout_risk', 1));
     }
 
-    public function test_the_7am_email_goes_to_managers_only_when_switched_on()
+    public function test_the_7am_email_goes_only_to_the_set_recipients_and_only_when_switched_on()
     {
         Mail::fake();
         $this->history($this->milk, 2);
         $this->stockIn($this->milk, 4);
         $admin = $this->userWithRole(Permissions::ROLE_ADMIN);
-        $staff = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
 
         $this->artisan('reorder:daily-email')->assertSuccessful();
         Mail::assertNothingSent();
@@ -205,13 +204,41 @@ class ReorderTest extends TestCase
         $this->actingAs($this->manager)->put(route('reorder.settings'), ['safety_mode' => 'days', 'safety_days' => 3, 'safety_z' => 1.65, 'default_lead_days' => 7, 'default_review_days' => 7, 'daily_email' => true])
             ->assertSessionHasNoErrors();
         $this->assertTrue(Setting::reorder()['daily_email']);
-        $this->artisan('reorder:daily-email')->assertSuccessful();
+        $this->artisan('reorder:daily-email')->expectsOutputToContain('Sent to nnamdi@localselection.com.au.')->assertSuccessful();
 
-        Mail::assertSent(ReorderSummaryMail::class, 2);
-        Mail::assertSent(ReorderSummaryMail::class, fn ($m) => $m->hasTo($this->manager->email) && $m->stockouts === 1 && $m->suppliers[0]['supplier'] === 'Dairy Co');
-        Mail::assertSent(ReorderSummaryMail::class, fn ($m) => $m->hasTo($admin->email));
-        Mail::assertNotSent(ReorderSummaryMail::class, fn ($m) => $m->hasTo($staff->email));
+        // Not set in Company settings: the owner only, never managers or admins by role.
+        Mail::assertSent(ReorderSummaryMail::class, 1);
+        Mail::assertSent(ReorderSummaryMail::class, fn ($m) => $m->hasTo('nnamdi@localselection.com.au') && $m->stockouts === 1 && $m->suppliers[0]['supplier'] === 'Dairy Co');
+        Mail::assertNotSent(ReorderSummaryMail::class, fn ($m) => $m->hasTo($this->manager->email) || $m->hasTo($admin->email));
         $this->assertStringContainsString('Dairy Co', (new ReorderSummaryMail([['supplier' => 'Dairy Co', 'to_order' => 1, 'value' => 36.0, 'min' => 100.0, 'meets_min' => false, 'stockouts' => ['MILK']]], 1, '2026-11-16'))->render());
+    }
+
+    public function test_company_settings_set_the_reorder_email_recipients()
+    {
+        Mail::fake();
+        Setting::put([Setting::REORDER_EMAIL => '1']);
+        $admin = $this->userWithRole(Permissions::ROLE_ADMIN);
+        $company = ['company_name' => 'Local Selection'];
+
+        $this->actingAs($admin)->get(route('admin.settings.edit'))
+            ->assertInertia(fn (AssertableInertia $p) => $p->where('reorderEmailTo', 'nnamdi@localselection.com.au')->where('reorderEmailOn', true));
+
+        $this->actingAs($admin)->put(route('admin.settings.update'), $company + ['reorder_email_to' => 'buyer@example.com, not-an-email'])
+            ->assertSessionHasErrors('reorder_email_to');
+        $this->actingAs($admin)->put(route('admin.settings.update'), $company + ['reorder_email_to' => ' Buyer@Example.com , nnamdi@localselection.com.au, buyer@example.com '])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(['buyer@example.com', 'nnamdi@localselection.com.au'], Setting::reorderEmailTo());
+        $this->artisan('reorder:daily-email')->assertSuccessful();
+        Mail::assertSent(ReorderSummaryMail::class, 2);
+
+        // Cleared: sent to no one, said so.
+        $this->actingAs($admin)->put(route('admin.settings.update'), $company + ['reorder_email_to' => ''])->assertSessionHasNoErrors();
+        $this->assertSame([], Setting::reorderEmailTo());
+        $this->artisan('reorder:daily-email')->expectsOutputToContain('No reorder email recipients')->assertSuccessful();
+        Mail::assertSent(ReorderSummaryMail::class, 2);
+
+        // Managers can't change it: Company settings are admin-only.
+        $this->actingAs($this->manager)->put(route('admin.settings.update'), $company + ['reorder_email_to' => 'x@example.com'])->assertForbidden();
     }
 
     public function test_supplier_and_product_forms_save_the_reorder_fields()

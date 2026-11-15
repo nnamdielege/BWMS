@@ -169,7 +169,7 @@ const saveSettings = () => settingsForm.put(route('reorder.settings'), { preserv
                     <span class="block font-medium">Review period when a supplier has none (days)</span>
                     <input v-model.number="settingsForm.default_review_days" type="number" min="0" class="h-9 w-24 rounded-md border bg-background px-2" />
                 </label>
-                <label class="flex items-center gap-2 self-end"><input v-model="settingsForm.daily_email" type="checkbox" /> Email managers a summary at 7am</label>
+                <label class="flex items-center gap-2 self-end"><input v-model="settingsForm.daily_email" type="checkbox" /> Email the summary at 7am <span class="text-xs text-muted-foreground">(recipients: Company settings)</span></label>
                 <div class="self-end"><Button type="submit" size="sm" :disabled="settingsForm.processing">Save settings</Button></div>
                 <InputError :message="Object.values(settingsForm.errors)[0]" class="sm:col-span-3" />
             </form>

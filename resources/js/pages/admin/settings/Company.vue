@@ -11,6 +11,8 @@ import { ref } from 'vue';
 const props = defineProps<{
     settings: Record<string, string>;
     requireBinScan: boolean;
+    reorderEmailTo: string;
+    reorderEmailOn: boolean;
     logo: { url: string; uploaded: boolean };
     mail: { mailer: string; problem: string | null; from: string | null };
     testEmail: { ok: boolean; to: string; message: string } | null;
@@ -26,6 +28,7 @@ const form = useForm({
     company_delivery_address: props.settings['company.delivery_address'] ?? '',
     po_terms: props.settings['po.terms'] ?? '',
     require_bin_scan: props.requireBinScan,
+    reorder_email_to: props.reorderEmailTo,
 });
 
 const logoForm = useForm<{ logo: File | null }>({ logo: null });
@@ -72,6 +75,15 @@ const sendTest = () =>
                     <span class="block text-muted-foreground">When off, the product scan alone confirms a line. The bin still shows in large letters.</span>
                 </span>
             </label>
+            <div class="grid gap-1">
+                <Label for="reorder_email_to">Reorder email recipients</Label>
+                <Input id="reorder_email_to" v-model="form.reorder_email_to" placeholder="name@example.com, other@example.com" />
+                <span class="text-xs text-muted-foreground">
+                    Who gets the 7am reorder summary, comma-separated. Leave empty to send it to no one.
+                    {{ reorderEmailOn ? '' : 'The email is switched off: turn it on in Reorder suggestions → Settings.' }}
+                </span>
+                <InputError :message="form.errors.reorder_email_to" />
+            </div>
             <Button type="submit" :disabled="form.processing">Save</Button>
         </form>
 

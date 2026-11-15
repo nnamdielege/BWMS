@@ -5,6 +5,9 @@ return [
     // Timestamps are stored in UTC (config/app.php timezone).
     'business_timezone' => env('BWMS_BUSINESS_TIMEZONE', 'Australia/Brisbane'),
 
+    // The 7am reorder email's recipients until someone sets them in Company settings.
+    'reorder_email_to' => env('BWMS_REORDER_EMAIL_TO', 'nnamdi@localselection.com.au'),
+
     // First site seeded on install. More sites are added in the Locations screen.
     'default_site' => [
         'code' => env('BWMS_DEFAULT_SITE_CODE', 'CLONTARF'),
