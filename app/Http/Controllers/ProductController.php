@@ -10,6 +10,7 @@ use App\Models\Range;
 use App\Models\StockBalance;
 use App\Models\Supplier;
 use App\Services\Catalogue\ProductService;
+use App\Services\Catalogue\SellPriceCheck;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,17 +21,22 @@ class ProductController extends Controller
 {
     public function __construct(private ProductService $products) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request, SellPriceCheck $priceCheck): Response
     {
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:active,inactive,all'],
             'range_id' => ['nullable', 'integer'],
             'gst' => ['nullable', 'in:free,taxable'],
+            'check' => ['nullable', 'in:below_cost'],
         ]);
+        // Sell price below cost per pack shows costs, so only to those who may see them (as Product costs).
+        $belowCost = $request->user()->can('reports.view') ? $priceCheck->belowCost() : null;
+        $onlyBelowCost = ($filters['check'] ?? null) === 'below_cost' && $belowCost !== null;
 
         $products = Product::query()
             ->with(['category:id,name', 'range:id,name', 'units:id,product_id,name,base_qty'])
+            ->when($onlyBelowCost, fn ($q) => $q->whereIn('id', array_column($belowCost, 'id')))
             ->search($filters['q'] ?? null)
             ->when($filters['range_id'] ?? null, fn ($q, $r) => $q->where('range_id', $r))
             ->when($filters['gst'] ?? null, fn ($q, $g) => $q->where('gst_free', $g === 'free'))
@@ -44,6 +50,8 @@ class ProductController extends Controller
             'filters' => $filters,
             'ranges' => Range::orderBy('name')->get(['id', 'name']),
             'canManage' => $request->user()->can('create', Product::class),
+            // null: not allowed to see costs. Details only while the list is filtered to them.
+            'priceCheck' => $belowCost === null ? null : ['count' => count($belowCost), 'rows' => $onlyBelowCost ? $belowCost : []],
         ]);
     }
 

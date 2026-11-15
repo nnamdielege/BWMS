@@ -111,6 +111,30 @@ const addUnit = () =>
         barcodes: [],
     });
 const removeUnit = (i: number) => form.units.splice(i, 1);
+
+// The sell price is for one sale pack (as on Ordermentum): the default sale pack, else the largest
+// sellable pack, else the smallest. Same choice as the reports (PackPricing::reportPack).
+const salePack = computed(
+    () =>
+        form.units.find((u) => u.default_sale) ??
+        [...form.units].filter((u) => u.sellable).sort((a, b) => b.base_qty - a.base_qty)[0] ??
+        [...form.units].sort((a, b) => a.base_qty - b.base_qty)[0],
+);
+const salePackLabel = computed(() => {
+    const u = salePack.value;
+    if (!u || !u.name) return form.base_unit || 'unit';
+    return u.base_qty > 1 ? `${u.name} (${u.base_qty})` : u.name;
+});
+// Per base unit, read-only; only worth showing when the sale pack holds more than one. 4 places, trailing zeros past 2 dropped.
+const perUnit = computed(() => {
+    const price = Number(form.sell_price);
+    const qty = salePack.value?.base_qty ?? 1;
+    if (qty <= 1 || !(price > 0)) return null;
+    return (price / qty)
+        .toFixed(4)
+        .replace(/(\.\d\d\d?)0+$/, '$1')
+        .replace(/(\.\d\d)0$/, '$1');
+});
 const addBarcode = (u: UnitInput) => u.barcodes.push('');
 const setDefault = (field: 'default_purchase' | 'default_sale', i: number) => form.units.forEach((u, j) => (u[field] = i === j));
 
@@ -213,8 +237,17 @@ const unitErrors = computed(() =>
                     <InputError :message="form.errors.gst_free" />
                 </div>
                 <div class="grid gap-1">
-                    <Label for="sell_price">Default sell price</Label>
-                    <Input id="sell_price" v-model="form.sell_price" type="number" min="0" step="0.01" />
+                    <Label for="sell_price">Sell price per {{ salePackLabel }}</Label>
+                    <div class="flex items-center gap-3">
+                        <Input id="sell_price" v-model="form.sell_price" type="number" min="0" step="0.01" class="max-w-40" />
+                        <span class="text-sm tabular-nums text-muted-foreground" aria-live="polite">
+                            {{ perUnit !== null ? `= $${perUnit} per ${form.base_unit || 'unit'}` : '' }}
+                        </span>
+                    </div>
+                    <span class="text-xs text-muted-foreground"
+                        >Ex GST, for the whole {{ salePackLabel }} (as Ordermentum's base price), not one {{ form.base_unit || 'unit' }}.</span
+                    >
+                    <InputError :message="form.errors.sell_price" />
                 </div>
                 <div class="flex flex-wrap items-end gap-x-6 gap-y-2 sm:col-span-2">
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_active" /> Active</label>
