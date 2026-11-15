@@ -666,7 +666,7 @@ What to do with them:
 
 - **Only items that need ordering** (ticked to start with) and **Stock-out before next delivery** filter the list.
 - **Create draft PO** on a supplier makes a draft from the quantities on screen.
-- **Settings** (admins, managers, purchasing): safety stock (**Days of demand** or a z-score), the lead time and review period for suppliers that have none, and **Email managers a summary at 7am** (sent to admins and warehouse managers).
+- **Settings** (admins, managers, purchasing): safety stock (**Days of demand** or a z-score), the lead time and review period for suppliers that have none, and **Email the summary at 7am**. It goes only to the addresses in **Company settings → Reorder email recipients** ([13.4](#134-company-settings)).
 
 Sales are what was dispatched in the app, plus sales history brought in from before the app went live, over the last 8 weeks. Recent weeks count more. Days when the product was out of stock are left out, so a stock-out doesn't make it look like it doesn't sell.
 
@@ -1371,6 +1371,7 @@ You can't reset your own two-factor. Ask another admin.
 ![Company settings](img/97-company-settings.png)
 
 1. **Company details** (name, ABN, address, phone, email, default delivery address, PO terms) are printed on purchase orders. The email is the reply-to address for PO emails. Click **Save**.
+   - **Reorder email recipients:** who gets the 7am reorder summary, comma-separated. It starts as the owner only. Leave it empty to send it to no one. The email itself is switched on or off in **Reorder suggestions → Settings**. Changes are in the audit log.
 2. **Logo:** shown on purchase orders, packing slips, bin labels and emails.
    - Choose a PNG or JPEG of up to 1 MB. A square image of at least 300 px prints best.
    - Click **Upload logo**.
