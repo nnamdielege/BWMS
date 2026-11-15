@@ -230,6 +230,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::post('delivery-areas', [DeliveryAreaController::class, 'store'])->middleware('can:settings.manage')->name('delivery-areas.store');
         Route::put('delivery-areas/{area}', [DeliveryAreaController::class, 'update'])->middleware('can:settings.manage')->name('delivery-areas.update');
         Route::put('settings', [SettingsController::class, 'update'])->middleware('can:settings.manage')->name('settings.update');
+        Route::post('settings/test-email', [SettingsController::class, 'testEmail'])->middleware('can:settings.manage')->name('settings.test-email');
         Route::post('settings/logo', [SettingsController::class, 'storeLogo'])->middleware('can:settings.manage')->name('settings.logo.store');
         Route::delete('settings/logo', [SettingsController::class, 'destroyLogo'])->middleware('can:settings.manage')->name('settings.logo.destroy');
 

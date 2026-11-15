@@ -28,7 +28,7 @@ type Listing = {
 type Suggestion = { id: number; sku: string; name: string; units: { id: number; name: string; base_qty: number; sellable: boolean }[] };
 
 type Props = {
-    switches: { push_enabled: boolean; ingest_enabled: boolean; webhook_configured: boolean; api_key_set: boolean; signature_mode: string; variant_fields: string[]; variant_confirmed: boolean };
+    switches: { push_enabled: boolean; ingest_enabled: boolean; webhook_configured: boolean; api_key_set: boolean; signature_mode: string; variant_fields: string[]; variant_confirmed: boolean; mail_problem: string | null };
     health: { last_push_ok: string | null; last_order_ok: string | null; failures_24h: number; queue_depth: number; listings: number; listings_enabled: number };
     failures: Listing[];
     mismatches: Listing[];
@@ -150,6 +150,9 @@ const submitMap = () => {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex flex-col gap-6 p-4">
+            <p v-if="switches.mail_problem" class="rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:bg-red-950 dark:text-red-200" role="alert">
+                {{ switches.mail_problem }}
+            </p>
             <section class="grid gap-3 md:grid-cols-4">
                 <div class="rounded-lg border p-3">
                     <div class="text-sm text-muted-foreground">Stock push</div>

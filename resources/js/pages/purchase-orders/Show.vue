@@ -83,6 +83,11 @@ const closeShort = () => {
 };
 const retry = (id: number) => router.post(route('purchase-orders.email.retry', [props.po.id, id]), {}, { preserveScroll: true });
 const isDraftOrSent = computed(() => ['draft', 'sent'].includes(props.po.status));
+// Emails come newest first. A failed attempt shows its reason at once, also while it is being retried.
+const lastEmail = computed(() => props.po.emails[0] ?? null);
+const lastEmailFailed = computed(() => !!lastEmail.value && lastEmail.value.status !== 'sent' && !!lastEmail.value.error);
+const emailStatus = (e: { status: string; error: string | null }) =>
+    e.status === 'sent' ? 'sent' : e.error ? `failed: ${e.error}${e.status === 'queued' ? ' (retrying automatically)' : ''}` : e.status;
 </script>
 
 <template>
@@ -105,6 +110,10 @@ const isDraftOrSent = computed(() => ['draft', 'sent'].includes(props.po.status)
                 </div>
             </header>
             <InputError :message="errors.po" />
+            <div v-if="lastEmailFailed && lastEmail" class="flex flex-wrap items-center gap-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
+                <span class="font-semibold">Email to {{ lastEmail.to }} {{ emailStatus(lastEmail) }}</span>
+                <Button v-if="lastEmail.status === 'failed' && can.manage" size="sm" variant="outline" class="ml-auto" @click="retry(lastEmail.id)">Retry</Button>
+            </div>
 
             <form v-if="showEmail" class="max-w-2xl space-y-2 rounded-lg border p-4" @submit.prevent="sendEmail">
                 <p class="text-sm text-muted-foreground">The PDF is attached automatically. {{ po.status === 'draft' ? 'Sending marks this PO as sent.' : '' }}</p>
@@ -179,7 +188,7 @@ const isDraftOrSent = computed(() => ['draft', 'sent'].includes(props.po.status)
                         <tr v-for="e in po.emails" :key="e.id" class="border-b">
                             <td class="py-1">{{ fmt(e.created_at) }}</td>
                             <td>{{ e.to }}<span v-if="e.cc" class="text-muted-foreground"> (cc {{ e.cc }})</span></td>
-                            <td :class="{ 'text-red-600': e.status === 'failed', 'text-green-700': e.status === 'sent' }">{{ e.status }}{{ e.error ? `: ${e.error}` : '' }}</td>
+                            <td :class="{ 'text-red-600': e.status !== 'sent' && e.error, 'text-green-700': e.status === 'sent' }">{{ emailStatus(e) }}</td>
                             <td>{{ e.queued_by }}</td>
                             <td class="text-right"><Button v-if="e.status === 'failed' && can.manage" size="sm" variant="outline" @click="retry(e.id)">Retry</Button></td>
                         </tr>

@@ -7,6 +7,7 @@ use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PurchaseOrder extends Model
 {
@@ -51,6 +52,11 @@ class PurchaseOrder extends Model
     public function emails(): HasMany
     {
         return $this->hasMany(PurchaseOrderEmail::class)->latest('id');
+    }
+
+    public function latestEmail(): HasOne
+    {
+        return $this->hasOne(PurchaseOrderEmail::class)->latestOfMany();
     }
 
     public function creator(): BelongsTo

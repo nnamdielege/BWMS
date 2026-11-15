@@ -37,7 +37,7 @@ class PurchaseOrderController extends Controller
         ]);
         $status = $filters['status'] ?? 'open';
 
-        $orders = PurchaseOrder::with(['supplier:id,name', 'site:id,code,name'])
+        $orders = PurchaseOrder::with(['supplier:id,name', 'site:id,code,name', 'latestEmail'])
             ->when($filters['q'] ?? null, fn ($q, $t) => $q->where('number', 'like', "%{$t}%"))
             ->when($filters['supplier_id'] ?? null, fn ($q, $s) => $q->where('supplier_id', $s))
             ->when($status === 'open', fn ($q) => $q->whereIn('status', ['draft', 'sent', 'partially_received']))
@@ -55,6 +55,8 @@ class PurchaseOrderController extends Controller
                 'overdue' => $po->status->canReceive() && $po->expected_date && $po->expected_date->toDateString() < BusinessDate::today(),
                 'total' => $po->total,
                 'legacy' => $po->legacy_id !== null,
+                // The latest email's failure reason (also while it is still being retried).
+                'email_error' => $po->latestEmail && $po->latestEmail->status !== 'sent' ? $po->latestEmail->error : null,
             ]);
 
         return Inertia::render('purchase-orders/Index', [

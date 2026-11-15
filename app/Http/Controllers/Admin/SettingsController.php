@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Mail\TestMail;
 use App\Models\Setting;
 use App\Support\Branding;
+use App\Support\MailHealth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class SettingsController extends Controller
 {
@@ -18,6 +22,8 @@ class SettingsController extends Controller
             'settings' => collect(Setting::COMPANY_KEYS)->mapWithKeys(fn ($k) => [$k => Setting::get($k, '')]),
             'requireBinScan' => Setting::requiresBinScan(),
             'logo' => ['url' => Branding::logoUrl(), 'uploaded' => Branding::hasUploadedLogo()],
+            'mail' => ['mailer' => MailHealth::mailer(), 'problem' => MailHealth::problem(), 'from' => config('mail.from.address')],
+            'testEmail' => session('test_email'),
         ]);
     }
 
@@ -35,6 +41,34 @@ class SettingsController extends Controller
         }
 
         return back()->with('success', 'Company details saved.');
+    }
+
+    /**
+     * Sends a test email to the logged-in user right now (not queued), so the result, or the
+     * mail server's exact error, shows on the page. A non-delivering mailer counts as a failure.
+     */
+    public function testEmail(Request $request): RedirectResponse
+    {
+        $to = $request->user()->email;
+        $mailer = MailHealth::mailer();
+        if (MailHealth::nonDelivering()) {
+            return $this->testResult(false, $to, "Not sent: MAIL_MAILER is \"{$mailer}\", which does not deliver email. Set MAIL_MAILER and the SMTP settings in .env, then clear the config cache.");
+        }
+
+        try {
+            Mail::to($to)->send(new TestMail($mailer, now(config('bwms.business_timezone'))->format('j M Y H:i')));
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->testResult(false, $to, trim($e->getMessage()) ?: class_basename($e));
+        }
+
+        return $this->testResult(true, $to, "Test email sent to {$to} via \"{$mailer}\". Check that inbox (and spam) to confirm it arrived.");
+    }
+
+    private function testResult(bool $ok, string $to, string $message): RedirectResponse
+    {
+        return back()->with('test_email', ['ok' => $ok, 'to' => $to, 'message' => mb_substr($message, 0, 2000)]);
     }
 
     public function storeLogo(Request $request): RedirectResponse

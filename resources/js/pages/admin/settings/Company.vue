@@ -6,8 +6,15 @@ import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
-const props = defineProps<{ settings: Record<string, string>; requireBinScan: boolean; logo: { url: string; uploaded: boolean } }>();
+const props = defineProps<{
+    settings: Record<string, string>;
+    requireBinScan: boolean;
+    logo: { url: string; uploaded: boolean };
+    mail: { mailer: string; problem: string | null; from: string | null };
+    testEmail: { ok: boolean; to: string; message: string } | null;
+}>();
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Company settings', href: '/admin/settings' }];
 
 const form = useForm({
@@ -24,6 +31,10 @@ const form = useForm({
 const logoForm = useForm<{ logo: File | null }>({ logo: null });
 const uploadLogo = () => logoForm.post(route('admin.settings.logo.store'), { preserveScroll: true, onSuccess: () => logoForm.reset() });
 const removeLogo = () => router.delete(route('admin.settings.logo.destroy'), { preserveScroll: true });
+
+const testing = ref(false);
+const sendTest = () =>
+    router.post(route('admin.settings.test-email'), {}, { preserveScroll: true, onStart: () => (testing.value = true), onFinish: () => (testing.value = false) });
 </script>
 
 <template>
@@ -83,5 +94,28 @@ const removeLogo = () => router.delete(route('admin.settings.logo.destroy'), { p
                 <Button v-if="logo.uploaded" type="button" variant="outline" @click="removeLogo">Use the bundled logo</Button>
             </div>
         </form>
+
+        <section class="max-w-2xl space-y-3 border-t p-4">
+            <h2 class="font-semibold">Email</h2>
+            <p
+                v-if="mail.problem"
+                class="rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:bg-red-950 dark:text-red-200"
+                role="alert"
+            >
+                {{ mail.problem }}
+            </p>
+            <p class="text-sm text-muted-foreground">
+                Mailer "{{ mail.mailer }}"{{ mail.from ? `, from ${mail.from}` : '' }}. Send a test to yourself to check that supplier emails will be delivered.
+            </p>
+            <Button type="button" variant="outline" :disabled="testing" @click="sendTest">{{ testing ? 'Sending…' : 'Send test email' }}</Button>
+            <p
+                v-if="testEmail"
+                class="rounded-lg border p-3 text-sm break-words"
+                :class="testEmail.ok ? 'border-green-300 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200' : 'border-red-300 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200'"
+                role="status"
+            >
+                <span class="font-semibold">{{ testEmail.ok ? 'Sent.' : `Failed to send to ${testEmail.to}:` }}</span> {{ testEmail.message }}
+            </p>
+        </section>
     </AppLayout>
 </template>

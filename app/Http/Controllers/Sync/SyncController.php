@@ -14,6 +14,7 @@ use App\Models\Product;
 use App\Models\SyncAttempt;
 use App\Services\Orders\SubstitutionService;
 use App\Support\Audit;
+use App\Support\MailHealth;
 use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,6 +48,7 @@ class SyncController extends Controller
                 'signature_mode' => config('bwms.ordermentum.webhook_signature.mode'),
                 'variant_fields' => config('bwms.ordermentum.order_mapping.variant'),
                 'variant_confirmed' => in_array(config('bwms.ordermentum.order_mapping.variant')[0] ?? null, config('bwms.ordermentum.order_mapping.variant_confirmed'), true),
+                'mail_problem' => MailHealth::problem(),
             ],
             'health' => [
                 'last_push_ok' => SyncAttempt::where('channel', self::CHANNEL)->where('operation', 'push')->where('success', true)->max('created_at'),

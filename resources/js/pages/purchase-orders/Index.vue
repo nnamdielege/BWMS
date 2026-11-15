@@ -10,6 +10,7 @@ import { reactive } from 'vue';
 interface Row {
     id: number;
     number: string;
+    email_error: string | null;
     status: string;
     status_label: string;
     supplier: string;
@@ -78,6 +79,7 @@ const badge: Record<string, string> = {
                         <td>
                             <span class="rounded px-2 py-0.5 text-xs" :class="badge[o.status]">{{ o.status_label }}</span>
                             <span v-if="o.legacy" class="ml-1 text-xs text-muted-foreground">legacy</span>
+                            <span v-if="o.email_error" class="ml-1 text-xs font-semibold text-red-600" :title="o.email_error">email failed</span>
                         </td>
                         <td class="text-right tabular-nums">${{ Number(o.total).toFixed(2) }}</td>
                     </tr>
