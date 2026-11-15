@@ -120,6 +120,8 @@ async function login(page, email, { secret, shootChallenge } = {}) {
 
     await page.goto(`${BASE}/products`);
     await shot(page, '20-products');
+    await page.goto(`${BASE}/products?check=below_cost&status=active`);
+    await shot(page, '20b-sell-price-check');
     const productId = lookup('id', 'products', 'sku', 'HCB-ORIG-250');
     await page.goto(`${BASE}/products/${productId}/edit`);
     await shot(page, '21-product-form', { fullPage: true });

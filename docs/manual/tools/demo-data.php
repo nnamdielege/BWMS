@@ -171,6 +171,11 @@ foreach ($P as $prod) {
         $prod->update(['sell_price' => round((float) $prod->sell_price * $sale->base_qty, 2)]);
     }
 }
+// One price typed per bottle by mistake ($7.90 for a Case of 6 that costs $24.60), so the sell price
+// check on Products has something to show. Not on any PO, so it doesn't skew other screens.
+$vanilla = $product(['sku' => 'SYR-VAN-750', 'name' => 'Vanilla Syrup 750 ml', 'category_id' => $cats['syrup']->id, 'base_unit' => 'bottle',
+    'sell_price' => '7.90', 'sell_channels' => 'ordermentum'], [['Bottle', 1, [], false, false], ['Case', 6, [], true, true]]);
+$vanilla->forceFill(['avg_cost' => '4.1000'])->save();
 
 // --- Suppliers and purchase orders ------------------------------------------------
 // Fresh milk and juice are GST-free: their PO lines start at 0% GST.

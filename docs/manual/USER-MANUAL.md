@@ -108,11 +108,11 @@ An admin can also do everything a warehouse manager can.
 
 ## Weekly purchasing routine
 
-For whoever does the buying (purchasing, warehouse managers, admins). The detail is in [6](#6-purchasing-and-receiving).
+For whoever does the buying (purchasing, warehouse managers, admins). The owner sets each week's budget; the rest is shared. The detail is in [6](#6-purchasing-and-receiving).
 
 **Monday morning**
 
-1. **Check this week's budget.** **Purchasing → Budgets**. If the week says "auto-estimate – check against Xero", compare it with last week's customer receipts in Xero, then click **Edit** and correct it ([6.7](#67-budgets)).
+1. **Check this week's budget is set.** **Purchasing → Budgets** ([6.7](#67-budgets)). The owner sets it each week from Xero receipts. If it still says "auto-estimate – check against Xero", it hasn't been checked yet: ask before approving large orders.
 2. **Review the suggested POs.** At 6 am every Monday the app drafts one suggested PO per supplier from what's been selling. Open **Purchase orders**, choose the **Suggested** status, and open each one ([6.6](#66-suggested-pos-and-reorder-suggestions)).
    - Change quantities with **Edit** if you know something the sales history doesn't (a promotion, a closure, a new café).
    - An amber note means the PO is below the supplier's minimum order. Add to it or wait a week.
@@ -312,7 +312,11 @@ Managers and admins see **New product** and **Edit**. Everyone else sees **View*
    - **Range** (optional): see [4.2](#42-ranges).
    - **Base unit:** what one stock unit is, for example "can" or "bottle".
    - **Description**, **Reorder point** and **Reorder quantity** (in base units).
-   - **Default sell price:** ex GST, for the product's **default sale pack** (the pack ticked **Default for sales**), for example the price of a Carton of 24, not of one can. Reports and the GM % on purchase orders read it that way.
+   - **Sell price per** (pack): ex GST, for the whole sale pack, the same as Ordermentum's base price. The label names the pack, for example **Sell price per Case (12)**: it's the pack ticked **Default for sales**, else the largest sellable pack. The price per base unit shows beside it, for example "= $3.20 per can", so you can check it. Reports, Cash out and the GM % on purchase orders all read it this way.
+
+**Sell price check.** Above the product list, an amber note counts active products whose sell price is less than one sale pack costs. That almost always means the price was typed per unit (per can, not per Case). Click **Show them** to see each one with its cost per pack and what the price would be if the figure was per unit, then **Fix** to open the product. The note and the list are only shown to roles that can see costs.
+
+![Sell price check](img/20b-sell-price-check.png)
 3. Set the flags ([4.4](#44-flags-and-sell-channels)) and the purchasing fields ([4.4a](#44a-purchasing-fields)).
 4. Set up the pack sizes and barcodes ([4.3](#43-pack-sizes-and-barcodes)).
 5. Click **Create product** or **Save**.
@@ -662,7 +666,7 @@ What to do with them:
 
 - **Only items that need ordering** (ticked to start with) and **Stock-out before next delivery** filter the list.
 - **Create draft PO** on a supplier makes a draft from the quantities on screen.
-- **Settings** (admins, managers, purchasing): safety stock (**Days of demand** or a z-score), the lead time and review period for suppliers that have none, and **Email managers a summary at 7am**.
+- **Settings** (admins, managers, purchasing): safety stock (**Days of demand** or a z-score), the lead time and review period for suppliers that have none, and **Email managers a summary at 7am** (sent to admins and warehouse managers).
 
 Sales are what was dispatched in the app, plus sales history brought in from before the app went live, over the last 8 weeks. Recent weeks count more. Days when the product was out of stock are left out, so a stock-out doesn't make it look like it doesn't sell.
 
@@ -1385,7 +1389,7 @@ Filter by event (for example `roles_changed`) or subject (for example `User`).
 
 ## 14. Reports
 
-For admins and warehouse managers, under **Reports** in the menu. All money is ex GST.
+For admins and warehouse managers, under **Reports** in the menu; the drop reports are mainly for the owner. All money is ex GST.
 
 ### 14.1 Stock value & margin
 
@@ -1480,7 +1484,7 @@ Only approved POs have a payment due date. Drafts and suggested POs aren't shown
 Change the **GST %** on the line while it's a draft. To fix it for good, tick or untick **GST-free** on the product ([4.4](#44-flags-and-sell-channels)).
 
 **GM % on a PO line looks far too low (or negative).**
-The product's **Default sell price** is probably for one unit while its default sale pack is a carton. Enter the price of the default sale pack ([4.1](#41-create-or-edit-a-product)).
+The product's sell price was probably entered per unit instead of per sale pack. Check **Products** for the amber sell price note, or the label on the product (**Sell price per Case (12)**, for example), and enter the price of the whole pack ([4.1](#41-create-or-edit-a-product)).
 
 **Leave this screen? keeps appearing on the handheld.**
 You have lines left to pick. Tap **Stay** and finish, or **Leave**: the list stays yours ([10.1](#101-before-you-start)).
