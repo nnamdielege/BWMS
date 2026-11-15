@@ -26,12 +26,14 @@ class ProductController extends Controller
             'q' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:active,inactive,all'],
             'range_id' => ['nullable', 'integer'],
+            'gst' => ['nullable', 'in:free,taxable'],
         ]);
 
         $products = Product::query()
             ->with(['category:id,name', 'range:id,name', 'units:id,product_id,name,base_qty'])
             ->search($filters['q'] ?? null)
             ->when($filters['range_id'] ?? null, fn ($q, $r) => $q->where('range_id', $r))
+            ->when($filters['gst'] ?? null, fn ($q, $g) => $q->where('gst_free', $g === 'free'))
             ->when(($filters['status'] ?? 'active') !== 'all', fn ($q) => $q->where('is_active', ($filters['status'] ?? 'active') === 'active'))
             ->orderBy('name')
             ->paginate(50)
@@ -89,7 +91,7 @@ class ProductController extends Controller
             Product::search($q)->where('is_active', true)
                 ->with('units:id,product_id,name,base_qty,purchasable,sellable,default_purchase,default_sale')
                 ->orderBy('name')->limit(20)
-                ->get(['id', 'sku', 'name', 'base_unit', 'avg_cost', 'sell_price', 'is_batch_tracked']),
+                ->get(['id', 'sku', 'name', 'base_unit', 'avg_cost', 'sell_price', 'is_batch_tracked', 'gst_free']),
         );
     }
 

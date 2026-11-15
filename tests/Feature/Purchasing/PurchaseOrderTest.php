@@ -78,6 +78,8 @@ class PurchaseOrderTest extends TestCase
         $this->actingAs($buyer)->post(route('purchase-orders.store'), $this->payload($supplier, $product));
         $po = PurchaseOrder::sole();
 
+        $this->actingAs($buyer)->post(route('purchase-orders.sent', $po))->assertSessionHasErrors('po'); // not approved yet
+        $this->actingAs($buyer)->post(route('purchase-orders.approve', $po), ['override' => true, 'override_reason' => 'No budget set yet'])->assertSessionHasNoErrors();
         $this->actingAs($buyer)->post(route('purchase-orders.sent', $po))->assertSessionHasNoErrors();
         $this->actingAs($buyer)->put(route('purchase-orders.update', $po), $this->payload($supplier, $product))->assertSessionHasErrors('po');
 
@@ -93,6 +95,7 @@ class PurchaseOrderTest extends TestCase
         $product = Product::factory()->withPack('Carton', 12)->create();
         $this->actingAs($buyer)->post(route('purchase-orders.store'), $this->payload($supplier, $product));
         $po = PurchaseOrder::sole();
+        $this->actingAs($buyer)->post(route('purchase-orders.approve', $po), ['override' => true, 'override_reason' => 'No budget set yet'])->assertSessionHasNoErrors();
 
         $this->actingAs($buyer)->post(route('purchase-orders.email', $po), [
             'to' => 'orders@supplier.test', 'cc' => 'boss@supplier.test', 'subject' => "Purchase order {$po->number}",

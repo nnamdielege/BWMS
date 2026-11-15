@@ -11,12 +11,15 @@ class Supplier extends Model
 {
     use Auditable, HasFactory;
 
-    protected $fillable = ['code', 'name', 'contact_name', 'email', 'cc_emails', 'phone', 'address', 'payment_terms', 'lead_time_days',
+    protected $fillable = ['code', 'name', 'contact_name', 'email', 'cc_emails', 'phone', 'address', 'payment_terms', 'payment_terms_days', 'lead_time_days',
         'order_days', 'review_period_days', 'min_order_value', 'moq_packs', 'notes', 'is_active'];
+
+    /** Same default as the column (COD). */
+    protected $attributes = ['payment_terms_days' => 0];
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean', 'lead_time_days' => 'integer', 'review_period_days' => 'integer', 'min_order_value' => 'decimal:2', 'moq_packs' => 'integer'];
+        return ['is_active' => 'boolean', 'lead_time_days' => 'integer', 'payment_terms_days' => 'integer', 'review_period_days' => 'integer', 'min_order_value' => 'decimal:2', 'moq_packs' => 'integer'];
     }
 
     /** ISO weekdays it's ordered on (1 = Mon … 7 = Sun), sorted. @return list<int> */

@@ -20,6 +20,9 @@ Schedule::command('channels:ordermentum reconcile')->dailyAt('03:00')->timezone(
 // Reorder summary for managers; does nothing unless switched on in the reorder settings.
 Schedule::command('reorder:daily-email')->dailyAt('07:00')->timezone($tz);
 
+// Suggested POs, one per supplier, ready for Monday's purchasing.
+Schedule::command('purchasing:suggest')->weeklyOn(1, '06:00')->timezone($tz)->withoutOverlapping();
+
 // NFR-12: sync_attempts are kept 90 days.
 Schedule::command('model:prune', ['--model' => [SyncAttempt::class]])->dailyAt('03:30')->timezone($tz);
 

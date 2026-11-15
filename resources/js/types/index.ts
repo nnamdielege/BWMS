@@ -62,3 +62,14 @@ export interface Paginated<T> {
 }
 
 export type BreadcrumbItemType = BreadcrumbItem;
+
+/** A week's purchasing budget position (PurchasingBudgetService::summary/check), ex GST. */
+export interface BudgetSummary {
+    week_start: string;
+    week_end: string;
+    budget: number | null;
+    committed: number;
+    remaining: number;
+    po_total?: number;
+    over?: boolean;
+}

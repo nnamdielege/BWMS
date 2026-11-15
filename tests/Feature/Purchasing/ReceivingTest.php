@@ -49,7 +49,7 @@ class ReceivingTest extends TestCase
             'lines' => [['product_id' => $product->id, 'product_unit_id' => ProductFactory::unitOf($product, 12)->id, 'qty_ordered' => $cartons, 'unit_cost' => '24.00']],
         ], $this->buyer);
 
-        return $service->markSent($po, $this->buyer);
+        return $service->markSent($service->approve($po, $this->buyer, true, 'test: no budget'), $this->buyer);
     }
 
     private function receive(PurchaseOrder $po, array $line, array $extra = [], ?User $as = null)

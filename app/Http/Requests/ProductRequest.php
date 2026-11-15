@@ -47,6 +47,10 @@ class ProductRequest extends FormRequest
             'supplier_id' => ['sometimes', 'nullable', 'integer', 'exists:suppliers,id'],
             'lead_time_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:365'],
             'order_multiple_base' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:100000'],
+            // Overrides the reorder settings' safety days; auto_reorder off keeps it off suggested POs.
+            'safety_stock_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:365'],
+            'auto_reorder' => ['sometimes', 'boolean'],
+            'gst_free' => ['sometimes', 'boolean'],
             'sell_price' => ['nullable', 'numeric', 'min:0', 'max:9999999'],
             'is_active' => ['boolean'],
             'sell_channels' => ['sometimes', Rule::in(Product::SELL_CHANNELS)],

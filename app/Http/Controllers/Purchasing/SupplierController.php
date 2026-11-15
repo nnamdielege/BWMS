@@ -69,6 +69,7 @@ class SupplierController extends Controller
             'phone' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string', 'max:2000'],
             'payment_terms' => ['nullable', 'string', 'max:100'],
+            'payment_terms_days' => ['sometimes', 'integer', 'min:0', 'max:365'],
             'lead_time_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'order_days' => ['nullable', 'array', 'max:7'],
             'order_days.*' => ['integer', 'between:1,7', 'distinct'],

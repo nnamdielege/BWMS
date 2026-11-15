@@ -37,6 +37,9 @@ interface ProductData {
     supplier_id: number | null;
     lead_time_days: number | null;
     order_multiple_base: number | null;
+    safety_stock_days: number | null;
+    auto_reorder: boolean;
+    gst_free: boolean;
     sell_price: string | null;
     is_active: boolean;
     sell_channels: string;
@@ -78,6 +81,9 @@ const form = useForm({
     supplier_id: p?.supplier_id ?? null,
     lead_time_days: p?.lead_time_days ?? null,
     order_multiple_base: p?.order_multiple_base ?? null,
+    safety_stock_days: p?.safety_stock_days ?? null,
+    auto_reorder: p?.auto_reorder ?? true,
+    gst_free: p?.gst_free ?? false,
     sell_price: p?.sell_price ?? null,
     is_active: p?.is_active ?? true,
     sell_channels: p?.sell_channels ?? 'ordermentum',
@@ -94,7 +100,16 @@ const addRange = () => {
 };
 
 const addUnit = () =>
-    form.units.push({ name: 'Carton', code: null, base_qty: 12, purchasable: true, sellable: true, default_purchase: false, default_sale: false, barcodes: [] });
+    form.units.push({
+        name: 'Carton',
+        code: null,
+        base_qty: 12,
+        purchasable: true,
+        sellable: true,
+        default_purchase: false,
+        default_sale: false,
+        barcodes: [],
+    });
 const removeUnit = (i: number) => form.units.splice(i, 1);
 const addBarcode = (u: UnitInput) => u.barcodes.push('');
 const setDefault = (field: 'default_purchase' | 'default_sale', i: number) => form.units.forEach((u, j) => (u[field] = i === j));
@@ -172,9 +187,30 @@ const unitErrors = computed(() =>
                 </div>
                 <div class="grid gap-1">
                     <Label for="order_multiple_base">Supplier pack / order multiple ({{ form.base_unit }})</Label>
-                    <Input id="order_multiple_base" v-model.number="form.order_multiple_base" type="number" min="1" placeholder="the default purchase pack" />
+                    <Input
+                        id="order_multiple_base"
+                        v-model.number="form.order_multiple_base"
+                        type="number"
+                        min="1"
+                        placeholder="the default purchase pack"
+                    />
                     <span class="text-xs text-muted-foreground">Reorder suggestions round up to this.</span>
                     <InputError :message="form.errors.order_multiple_base" />
+                </div>
+                <div class="grid gap-1">
+                    <Label for="safety_stock_days">Safety stock override (days)</Label>
+                    <Input id="safety_stock_days" v-model.number="form.safety_stock_days" type="number" min="0" placeholder="the reorder setting" />
+                    <InputError :message="form.errors.safety_stock_days" />
+                </div>
+                <div class="flex items-end">
+                    <label class="flex items-center gap-2 text-sm"
+                        ><input type="checkbox" v-model="form.auto_reorder" /> Include in suggested POs</label
+                    >
+                </div>
+                <div class="grid content-end gap-1">
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.gst_free" /> GST-free</label>
+                    <span class="text-xs text-muted-foreground">New PO lines start at 0% GST instead of 10%.</span>
+                    <InputError :message="form.errors.gst_free" />
                 </div>
                 <div class="grid gap-1">
                     <Label for="sell_price">Default sell price</Label>
@@ -182,12 +218,25 @@ const unitErrors = computed(() =>
                 </div>
                 <div class="flex items-end gap-6">
                     <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_active" /> Active</label>
-                    <Link v-if="holdsStock && !product?.is_batch_tracked" :href="route('batch-tracking.index', { products: product?.id })" class="text-sm underline">Turn on batch tracking</Link>
-                    <label v-else class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_batch_tracked" /> Track batches &amp; best-before</label>
+                    <Link
+                        v-if="holdsStock && !product?.is_batch_tracked"
+                        :href="route('batch-tracking.index', { products: product?.id })"
+                        class="text-sm underline"
+                        >Turn on batch tracking</Link
+                    >
+                    <label v-else class="flex items-center gap-2 text-sm"
+                        ><input type="checkbox" v-model="form.is_batch_tracked" /> Track batches &amp; best-before</label
+                    >
                     <InputError :message="form.errors.is_batch_tracked" />
-                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_stock_tracked" /> Stock-tracked (untick for services: no stock, stocktakes, picking or pushes)</label>
+                    <label class="flex items-center gap-2 text-sm"
+                        ><input type="checkbox" v-model="form.is_stock_tracked" /> Stock-tracked (untick for services: no stock, stocktakes, picking
+                        or pushes)</label
+                    >
                     <InputError :message="form.errors.is_stock_tracked" />
-                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="form.is_chilled" /> Chilled (milks, juices, kombucha: picked last, no refrigerated transport)</label>
+                    <label class="flex items-center gap-2 text-sm"
+                        ><input type="checkbox" v-model="form.is_chilled" /> Chilled (milks, juices, kombucha: picked last, no refrigerated
+                        transport)</label
+                    >
                     <div class="grid gap-1">
                         <Label for="sell_channels">Sold on</Label>
                         <select id="sell_channels" v-model="form.sell_channels" class="h-9 rounded-md border bg-background px-2 text-sm">
@@ -216,7 +265,8 @@ const unitErrors = computed(() =>
                     <Button v-if="!readOnly" type="button" variant="outline" size="sm" @click="addUnit">Add pack size</Button>
                 </div>
                 <p class="mb-2 text-xs text-muted-foreground">
-                    Quantity is how many base units ({{ form.base_unit }}) are in the pack. Exactly one pack size has quantity 1. A saved pack's quantity cannot be changed.
+                    Quantity is how many base units ({{ form.base_unit }}) are in the pack. Exactly one pack size has quantity 1. A saved pack's
+                    quantity cannot be changed.
                 </p>
                 <InputError v-for="(e, i) in unitErrors" :key="i" :message="e" />
 
@@ -235,13 +285,20 @@ const unitErrors = computed(() =>
                             <Input v-model="u.code" class="font-mono" />
                         </div>
                         <div class="flex items-end justify-end">
-                            <Button v-if="!readOnly && u.base_qty !== 1" type="button" variant="ghost" size="sm" @click="removeUnit(i)">Remove</Button>
+                            <Button v-if="!readOnly && u.base_qty !== 1" type="button" variant="ghost" size="sm" @click="removeUnit(i)"
+                                >Remove</Button
+                            >
                         </div>
                         <div class="flex flex-wrap gap-4 text-sm sm:col-span-6">
                             <label class="flex items-center gap-1"><input type="checkbox" v-model="u.purchasable" /> Purchasable</label>
                             <label class="flex items-center gap-1"><input type="checkbox" v-model="u.sellable" /> Sellable</label>
-                            <label class="flex items-center gap-1"><input type="radio" :checked="u.default_purchase" @change="setDefault('default_purchase', i)" /> Default for POs</label>
-                            <label class="flex items-center gap-1"><input type="radio" :checked="u.default_sale" @change="setDefault('default_sale', i)" /> Default for sales</label>
+                            <label class="flex items-center gap-1"
+                                ><input type="radio" :checked="u.default_purchase" @change="setDefault('default_purchase', i)" /> Default for
+                                POs</label
+                            >
+                            <label class="flex items-center gap-1"
+                                ><input type="radio" :checked="u.default_sale" @change="setDefault('default_sale', i)" /> Default for sales</label
+                            >
                         </div>
                         <div class="flex flex-wrap items-center gap-2 sm:col-span-6">
                             <span class="text-sm text-muted-foreground">Barcodes:</span>

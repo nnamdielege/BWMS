@@ -21,6 +21,9 @@ class PurchaseOrder extends Model
             'status' => PurchaseOrderStatus::class,
             'order_date' => 'date',
             'expected_date' => 'date',
+            'payment_due_date' => 'date',
+            'approved_at' => 'datetime',
+            'paid_at' => 'datetime',
             'sent_at' => 'datetime',
             'closed_at' => 'datetime',
             'subtotal' => 'decimal:2',
@@ -57,6 +60,16 @@ class PurchaseOrder extends Model
     public function latestEmail(): HasOne
     {
         return $this->hasOne(PurchaseOrderEmail::class)->latestOfMany();
+    }
+
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function payer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'paid_by');
     }
 
     public function creator(): BelongsTo

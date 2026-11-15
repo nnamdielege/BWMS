@@ -37,6 +37,7 @@ class PurchasingPagesTest extends TestCase
             $this->actingAs($manager)->get($url)->assertOk();
         }
 
+        app(PurchaseOrderService::class)->approve($po, $manager, true, 'test: no budget');
         app(PurchaseOrderService::class)->markSent($po, $manager);
         $this->actingAs($manager)->get(route('purchase-orders.receive', $po))->assertOk();
         $this->actingAs($manager)->getJson(route('products.search', ['q' => $product->sku]))->assertOk()->assertJsonPath('0.sku', $product->sku);

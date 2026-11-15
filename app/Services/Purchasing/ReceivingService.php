@@ -229,7 +229,9 @@ class ReceivingService
         $complete = $lines->every(fn (PurchaseOrderLine $l) => $l->qty_received_base >= $l->qty_ordered_base);
         $any = $lines->contains(fn (PurchaseOrderLine $l) => $l->qty_received_base > 0 || $l->qty_rejected_base > 0);
 
-        $po->forceFill(['status' => $complete ? PurchaseOrderStatus::Received : ($any ? PurchaseOrderStatus::PartiallyReceived : $po->status)])->save();
+        // Paid in advance (paid_at), a fully received PO is done: paid.
+        $done = $po->paid_at !== null ? PurchaseOrderStatus::Paid : PurchaseOrderStatus::Received;
+        $po->forceFill(['status' => $complete ? $done : ($any ? PurchaseOrderStatus::PartiallyReceived : $po->status)])->save();
     }
 
     private function assert(bool $condition, string $message): void

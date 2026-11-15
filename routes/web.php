@@ -21,6 +21,8 @@ use App\Http\Controllers\ProductCostController;
 use App\Http\Controllers\ProductImportController;
 use App\Http\Controllers\ProductPackController;
 use App\Http\Controllers\Purchasing\PurchaseOrderController;
+use App\Http\Controllers\Purchasing\PurchasingBudgetController;
+use App\Http\Controllers\Purchasing\PurchasingReportController;
 use App\Http\Controllers\Purchasing\ReceiptController;
 use App\Http\Controllers\Purchasing\ReorderController;
 use App\Http\Controllers\Purchasing\SupplierController;
@@ -135,12 +137,22 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::put('purchasing/reorder/settings', [ReorderController::class, 'settings'])->middleware('can:purchase_orders.manage')->name('reorder.settings');
     Route::post('purchasing/reorder/draft', [ReorderController::class, 'draft'])->middleware('can:purchase_orders.manage')->name('reorder.draft');
 
+    // Cash-aware purchasing: weekly budgets, cash out, slow movers.
+    Route::get('purchasing/budgets', [PurchasingBudgetController::class, 'index'])->middleware('can:purchase_orders.view')->name('purchasing-budgets.index');
+    Route::post('purchasing/budgets', [PurchasingBudgetController::class, 'store'])->middleware('can:purchase_orders.manage')->name('purchasing-budgets.store');
+    Route::delete('purchasing/budgets/{budget}', [PurchasingBudgetController::class, 'destroy'])->middleware('can:purchase_orders.manage')->name('purchasing-budgets.destroy');
+    Route::get('purchasing/cash-out', [PurchasingReportController::class, 'cashOut'])->middleware('can:purchase_orders.view')->name('purchasing.cash-out');
+    Route::get('purchasing/slow-movers', [PurchasingReportController::class, 'slowMovers'])->middleware('can:purchase_orders.view')->name('purchasing.slow-movers');
+    Route::post('purchase-orders/suggest', [PurchaseOrderController::class, 'suggest'])->middleware('can:purchase_orders.manage')->name('purchase-orders.suggest');
+
     Route::get('purchase-orders', [PurchaseOrderController::class, 'index'])->middleware('can:purchase_orders.view')->name('purchase-orders.index');
     Route::get('purchase-orders/create', [PurchaseOrderController::class, 'create'])->middleware('can:purchase_orders.manage')->name('purchase-orders.create');
     Route::post('purchase-orders', [PurchaseOrderController::class, 'store'])->middleware('can:purchase_orders.manage')->name('purchase-orders.store');
     Route::get('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'show'])->middleware('can:purchase_orders.view')->name('purchase-orders.show');
     Route::get('purchase-orders/{purchaseOrder}/edit', [PurchaseOrderController::class, 'edit'])->middleware('can:purchase_orders.manage')->name('purchase-orders.edit');
     Route::put('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'update'])->middleware('can:purchase_orders.manage')->name('purchase-orders.update');
+    Route::post('purchase-orders/{purchaseOrder}/approve', [PurchaseOrderController::class, 'approve'])->middleware('can:purchase_orders.manage')->name('purchase-orders.approve');
+    Route::post('purchase-orders/{purchaseOrder}/paid', [PurchaseOrderController::class, 'markPaid'])->middleware('can:purchase_orders.manage')->name('purchase-orders.paid');
     Route::post('purchase-orders/{purchaseOrder}/sent', [PurchaseOrderController::class, 'markSent'])->middleware('can:purchase_orders.manage')->name('purchase-orders.sent');
     Route::post('purchase-orders/{purchaseOrder}/email', [PurchaseOrderController::class, 'email'])->middleware('can:purchase_orders.manage')->name('purchase-orders.email');
     Route::post('purchase-orders/{purchaseOrder}/emails/{email}/retry', [PurchaseOrderController::class, 'retryEmail'])->middleware('can:purchase_orders.manage')->name('purchase-orders.email.retry');

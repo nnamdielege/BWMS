@@ -51,7 +51,7 @@ const add = (p: PickedProduct) => {
         product_unit_id: unit.id,
         qty_ordered: 1,
         unit_cost: (Number(p.avg_cost) * unit.base_qty).toFixed(2),
-        tax_rate: 10,
+        tax_rate: p.gst_free ? 0 : 10, // the buyer can still change it
         notes: null,
     });
 };

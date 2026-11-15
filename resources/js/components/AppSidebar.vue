@@ -5,9 +5,10 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { type NavGroup } from '@/types';
 import { Link } from '@inertiajs/vue3';
 import {
+    ArrowLeftRight,
     Barcode,
     Boxes,
-    ArrowLeftRight,
+    CalendarRange,
     ChartColumn,
     ClipboardList,
     Combine,
@@ -25,10 +26,12 @@ import {
     ScrollText,
     Settings,
     ShoppingCart,
+    Snail,
     Store,
     Tags,
     Truck,
     Users,
+    Wallet,
     Warehouse,
 } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
@@ -60,6 +63,9 @@ const navGroups: NavGroup[] = [
         items: [
             { title: 'Purchase orders', href: '/purchase-orders', icon: FileText, permission: 'purchase_orders.view' },
             { title: 'Reorder suggestions', href: '/purchasing/reorder', icon: ListRestart, permission: 'purchase_orders.view' },
+            { title: 'Budgets', href: '/purchasing/budgets', icon: Wallet, permission: 'purchase_orders.view' },
+            { title: 'Cash out', href: '/purchasing/cash-out', icon: CalendarRange, permission: 'purchase_orders.view' },
+            { title: 'Slow movers', href: '/purchasing/slow-movers', icon: Snail, permission: 'purchase_orders.view' },
             { title: 'Suppliers', href: '/suppliers', icon: Truck, permission: 'suppliers.view' },
         ],
     },

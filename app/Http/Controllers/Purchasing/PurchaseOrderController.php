@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Purchasing;
 
 use App\Enums\PurchaseOrderStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ApprovePurchaseOrderRequest;
 use App\Jobs\SendPurchaseOrderEmail;
 use App\Models\Location;
 use App\Models\PurchaseOrder;
@@ -12,9 +13,15 @@ use App\Models\PurchaseOrderLine;
 use App\Models\Receipt;
 use App\Models\ReceiptLine;
 use App\Models\Supplier;
+use App\Services\Purchasing\OverBudget;
 use App\Services\Purchasing\PurchaseOrderPdf;
 use App\Services\Purchasing\PurchaseOrderService;
+use App\Services\Purchasing\PurchasingBudgetService;
+use App\Services\Purchasing\ReorderService;
+use App\Services\Reports\MarginMath;
+use App\Services\Reports\PackPricing;
 use App\Services\Stock\Exceptions\StockException;
+use App\Support\Audit;
 use App\Support\BusinessDate;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,7 +33,7 @@ use Inertia\Response;
 
 class PurchaseOrderController extends Controller
 {
-    public function __construct(private PurchaseOrderService $orders) {}
+    public function __construct(private PurchaseOrderService $orders, private PurchasingBudgetService $budgets) {}
 
     public function index(Request $request): Response
     {
@@ -40,7 +47,7 @@ class PurchaseOrderController extends Controller
         $orders = PurchaseOrder::with(['supplier:id,name', 'site:id,code,name', 'latestEmail'])
             ->when($filters['q'] ?? null, fn ($q, $t) => $q->where('number', 'like', "%{$t}%"))
             ->when($filters['supplier_id'] ?? null, fn ($q, $s) => $q->where('supplier_id', $s))
-            ->when($status === 'open', fn ($q) => $q->whereIn('status', ['draft', 'sent', 'partially_received']))
+            ->when($status === 'open', fn ($q) => $q->whereIn('status', PurchaseOrderStatus::values(array_filter(PurchaseOrderStatus::cases(), fn ($s) => $s->isOpen()))))
             ->when(! in_array($status, ['open', 'all'], true), fn ($q) => $q->where('status', $status))
             ->latest('id')->paginate(50)->withQueryString()
             ->through(fn (PurchaseOrder $po) => [
@@ -53,6 +60,9 @@ class PurchaseOrderController extends Controller
                 'order_date' => $po->order_date->toDateString(),
                 'expected_date' => $po->expected_date?->toDateString(),
                 'overdue' => $po->status->canReceive() && $po->expected_date && $po->expected_date->toDateString() < BusinessDate::today(),
+                'payment_due_date' => $po->payment_due_date?->toDateString(),
+                'over_budget' => $po->override_reason !== null,
+                'paid' => $po->paid_at !== null,
                 'total' => $po->total,
                 'legacy' => $po->legacy_id !== null,
                 // The latest email's failure reason (also while it is still being retried).
@@ -65,7 +75,45 @@ class PurchaseOrderController extends Controller
             'suppliers' => Supplier::orderBy('name')->get(['id', 'name']),
             'statuses' => collect(PurchaseOrderStatus::cases())->map(fn ($s) => ['value' => $s->value, 'label' => $s->label()]),
             'canManage' => $request->user()->can('purchase_orders.manage'),
+            'budget' => $this->budgets->summary(),
         ]);
+    }
+
+    /** "Generate suggestions": the same run as the Monday purchasing:suggest. */
+    public function suggest(Request $request, ReorderService $reorder): RedirectResponse
+    {
+        $this->budgets->ensureCurrentWeek(); // as the Monday run: this week's budget from the estimate, if none
+        $results = $this->guard(fn () => $reorder->draftPurchaseOrders($request->user()));
+        $counts = $results->countBy('action');
+        Audit::record('purchase_orders_suggested', meta: ['source' => 'button'] + $counts->all());
+        if ($results->isEmpty()) {
+            return back()->with('success', 'Nothing to order: no suggested POs needed.');
+        }
+        $below = $results->where('below_minimum', true)->count();
+        $parts = collect(['created', 'updated', 'cancelled'])->filter(fn ($a) => $counts[$a] ?? 0)->map(fn ($a) => "{$counts[$a]} {$a}")->implode(', ');
+
+        return redirect()->route('purchase-orders.index', ['status' => 'suggested'])
+            ->with('success', "Suggested POs: {$parts}.".($below ? " {$below} below the supplier's minimum order." : ''));
+    }
+
+    public function approve(ApprovePurchaseOrderRequest $request, PurchaseOrder $purchaseOrder): RedirectResponse
+    {
+        try {
+            $po = $this->orders->approve($purchaseOrder, $request->user(), $request->boolean('override'), $request->input('override_reason'));
+        } catch (OverBudget $e) {
+            throw ValidationException::withMessages(['budget' => $e->getMessage()]);
+        } catch (StockException $e) {
+            throw ValidationException::withMessages(['po' => $e->getMessage()]);
+        }
+
+        return back()->with('success', "{$po->number} approved".($po->override_reason ? ' over budget' : '').'.');
+    }
+
+    public function markPaid(Request $request, PurchaseOrder $purchaseOrder): RedirectResponse
+    {
+        $this->guard(fn () => $this->orders->markPaid($purchaseOrder, $request->user()));
+
+        return back()->with('success', "{$purchaseOrder->number} marked paid.");
     }
 
     public function create(): Response
@@ -91,16 +139,19 @@ class PurchaseOrderController extends Controller
 
     public function update(Request $request, PurchaseOrder $purchaseOrder): RedirectResponse
     {
-        $this->guard(fn () => $this->orders->saveDraft($purchaseOrder, $this->validated($request), $request->user()));
+        // Saved by a person, a suggested PO becomes a draft, so the next suggestion run leaves it alone.
+        $this->guard(fn () => $this->orders->saveDraft($purchaseOrder, $this->validated($request), $request->user(), PurchaseOrderStatus::Draft));
 
         return redirect()->route('purchase-orders.show', $purchaseOrder)->with('success', "{$purchaseOrder->number} saved.");
     }
 
     public function show(Request $request, PurchaseOrder $purchaseOrder): Response
     {
-        $po = $purchaseOrder->load(['supplier', 'site', 'lines.product:id,sku,name,base_unit,is_batch_tracked', 'lines.unit:id,name,base_qty',
-            'receipts.receiver:id,name', 'receipts.lines.location.parent', 'receipts.lines.batch', 'emails.queuer:id,name', 'creator:id,name']);
+        $po = $purchaseOrder->load(['supplier', 'site', 'lines.product.units', 'lines.product.channelListings', 'lines.unit:id,name,base_qty',
+            'receipts.receiver:id,name', 'receipts.lines.location.parent', 'receipts.lines.batch', 'emails.queuer:id,name', 'creator:id,name',
+            'approver:id,name', 'payer:id,name']);
         $user = $request->user();
+        $min = $po->supplier->min_order_value !== null ? (float) $po->supplier->min_order_value : null;
 
         return Inertia::render('purchase-orders/Show', [
             'po' => [
@@ -114,9 +165,20 @@ class PurchaseOrderController extends Controller
                 'site' => $po->site->name,
                 'created_by' => $po->creator?->name,
                 'legacy' => $po->legacy_id !== null,
+                'payment_due_date' => $po->payment_due_date?->toDateString(),
+                'payment_terms' => $po->supplier->payment_terms,
+                'payment_terms_days' => $po->supplier->payment_terms_days,
+                'approved_at' => $po->approved_at?->toIso8601String(),
+                'approved_by' => $po->approver?->name,
+                'override_reason' => $po->override_reason,
+                'paid_at' => $po->paid_at?->toIso8601String(),
+                'paid_by' => $po->payer?->name,
+                'min_order_value' => $min,
+                'below_minimum' => $min !== null && (float) $po->subtotal < $min,
                 'lines' => $po->lines->map(fn (PurchaseOrderLine $l) => [
                     'id' => $l->id,
-                    'product' => $l->product,
+                    'product' => $l->product->only(['id', 'sku', 'name', 'base_unit', 'is_batch_tracked']),
+                    ...$this->lineMargin($l),
                     'unit' => $l->unit->name,
                     'base_qty_per_unit' => $l->base_qty_per_unit,
                     'qty_ordered' => $l->qty_ordered,
@@ -154,8 +216,24 @@ class PurchaseOrderController extends Controller
                 'manage' => $user->can('purchase_orders.manage'),
                 'receive' => $user->can('receiving.perform') && $po->status->canReceive(),
                 'edit' => $user->can('purchase_orders.manage') && $po->status->isEditable(),
+                'approve' => $user->can('purchase_orders.manage') && $po->status->canApprove(),
+                'pay' => $user->can('purchase_orders.manage') && $po->paid_at === null && in_array($po->status, PurchaseOrderStatus::PAYABLE, true),
             ],
+            // This week's position; for a PO awaiting approval, also whether approving it would go over.
+            'budget' => $po->status->canApprove() ? $this->budgets->check($po) : $this->budgets->summary(),
+            'gmThreshold' => self::GM_WARN_PERCENT,
         ]);
+    }
+
+    /** Lines under this gross margin are highlighted. */
+    public const GM_WARN_PERCENT = 26;
+
+    /** Sell price for the line's pack (PackPricing, as the margin reports) and GM % at the PO cost. @return array{sell_price: ?float, gm_percent: ?float} */
+    private function lineMargin(PurchaseOrderLine $l): array
+    {
+        $sell = PackPricing::sellFor($l->product, $l->base_qty_per_unit);
+
+        return ['sell_price' => $sell === null ? null : round($sell, 2), 'gm_percent' => MarginMath::gmPercent($sell, (float) $l->unit_cost)];
     }
 
     public function markSent(Request $request, PurchaseOrder $purchaseOrder): RedirectResponse

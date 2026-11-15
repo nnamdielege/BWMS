@@ -23,12 +23,16 @@ class Product extends Model
         'sku', 'name', 'description', 'category_id', 'range_id', 'base_unit', 'is_batch_tracked',
         'shelf_life_days', 'short_dated_days', 'reorder_point', 'reorder_qty', 'sell_price', 'is_active',
         'sell_channels', 'is_stock_tracked', 'is_chilled', 'supplier_id', 'lead_time_days', 'order_multiple_base',
+        'safety_stock_days', 'auto_reorder', 'gst_free',
     ];
 
     public const SELL_CHANNELS = ['none', 'portal', 'ordermentum', 'both'];
 
+    /** The GST rate (%) on everything taxable: purchases and sales. */
+    public const GST_RATE = 10;
+
     /** Same defaults as the columns, so an unsaved or just-created model reads correctly. */
-    protected $attributes = ['sell_channels' => 'ordermentum', 'is_stock_tracked' => true, 'is_chilled' => false];
+    protected $attributes = ['sell_channels' => 'ordermentum', 'is_stock_tracked' => true, 'is_chilled' => false, 'auto_reorder' => true, 'gst_free' => false];
 
     protected function casts(): array
     {
@@ -37,9 +41,18 @@ class Product extends Model
             'is_active' => 'boolean',
             'is_stock_tracked' => 'boolean',
             'is_chilled' => 'boolean',
+            'auto_reorder' => 'boolean',
+            'gst_free' => 'boolean',
+            'safety_stock_days' => 'integer',
             'avg_cost' => 'decimal:4',
             'sell_price' => 'decimal:2',
         ];
+    }
+
+    /** The GST rate (%) a new PO line for this product starts at: 0 when GST-free, else 10. */
+    public function defaultTaxRate(): int
+    {
+        return $this->gst_free ? 0 : self::GST_RATE;
     }
 
     /** Whether the product is sold on a channel ('ordermentum' or 'portal'). */

@@ -19,6 +19,7 @@ export type PickedProduct = {
     avg_cost: string;
     sell_price: string | null;
     is_batch_tracked: boolean;
+    gst_free: boolean;
     units: PickedUnit[];
 };
 

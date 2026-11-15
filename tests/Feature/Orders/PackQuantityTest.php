@@ -89,7 +89,9 @@ class PackQuantityTest extends TestCase
     {
         $this->actingAs($this->manager)->post(route('stock.adjust', $p), $qty + [
             'client_token' => (string) Str::uuid(), 'location_id' => $this->bin()->id, 'direction' => 'in',
-            'reason_code_id' => ReasonCode::where('direction', '!=', 'out')->value('id'),
+            // A named code: "any non-out code" picked FOUND or BATCH_ENABLE depending on row order, and FOUND needs a note.
+            'reason_code_id' => ReasonCode::where('code', 'FOUND')->value('id'),
+            'note' => 'Test stock in',
         ])->assertSessionHasNoErrors();
     }
 
@@ -319,10 +321,10 @@ class PackQuantityTest extends TestCase
     {
         $wine = $this->wine('ETN-IT-ROSSO');
         $service = app(PurchaseOrderService::class);
-        $po = $service->markSent($service->saveDraft(null, [
+        $po = $service->markSent($service->approve($service->saveDraft(null, [
             'supplier_id' => Supplier::factory()->create()->id, 'site_id' => $this->site()->id, 'order_date' => '2026-11-02',
             'lines' => [['product_id' => $wine->id, 'product_unit_id' => $this->caseOf($wine), 'qty_ordered' => 3, 'unit_cost' => '120.00']],
-        ], $this->manager), $this->manager);
+        ], $this->manager), $this->manager, true, 'test: no budget'), $this->manager);
 
         $this->actingAs($this->manager)->post(route('purchase-orders.receipts.store', $po), [
             'client_token' => (string) Str::uuid(),

@@ -67,7 +67,7 @@ class ReorderTest extends TestCase
         $po = $service->saveDraft(null, ['supplier_id' => $this->supplier->id, 'site_id' => $this->site()->id, 'order_date' => '2026-11-10',
             'lines' => [['product_id' => $p->id, 'product_unit_id' => $p->units()->where('base_qty', 6)->value('id'), 'qty_ordered' => $cartons, 'unit_cost' => '12']]], $this->manager);
 
-        return $service->markSent($po, $this->manager);
+        return $service->markSent($service->approve($po, $this->manager, true, 'test: no budget'), $this->manager);
     }
 
     private function line(array $plan, Product $p): ?array

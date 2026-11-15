@@ -13,6 +13,7 @@ use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Services\Orders\AvailabilityService;
+use App\Services\Stock\Exceptions\InvalidMovement;
 use App\Support\BusinessDate;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -24,27 +25,88 @@ use Illuminate\Support\Collection;
  * ("bwms", from sale movements) plus imported sales from before BWMS (sales_history).
  * A day that started with nothing on hand is a stock-out and isn't counted, where the
  * ledger goes back that far. Available is sellable on hand less reservations, all sites.
- * On order is what open POs (draft, sent, part received) haven't delivered yet, so a
+ * On order is what open POs (suggested, draft, approved, sent, part received) haven't delivered yet, so a
  * draft made from these suggestions takes them off.
  *
  * Only active, stock-tracked products sold on a channel.
  */
 class ReorderPlanner
 {
-    public const ON_ORDER_STATUSES = [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Sent, PurchaseOrderStatus::PartiallyReceived];
+    public const ON_ORDER_STATUSES = [PurchaseOrderStatus::Suggested, PurchaseOrderStatus::Draft, PurchaseOrderStatus::Approved,
+        PurchaseOrderStatus::Sent, PurchaseOrderStatus::PartiallyReceived];
 
     public function __construct(private AvailabilityService $availability) {}
 
     /**
-     * @param  array{supplier_id?: ?int, range_id?: ?int, only_needed?: bool, stockout_only?: bool}  $filters
+     * Average daily demand per product, base units a day: the same 8-week weighted figure
+     * (stock-out days left out, imported history included) the Reorder page works from.
+     * The one velocity in BWMS; suggested POs, cash-out and slow movers all read it here.
+     *
+     * @param  list<int>  $ids
+     * @return array<int, float> product id => units/day (0 for a product with no sales)
+     */
+    public function dailyVelocity(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        [$tz, $today, $from] = $this->window();
+        [$sold] = $this->sales($ids, $from, $today, $tz);
+        $stockOut = $this->stockOutDays($ids, $from, $today, $tz);
+
+        $out = [];
+        foreach ($ids as $id) {
+            $out[$id] = ReorderMath::demand($this->series($sold[$id] ?? [], $stockOut[$id] ?? [], $from, $today))['avg'];
+        }
+
+        return $out;
+    }
+
+    /**
+     * PO lines for a supplier draft from base-unit quantities: each product in the pack it's bought in
+     * (its order multiple's pack, else the default purchase pack, else the largest), rounded up to whole
+     * packs, at the last PO cost for that pack, else avg_cost × pack. Zero quantities are left out.
+     *
+     * @param  list<array{product_id: int, qty_base: int}>  $lines
+     * @return list<array{product_id: int, product_unit_id: int, qty_ordered: int, unit_cost: string}>
+     */
+    public function draftLines(array $lines): array
+    {
+        $products = Product::with('units')->whereIn('id', array_column($lines, 'product_id'))->get()->keyBy('id');
+        $out = [];
+        foreach ($lines as $line) {
+            if ((int) $line['qty_base'] <= 0) {
+                continue;
+            }
+            $product = $products[$line['product_id']];
+            $unit = $this->purchaseUnit($product);
+            if (! $unit) {
+                throw new InvalidMovement("{$product->sku} has no pack it can be bought in.");
+            }
+            $last = PurchaseOrderLine::where('product_id', $product->id)->where('product_unit_id', $unit->id)
+                ->whereHas('purchaseOrder', fn ($q) => $q->where('status', '!=', PurchaseOrderStatus::Cancelled->value))->latest('id')->value('unit_cost');
+            $out[] = [
+                'product_id' => $product->id,
+                'product_unit_id' => $unit->id,
+                'qty_ordered' => (int) ceil($line['qty_base'] / max(1, $unit->base_qty)),
+                'unit_cost' => $last ?? number_format((float) $product->avg_cost * $unit->base_qty, 4, '.', ''),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * exclude_suggested: suggested POs don't count as on order, because they're being redrafted.
+     *
+     * @param  array{supplier_id?: ?int, range_id?: ?int, only_needed?: bool, stockout_only?: bool, exclude_suggested?: bool}  $filters
      * @return array{groups: list<array>, settings: array, today: string}
      */
     public function build(array $filters = []): array
     {
         $settings = Setting::reorder();
-        $tz = config('bwms.business_timezone');
-        $today = Carbon::parse(BusinessDate::today(), $tz);
-        $from = $today->copy()->subDays(ReorderMath::WINDOW_DAYS); // first day counted; the window ends yesterday
+        [$tz, $today, $from] = $this->window();
+        $onOrderStatuses = array_filter(self::ON_ORDER_STATUSES, fn ($s) => ! (($filters['exclude_suggested'] ?? false) && $s === PurchaseOrderStatus::Suggested));
 
         $products = Product::query()->where('is_active', true)->where('is_stock_tracked', true)->where('sell_channels', '!=', 'none')
             ->when($filters['range_id'] ?? null, fn ($q, $r) => $q->where('range_id', $r))
@@ -60,7 +122,7 @@ class ReorderPlanner
         $stockOut = $this->stockOutDays($ids, $from, $today, $tz);
         $available = $this->availability->availableMany($ids);
         $onOrder = PurchaseOrderLine::query()->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_lines.purchase_order_id')
-            ->whereIn('purchase_orders.status', array_map(fn ($s) => $s->value, self::ON_ORDER_STATUSES))
+            ->whereIn('purchase_orders.status', PurchaseOrderStatus::values($onOrderStatuses))
             ->whereIn('purchase_order_lines.product_id', $ids)->groupBy('purchase_order_lines.product_id')
             ->selectRaw('purchase_order_lines.product_id, SUM(GREATEST(0, CAST(qty_ordered_base AS SIGNED) - CAST(qty_received_base AS SIGNED))) AS qty')
             ->pluck('qty', 'product_id');
@@ -110,18 +172,17 @@ class ReorderPlanner
 
     private function row(Product $p, ?Supplier $supplier, ?string $supplierFrom, array $daily, array $outDays, array $sources, int $available, int $onOrder, ?array $last, array $s, Carbon $today, Carbon $from): array
     {
-        $series = [];
-        for ($d = $from->copy(); $d->lt($today); $d->addDay()) {
-            $date = $d->toDateString();
-            $series[] = isset($outDays[$date]) && ! isset($daily[$date]) ? null : (int) ($daily[$date] ?? 0);
-        }
+        $series = $this->series($daily, $outDays, $from, $today);
         $demand = ReorderMath::demand($series);
         $avg = $demand['avg'];
 
         $lead = $p->lead_time_days ?? $supplier?->lead_time_days ?? $s['default_lead_days'];
         $review = ReorderMath::reviewDays($supplier?->orderDays() ?? [], $supplier?->review_period_days, $s['default_review_days'], $today);
         $cover = $lead + $review;
-        $safety = ReorderMath::safety($s['safety_mode'], $avg, $demand['std'], $lead, $s['safety_days'], $s['safety_z']);
+        // A product's own safety days win over the setting, whichever safety mode is on.
+        $safetyMode = $p->safety_stock_days !== null ? 'days' : $s['safety_mode'];
+        $safetyDays = $p->safety_stock_days ?? $s['safety_days'];
+        $safety = ReorderMath::safety($safetyMode, $avg, $demand['std'], $lead, $safetyDays, $s['safety_z']);
         $need = ReorderMath::need($avg, $cover, $safety, $available, $onOrder);
 
         $unit = $this->purchaseUnit($p);
@@ -140,6 +201,7 @@ class ReorderPlanner
 
         return [
             'product_id' => $p->id, 'sku' => $p->sku, 'name' => $p->name, 'range' => $p->range?->name, 'base_unit' => $p->base_unit,
+            'auto_reorder' => $p->auto_reorder,
             'supplier' => $supplier ? ['id' => $supplier->id, 'from' => $supplierFrom] : null,
             'pack_base' => $pack, 'pack_label' => $packLabel, 'moq_packs' => $moq,
             'purchase_unit' => $unit ? ['id' => $unit->id, 'name' => $unit->name, 'base_qty' => $unit->base_qty] : null,
@@ -157,11 +219,39 @@ class ReorderPlanner
                 'Weeks (newest first): '.implode(' · ', array_map(fn ($w) => "{$w['sold']}/{$w['days']}d ×{$w['weight']}", $demand['weeks'])),
                 'Sold from: '.($sources === [] ? 'nothing in 8 weeks' : implode(', ', array_map(fn ($k, $v) => "{$k} {$v}", array_keys($sources), $sources))),
                 "Cover: {$lead} days lead + {$review} days to the next order = {$cover} days",
-                'Safety: '.($s['safety_mode'] === 'z' ? "z {$s['safety_z']} × std-dev ".$f($demand['std'])." × √{$lead}" : "{$s['safety_days']} days × ".$f($avg)).' = '.$f($safety),
+                'Safety: '.($safetyMode === 'z' ? "z {$s['safety_z']} × std-dev ".$f($demand['std'])." × √{$lead}"
+                    : "{$safetyDays} days".($p->safety_stock_days !== null ? ' (product)' : '').' × '.$f($avg)).' = '.$f($safety),
                 'Need: '.$f($avg)." × {$cover} + ".$f($safety)." − ({$available} available + {$onOrder} on order) = ".$f($need),
                 'Suggest: '.($suggest > 0 ? "rounded up to {$packLabel}".($moq ? ", MOQ {$moq}" : '')." = {$suggest} {$p->base_unit}" : 'nothing needed'),
             ],
         ];
+    }
+
+    /** @return array{0: string, 1: Carbon, 2: Carbon} timezone, today (Brisbane), first day counted (the window ends yesterday) */
+    private function window(): array
+    {
+        $tz = config('bwms.business_timezone');
+        $today = Carbon::parse(BusinessDate::today(), $tz);
+
+        return [$tz, $today, $today->copy()->subDays(ReorderMath::WINDOW_DAYS)];
+    }
+
+    /**
+     * Daily sales over the window, oldest first; null for a stock-out day with no sales.
+     *
+     * @param  array<string, int>  $daily
+     * @param  array<string, true>  $outDays
+     * @return list<int|null>
+     */
+    private function series(array $daily, array $outDays, Carbon $from, Carbon $today): array
+    {
+        $series = [];
+        for ($d = $from->copy(); $d->lt($today); $d->addDay()) {
+            $date = $d->toDateString();
+            $series[] = isset($outDays[$date]) && ! isset($daily[$date]) ? null : (int) ($daily[$date] ?? 0);
+        }
+
+        return $series;
     }
 
     /** The pack it's bought in: the supplier pack when there's a purchasable unit that size, else the default purchase pack. */
