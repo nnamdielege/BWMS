@@ -25,8 +25,10 @@ use App\Models\Location;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\PurchasingBudget;
 use App\Models\Range;
 use App\Models\ReasonCode;
+use App\Models\SalesHistory;
 use App\Models\Setting;
 use App\Models\Supplier;
 use App\Models\SyncAttempt;
@@ -37,6 +39,7 @@ use App\Services\Orders\OrderService;
 use App\Services\Orders\PickPackService;
 use App\Services\Purchasing\PurchaseOrderService;
 use App\Services\Purchasing\ReceivingService;
+use App\Services\Purchasing\ReorderService;
 use App\Services\Stock\CountTaskService;
 use App\Services\Stock\MovementDraft;
 use App\Services\Stock\StockLedger;
@@ -160,21 +163,44 @@ $P['oj'] = $product(['sku' => 'CPJ-OJ-1L', 'name' => 'Cold-pressed Orange Juice 
 $P['del'] = $product(['sku' => 'SVC-DELIVERY', 'name' => 'Delivery fee', 'base_unit' => 'each', 'is_stock_tracked' => false, 'sell_channels' => 'ordermentum', 'sell_price' => '15.00'],
     [['Each', 1, [], false, true]]);
 $unit = fn (string $k, int $qty) => $P[$k]->units->firstWhere('base_qty', $qty);
+// The default sell price is for the default sale pack (as the margin reports and PO GM % read it):
+// the prices above are per base unit, so restate them for a Carton, Crate and so on.
+foreach ($P as $prod) {
+    $sale = $prod->units->firstWhere('default_sale', true);
+    if ($sale && $sale->base_qty > 1 && (float) $prod->sell_price > 0) {
+        $prod->update(['sell_price' => round((float) $prod->sell_price * $sale->base_qty, 2)]);
+    }
+}
 
 // --- Suppliers and purchase orders ------------------------------------------------
-$sup = fn (string $code, string $name, string $contact, int $lead) => Supplier::create(['code' => $code, 'name' => $name, 'contact_name' => $contact,
-    'email' => strtolower($code).'@example.com', 'phone' => '07 0000 00'.rand(10, 99), 'payment_terms' => '30 days EOM', 'lead_time_days' => $lead,
-    'address' => "Unit 2, 10 Sample Road\nBrisbane QLD 4000", 'is_active' => true]);
-$roaster = $sup('HARBOUR', 'Harbour Roasters (demo)', 'Jamie Roaster', 3);
-$dairy = $sup('NORTHDAIRY', 'Northside Dairy Co (demo)', 'Taylor Dairy', 1);
-$pack = $sup('BAYPACK', 'Bayside Packaging (demo)', 'Robin Packer', 5);
+// Fresh milk and juice are GST-free: their PO lines start at 0% GST.
+Product::whereIn('sku', ['BFC-FULL-2L', 'CPJ-OJ-1L'])->update(['gst_free' => true]);
+
+$sup = fn (string $code, string $name, string $contact, int $lead, string $terms, int $termsDays) => Supplier::create(['code' => $code, 'name' => $name, 'contact_name' => $contact,
+    'email' => strtolower($code).'@example.com', 'phone' => '07 0000 00'.rand(10, 99), 'payment_terms' => $terms, 'payment_terms_days' => $termsDays, 'lead_time_days' => $lead,
+    'review_period_days' => 7, 'address' => "Unit 2, 10 Sample Road\nBrisbane QLD 4000", 'is_active' => true]);
+$roaster = $sup('HARBOUR', 'Harbour Roasters (demo)', 'Jamie Roaster', 3, '30 days', 30);
+$dairy = $sup('NORTHDAIRY', 'Northside Dairy Co (demo)', 'Taylor Dairy', 1, '7 days', 7);
+$pack = $sup('BAYPACK', 'Bayside Packaging (demo)', 'Robin Packer', 5, 'COD', 0);
 
 $pos = app(PurchaseOrderService::class);
 $recv = app(ReceivingService::class);
+// GST per line comes from the product (0% GST-free, else 10%).
 $po = function (Supplier $s, array $lines, int $orderedDaysAgo, ?int $expectedIn, User $by) use ($pos, $site, $d) {
     return $pos->saveDraft(null, ['supplier_id' => $s->id, 'site_id' => $site->id, 'order_date' => $d(-$orderedDaysAgo),
         'expected_date' => $expectedIn === null ? null : $d($expectedIn), 'notes' => null,
-        'lines' => array_map(fn ($l) => ['product_id' => $l[0]->id, 'product_unit_id' => $l[1]->id, 'qty_ordered' => $l[2], 'unit_cost' => $l[3], 'tax_rate' => 10], $lines)], $by);
+        'lines' => array_map(fn ($l) => ['product_id' => $l[0]->id, 'product_unit_id' => $l[1]->id, 'qty_ordered' => $l[2], 'unit_cost' => $l[3]], $lines)], $by);
+};
+
+// This week's purchasing budget, ex GST: generous while the older POs are approved, then set to $800 (below).
+$weekStart = $today->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
+$budget = PurchasingBudget::create(['week_start' => $weekStart, 'budget' => 100000, 'notes' => 'Checked against Xero receipts']);
+// Older POs: approved and back-dated to their order date, so they count in their own week.
+$approveAndSend = function (PurchaseOrder $o, User $by) use ($pos): PurchaseOrder {
+    $o = $pos->approve($o, $by);
+    $o->forceFill(['approved_at' => Carbon::parse($o->order_date->toDateString().' 09:00', config('bwms.business_timezone'))->utc()])->save();
+
+    return $pos->markSent($o, $by);
 };
 $line = fn (PurchaseOrder $o, Product $p) => $o->lines()->where('product_id', $p->id)->firstOrFail();
 $rl = fn (PurchaseOrder $o, Product $p, int $acc, Location $to, ?string $lot = null, ?string $bb = null, int $dmg = 0, int $rej = 0, ?string $reason = null, ?string $note = null) => [
@@ -183,7 +209,7 @@ $rl = fn (PurchaseOrder $o, Product $p, int $acc, Location $to, ?string $lot = n
 
 // PO 1: received in full (cold brew, tea, cups, syrup)
 $po1 = $po($roaster, [[$P['cbo'], $unit('cbo', 24), 10, '52.80'], [$P['cbv'], $unit('cbv', 24), 6, '55.20'], [$P['tea'], $unit('tea', 10), 3, '61.00'], [$P['syr'], $unit('syr', 1), 12, '7.20']], 12, -8, $manager);
-$pos->markSent($po1, $manager);
+$approveAndSend($po1, $manager);
 Auth::setUser($picker);
 $recv->receive($po1, $picker, [
     $rl($po1, $P['cbo'], 144, $b['A11'], 'HCB2610A', $d(160)), $rl($po1, $P['cbo'], 96, $b['A12'], 'HCB2611B', $d(175)),
@@ -193,7 +219,7 @@ $recv->receive($po1, $picker, [
 
 // PO 2: chilled, received with a damaged crate and a rejected case -> partially received
 $po2 = $po($dairy, [[$P['oat'], $unit('oat', 6), 12, '15.60'], [$P['full'], $unit('full', 9), 6, '27.00'], [$P['kgin'], $unit('kgin', 12), 4, '30.00'], [$P['oj'], $unit('oj', 1), 24, '0']], 4, -1, $manager);
-$pos->markSent($po2, $manager);
+$approveAndSend($po2, $manager);
 $recv->receive($po2, $picker, [
     $rl($po2, $P['oat'], 60, $b['C11'], 'NOM-1027', $d(18), dmg: 6, note: 'Crate crushed in transit'),
     $rl($po2, $P['full'], 54, $b['C11'], 'BFC-1026', $d(9)),
@@ -205,15 +231,23 @@ $recv->receive($po2, $picker, [$rl($po2, $P['oj'], 12, $b['C12'], 'CPJ-1020', $d
 // PO 3: sent and overdue (dashboard tile); PO 4: draft
 Auth::setUser($manager);
 $po3 = $po($pack, [[$P['cup'], $unit('cup', 20), 5, '96.00']], 9, -2, $manager);
-$pos->markSent($po3, $manager);
+$approveAndSend($po3, $manager);
 $po($roaster, [[$P['cbo'], $unit('cbo', 24), 8, '52.80'], [$P['cbv'], $unit('cbv', 24), 4, '55.20']], 0, 4, $manager);
 
 // Cups arrived on an earlier PO that was closed short
 $po5 = $po($pack, [[$P['cup'], $unit('cup', 20), 6, '96.00']], 30, -22, $manager);
-$pos->markSent($po5, $manager);
+$approveAndSend($po5, $manager);
 Auth::setUser($picker);
 $recv->receive($po5, $picker, [$rl($po5, $P['cup'], 80, $b['A22'])], (string) Str::uuid(), 'BP-7781');
 $pos->closeShort($po5->refresh(), $manager, 'Supplier out of stock; remaining 2 cartons cancelled');
+
+// Cash-aware purchasing. PO 1 has been paid in Xero; PO 6 was approved this week and sent.
+Auth::setUser($manager);
+$pos->markPaid($po1->refresh(), $manager);
+$budget->update(['budget' => 800]);
+$po6 = $po($pack, [[$P['cup'], $unit('cup', 20), 3, '96.00']], 0, 5, $manager); // $288 ex GST
+$pos->markSent($pos->approve($po6, $manager), $manager);
+// PO 4 (the draft, $643.20) is now more than the $512 left: approving it asks for an override.
 
 // --- Customers ----------------------------------------------------------------------
 $cust = fn (string $code, string $name, string $street, string $suburb, string $pc, array $extra = []) => Customer::create($extra + [
@@ -343,6 +377,23 @@ $inbox('order_updated', 'OM-10040', 'held', 'Ingestion is switched off (ORDERMEN
 $inbox('order_created', 'OM-10044', 'needs_mapping', 'Unmapped variant HCB-MOCHA-250', attempts: 2);
 $inbox('order_created', 'OM-10045', 'failed', 'Order fetch timed out after 15s (demo)', attempts: 3);
 
+// --- Sales history and suggested POs (Reorder, Cash out, Slow movers) ------------------------
+// 8 weeks of imported Ordermentum sales a day per product; syrup has barely sold, so it's a slow mover.
+$perDay = ['cbo' => 10, 'cbv' => 4, 'oat' => 6, 'full' => 5, 'kgin' => 2, 'tea' => 1, 'cup' => 3, 'oj' => 3];
+foreach ($perDay as $k => $qty) {
+    for ($i = 1; $i <= 56; $i++) {
+        SalesHistory::create(['source' => SalesHistory::SOURCE_ORDERMENTUM, 'product_id' => $P[$k]->id, 'sale_date' => $d(-$i),
+            'qty_base' => $qty, 'external_ref' => "DEMO-{$k}-{$i}", 'line_ref' => '1']);
+    }
+}
+Product::whereIn('sku', ['HCB-ORIG-250', 'HCB-VAN-250', 'LST-EB-100', 'SYR-CAR-750'])->update(['supplier_id' => $roaster->id]);
+Product::whereIn('sku', ['NOM-OAT-1L', 'BFC-FULL-2L', 'BAYK-GIN-330', 'CPJ-OJ-1L'])->update(['supplier_id' => $dairy->id]);
+Product::where('sku', 'CUP-8OZ-50')->update(['supplier_id' => $pack->id]);
+Product::where('sku', 'HCB-ORIG-250')->update(['safety_stock_days' => 5]);
+Product::where('sku', 'BAYK-GIN-330')->update(['auto_reorder' => false]); // ordered by hand
+$suggested = app(ReorderService::class)->draftPurchaseOrders();
+
 echo "Demo data ready.\n";
+echo 'Suggested POs: '.$suggested->map(fn ($r) => $r['po']->number.' '.$r['po']->supplier->name)->implode(', ').PHP_EOL;
 echo 'Admin: alex.admin@example.com / demo-password-1, TOTP secret '.TOTP_SECRET.PHP_EOL;
 echo "Zone 1 pick list {$list->number} (Sam), packed list {$list2->number} (Casey). Run {$run->id} / {$goldRun->id}\n";

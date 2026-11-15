@@ -20,7 +20,7 @@ $app->make(Kernel::class)->bootstrap();
 DatabaseSafety::assertDestructiveAllowed('Manual screenshot lookups');
 
 $args = array_slice($argv, 1);
-$allowed = ['products', 'purchase_orders', 'orders', 'customers', 'stocktakes', 'pick_lists', 'locations'];
+$allowed = ['products', 'suppliers', 'purchase_orders', 'orders', 'customers', 'stocktakes', 'pick_lists', 'locations'];
 
 echo match ($args[0] ?? '') {
     'invite' => UserInvitation::issue($args[1], 'Drew Example', 'warehouse_staff', null)[1],

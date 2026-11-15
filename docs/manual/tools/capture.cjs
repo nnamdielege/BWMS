@@ -134,17 +134,35 @@ async function login(page, email, { secret, shootChallenge } = {}) {
 
     await page.goto(`${BASE}/suppliers`);
     await shot(page, '40-suppliers');
+    const supplierId = lookup('id', 'suppliers', 'code', 'NORTHDAIRY');
+    await page.goto(`${BASE}/suppliers/${supplierId}/edit`);
+    await shot(page, '40b-supplier-form', { fullPage: true });
     await page.goto(`${BASE}/purchase-orders?status=all`);
     await shot(page, '41-purchase-orders');
-    const poId = (n) => lookup('id', 'purchase_orders', 'number', n);
-    await page.goto(`${BASE}/purchase-orders/${poId('PO-2026-00004')}/edit`);
+    // demo-data.php creates POs in this order: 1 received+paid, 2 part received, 3 sent overdue, 4 draft, 5 closed short, 6 sent this week, 7 suggested.
+    const poId = (n) => String(n);
+    await page.goto(`${BASE}/purchase-orders/${poId(4)}/edit`);
     await shot(page, '42-po-draft-form', { fullPage: true });
-    await page.goto(`${BASE}/purchase-orders/${poId('PO-2026-00004')}`);
+    await page.goto(`${BASE}/purchase-orders/${poId(4)}`);
+    await page.getByLabel('Approve over budget anyway').check();
+    await page.fill('textarea[placeholder^="Reason"]', 'Cold brew promotion next week');
+    await shot(page, '46-po-approve-over-budget', { fullPage: true });
+    await page.goto(`${BASE}/purchase-orders/${poId(6)}`);
     await page.click('text=Email supplier');
     await shot(page, '43-po-email', { fullPage: true });
-    await page.goto(`${BASE}/purchase-orders/${poId('PO-2026-00002')}`);
+    await page.goto(`${BASE}/purchase-orders/${poId(7)}`);
+    await shot(page, '47-po-suggested', { fullPage: true });
+    await page.goto(`${BASE}/purchasing/reorder?only_needed=0`); // the suggested PO already covers what is needed
+    await shot(page, '48-reorder', { fullPage: true });
+    await page.goto(`${BASE}/purchasing/budgets`);
+    await shot(page, '49-budgets', { fullPage: true });
+    await page.goto(`${BASE}/purchasing/cash-out`);
+    await shot(page, '49b-cash-out', { fullPage: true });
+    await page.goto(`${BASE}/purchasing/slow-movers`);
+    await shot(page, '49c-slow-movers', { fullPage: true });
+    await page.goto(`${BASE}/purchase-orders/${poId(2)}`);
     await shot(page, '44-po-partially-received', { fullPage: true });
-    await page.goto(`${BASE}/purchase-orders/${poId('PO-2026-00002')}/receive`);
+    await page.goto(`${BASE}/purchase-orders/${poId(2)}/receive`);
     const rows = page.locator('tbody tr');
     await rows.nth(0).locator('input[type=number]').nth(0).fill('2');
     await rows.nth(0).locator('input[placeholder=Lot]').fill('NOM-1029');
@@ -179,6 +197,8 @@ async function login(page, email, { secret, shootChallenge } = {}) {
     const custId = lookup('id', 'customers', 'code', 'C-BEACH');
     await page.goto(`${BASE}/customers/${custId}/edit`);
     await shot(page, '74-customer', { fullPage: true });
+    await page.goto(`${BASE}/orders/consolidate`);
+    await shot(page, '75-consolidate', { fullPage: true });
 
     await page.goto(`${BASE}/admin/delivery-areas`);
     await page.click('tr:has-text("Zone 1") >> text=Edit');

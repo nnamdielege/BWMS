@@ -7,6 +7,7 @@ This manual describes the app as it is built today. The screenshots use made-up 
 **Contents**
 
 - [Quick reference by role](#quick-reference-by-role)
+- [Weekly purchasing routine](#weekly-purchasing-routine)
 - [1. Getting started](#1-getting-started)
 - [2. Roles: who can do what](#2-roles-who-can-do-what)
 - [3. Dashboard](#3-dashboard)
@@ -20,7 +21,9 @@ This manual describes the app as it is built today. The screenshots use made-up 
 - [11. Delivery runs and areas](#11-delivery-runs-and-areas)
 - [12. Sync screen (Ordermentum and portal)](#12-sync-screen-ordermentum-and-portal)
 - [13. Admin](#13-admin)
-- [14. Troubleshooting and FAQ](#14-troubleshooting-and-faq)
+- [14. Reports](#14-reports)
+- [15. Troubleshooting and FAQ](#15-troubleshooting-and-faq)
+- [Appendix: Admin setup](#appendix-admin-setup)
 
 **Words used in this manual**
 
@@ -32,6 +35,8 @@ This manual describes the app as it is built today. The screenshots use made-up 
 | Run | One delivery date plus one delivery area, for example "Thu 29 Oct · Zone 1". |
 | Reserved | Stock promised to an order that hasn't left the warehouse yet. |
 | Sellable | Stock in sellable bins, not in quarantine and not past its best-before. |
+| Budget week | Monday to Sunday, Brisbane time. Each week has its own purchasing budget. |
+| Ex GST / inc GST | Without GST / with GST added. Budgets are ex GST; Cash out shows both. |
 
 ---
 
@@ -54,7 +59,8 @@ You can also enter counts in a stocktake a manager has started ([8.2](#82-count)
 | Task | Where | Section |
 |---|---|---|
 | Check the dashboard and act on count tasks and negative bins | **Dashboard** | [3](#3-dashboard) |
-| Create, send and close purchase orders | **Purchase orders** | [6](#6-purchasing-and-receiving) |
+| Create, approve, send and close purchase orders | **Purchase orders** | [6](#6-purchasing-and-receiving) |
+| Substitute a product for a short line | **Orders** → order → **Substitute** | [9.5b](#95b-substitutions) |
 | Adjust or write off stock | **Stock on hand** → product → **Adjust / write off** | [7.3](#73-adjust-or-write-off-stock) |
 | Run a stocktake and post it | **Stocktakes** | [8](#8-stocktakes-and-count-tasks) |
 | Deal with oversold orders and orders without a run | **Orders** → order | [9](#9-orders) |
@@ -63,8 +69,15 @@ You can also enter counts in a stocktake a manager has started ([8.2](#82-count)
 
 | Task | Where | Section |
 |---|---|---|
+| The weekly routine: suggestions, approve, send, pay | See the one-page guide | [Weekly purchasing routine](#weekly-purchasing-routine) |
+| Review the suggested POs | **Purchase orders** → status **Suggested** | [6.6](#66-suggested-pos-and-reorder-suggestions) |
 | Create a purchase order | **Purchase orders** → **New purchase order** | [6.2](#62-create-a-purchase-order) |
+| Approve a PO against the week's budget | PO → **Approve** | [6.2a](#62a-approve-the-po) |
 | Email a PO to the supplier | PO → **Email supplier** | [6.3](#63-send-the-po) |
+| Record that a supplier has been paid | PO → **Mark paid** | [6.5a](#65a-mark-paid) |
+| Set the week's budget | **Purchasing → Budgets** | [6.7](#67-budgets) |
+| See what's due to suppliers | **Purchasing → Cash out** | [6.8](#68-cash-out) |
+| Find stock that isn't selling | **Purchasing → Slow movers** | [6.9](#69-slow-movers) |
 | Close a PO short | PO → **Close short** | [6.5](#65-close-short-or-cancel) |
 | Accept an over-receipt | Receive screen → **Accept the over-receipt** (with the person receiving) | [6.4](#64-receive-a-delivery) |
 | Keep supplier details up to date | **Suppliers** | [6.1](#61-suppliers) |
@@ -90,6 +103,36 @@ You can also enter counts in a stocktake a manager has started ([8.2](#82-count)
 | Edit delivery areas | **Delivery areas** | [11.3](#113-edit-delivery-areas) |
 
 An admin can also do everything a warehouse manager can.
+
+---
+
+## Weekly purchasing routine
+
+For whoever does the buying (purchasing, warehouse managers, admins). The detail is in [6](#6-purchasing-and-receiving).
+
+**Monday morning**
+
+1. **Check this week's budget.** **Purchasing → Budgets**. If the week says "auto-estimate – check against Xero", compare it with last week's customer receipts in Xero, then click **Edit** and correct it ([6.7](#67-budgets)).
+2. **Review the suggested POs.** At 6 am every Monday the app drafts one suggested PO per supplier from what's been selling. Open **Purchase orders**, choose the **Suggested** status, and open each one ([6.6](#66-suggested-pos-and-reorder-suggestions)).
+   - Change quantities with **Edit** if you know something the sales history doesn't (a promotion, a closure, a new café).
+   - An amber note means the PO is below the supplier's minimum order. Add to it or wait a week.
+   - Lines in red have a gross margin under 26%. Check the cost and the sell price.
+3. **Approve what fits the budget.** Click **Approve** on each PO you want ([6.2a](#62a-approve-the-po)). The bar at the top shows **Budget**, **Committed** and **Remaining**. If a PO goes over, you can still approve it, but you must tick **Approve over budget anyway** and give a reason.
+4. **Send.** On each approved PO, click **Email supplier**, or **Mark as sent** if you ordered by phone ([6.3](#63-send-the-po)).
+
+Need something before Monday? **Generate suggestions** on **Purchase orders** runs the same check at any time.
+
+**When you pay a supplier in Xero**
+
+- Open the PO and click **Mark paid** ([6.5a](#65a-mark-paid)). It drops off **Cash out**. This works before delivery too, for suppliers you pay up front.
+
+**Before a big order**
+
+- Open **Purchasing → Cash out** ([6.8](#68-cash-out)). Check the **Net** row for the weeks the payment falls due. Red weeks mean more going out to suppliers than the indicative sales coming in.
+
+**Once a month**
+
+- Open **Purchasing → Slow movers** ([6.9](#69-slow-movers)). Decide what to do with stock that isn't selling: a special, a return to the supplier, or stop ordering it (untick **Include in suggested POs** on the product).
 
 ---
 
@@ -202,9 +245,12 @@ Each user has one or more roles. The menu on the left only shows what your roles
 | Enter counts in a stocktake | ✓ | ✓ | ✓ | | |
 | Start, post or cancel a stocktake; dismiss count tasks | ✓ | ✓ | | | |
 | Edit suppliers; create, send, close and cancel POs | ✓ | ✓ | | ✓ | |
+| Approve POs, mark paid, set budgets, generate suggestions | ✓ | ✓ | | ✓ | |
+| See Reorder suggestions, Budgets, Cash out, Slow movers | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Receive deliveries | ✓ | ✓ | ✓ | | |
 | Accept an over-receipt | ✓ | ✓ | | (✓)¹ | |
-| Create orders and customers; cancel orders; change runs | ✓ | ✓ | | | |
+| Create orders and customers; cancel orders; change runs; substitute | ✓ | ✓ | | | |
+| Reports: Stock value & margin, Substitutions | ✓ | ✓ | | | |
 | Pick & pack (phone/handheld), Pick lists (desktop), dispatch | ✓ | ✓ | ✓ | | |
 | Sync actions (push, retry, replay, map, enable) | ✓ | ✓ | | | |
 | See users and the audit log | ✓ | ✓ | | | |
@@ -235,6 +281,7 @@ The dashboard is the first page after you log in. Each tile shows only if your r
 | **Stock lines awaiting put-away** | Stock sitting in a receiving bin that isn't sellable. Only shows if your site receives into such a bin. | Move it to a sellable bin ([7.4](#74-move-stock-between-bins)). |
 | **Orders needing attention** | **Oversold:** accepted beyond available stock. **Review:** the channel changed the order while it was being picked. | Open the order and decide ([9.5](#95-oversold-and-review-flags)). |
 | **Bins to count** | Count tasks: a bin went below zero at dispatch, or a picker reported a short pick. "Times" counts how often it was raised. | Managers: **Start count** or **Dismiss** ([8.4](#84-count-tasks)). |
+| **Will run out before their next delivery** | Products whose stock won't last until a delivery ordered today could arrive, at the rate they're selling. Red when above 0. | Click it to open **Reorder suggestions** filtered to those products, and order them ([6.6](#66-suggested-pos-and-reorder-suggestions)). |
 | **Negative bins** | Bins where the system shows less than zero. Goods left the warehouse that the system didn't think were there. | Count the bin. Click the SKU to see its movements. |
 
 Warehouse staff see fewer tiles:
@@ -247,7 +294,7 @@ Warehouse staff can't see the Sync screen, so they don't get the sync-failures t
 
 ## 4. Products
 
-**Catalogue → Products** lists every product. Search by SKU or name, or scan a barcode into the search box. Filter by **Active / Inactive / All** and by range.
+**Catalogue → Products** lists every product. Search by SKU or name, or scan a barcode into the search box. Filter by **Active / Inactive / All**, by range, and by GST (**GST: all**, **GST-free**, **Taxable (10%)**). The **GST** column shows "GST-free" or "10%".
 
 ![Products](img/20-products.png)
 
@@ -264,8 +311,9 @@ Managers and admins see **New product** and **Edit**. Everyone else sees **View*
    - **Category** (optional).
    - **Range** (optional): see [4.2](#42-ranges).
    - **Base unit:** what one stock unit is, for example "can" or "bottle".
-   - **Description**, **Reorder point** and **Reorder quantity** (in base units), **Default sell price**.
-3. Set the flags ([4.4](#44-flags-and-sell-channels)).
+   - **Description**, **Reorder point** and **Reorder quantity** (in base units).
+   - **Default sell price:** ex GST, for the product's **default sale pack** (the pack ticked **Default for sales**), for example the price of a Carton of 24, not of one can. Reports and the GM % on purchase orders read it that way.
+3. Set the flags ([4.4](#44-flags-and-sell-channels)) and the purchasing fields ([4.4a](#44a-purchasing-fields)).
 4. Set up the pack sizes and barcodes ([4.3](#43-pack-sizes-and-barcodes)).
 5. Click **Create product** or **Save**.
 
@@ -300,6 +348,19 @@ Before go-live, packs can also be set up in bulk on **Pack setup** ([4.5](#45-pa
 | **Stock-tracked** | Untick for services such as a delivery fee. They have no stock, aren't counted or picked, and no stock is pushed for them. |
 | **Chilled** | For milks, juices and kombucha. A CHILLED badge shows when picking, and chilled lines are always picked last. |
 | **Sold on** | None, Ordermentum, Portal, or both. Stock is only pushed to the channels a product is sold on. Mapping a channel item to a product ([12.4](#124-map-a-channel-item)) adds that channel automatically. |
+| **GST-free** | For GST-free goods such as fresh milk. A new purchase order line for the product starts at 0% GST instead of 10% (you can still change it on the PO), and Cash out adds no GST to its sales. An admin can set it for the whole catalogue at once from Xero ([Appendix](#appendix-admin-setup)). |
+
+### 4.4a Purchasing fields
+
+These drive the suggested POs and reorder suggestions ([6.6](#66-suggested-pos-and-reorder-suggestions)).
+
+| Field | What it does |
+|---|---|
+| **Preferred supplier** | Who the product is bought from. Left empty, the supplier of its last PO is used. |
+| **Lead time override (days)** | Days from ordering to delivery, if different from the supplier's lead time. |
+| **Supplier pack / order multiple** | The pack the supplier sells, in base units, for example 24 for a carton of 24 cans. Suggestions are rounded up to whole packs. |
+| **Safety stock override (days)** | Extra days of stock to keep on hand for this product. Empty uses the setting on **Reorder suggestions → Settings** (3 days to start with). |
+| **Include in suggested POs** | Ticked (the default): the product goes on the Monday suggested POs. Untick it for products you order by hand, or are running down. It still shows on **Reorder suggestions**. |
 
 ### 4.5 Pack setup (before go-live)
 
@@ -447,26 +508,73 @@ Pickers scan these labels, so every bin needs one.
 
 ![Suppliers](img/40-suppliers.png)
 
-Each supplier has a code, name, contact, phone, **order email** (POs are emailed here), **CC emails**, payment terms, lead time, address and notes.
+Each supplier has a code, name, contact, phone, **order email** (POs are emailed here), **CC emails**, address and notes, and these purchasing details:
+
+| Field | What it does |
+|---|---|
+| **Payment terms** | Free text printed for reference, for example "30 days EOM". |
+| **Payment terms (days after delivery)** | The number the app uses: each approved PO's **payment due date** is its delivery date plus this many days. **0 = COD** (paid on delivery). |
+| **Lead time (days)** | Days from ordering to delivery. Sets the expected date on suggested POs. |
+| **Order days (for reorder suggestions)** | The weekdays you order from them. Used by reorder suggestions to know when the next order is. |
+| **Review period (days)** | Used instead of order days: how often you order from them. |
+| **Minimum order ($ ex GST)** | A PO below this is flagged, not blocked. |
+| **MOQ per line (supplier packs)** | The least you can order of any one product. |
+
+![Supplier details](img/40b-supplier-form.png)
 
 ### 6.2 Create a purchase order
 
-**Purchasing → Purchase orders** lists POs. Filter by **Open**, **All** or a status, and by supplier.
+**Purchasing → Purchase orders** lists POs. Filter by **Open**, **All** or a status, and by supplier. The bar above the list shows this week's purchasing budget ([6.2a](#62a-approve-the-po)), and the **Payment due** column shows when each approved PO has to be paid.
 
 ![Purchase orders](img/41-purchase-orders.png)
+
+PO numbers look like `PO-20261116-0001`: the date the PO was created, then a number that starts again at 0001 each day.
 
 1. Click **New purchase order**.
 2. Choose the **Supplier** and **Deliver to** site. Add the **Supplier reference**, **Order date** and **Required by** date.
 3. Search for each product and add it.
-4. For each line, choose the **Pack**, then enter the **Qty**, the **Cost / pack (ex GST)** and the **GST %**. The base-unit quantity shows under the pack.
+4. For each line, choose the **Pack**, then enter the **Qty**, the **Cost / pack (ex GST)** and the **GST %**. The base-unit quantity shows under the pack. **GST %** starts at 0 for a GST-free product and 10 for anything else. Change it if the supplier's invoice says otherwise.
 5. Add **Notes** if needed. They're printed on the PO.
 6. Click **Create draft**.
 
 ![Draft purchase order](img/42-po-draft-form.png)
 
-You can change a PO only while it's a draft.
+You can change a PO only while it's **Suggested** or **Draft**. Once approved, it can't be edited: cancel it and make a new one.
+
+PO statuses: **Suggested** or **Draft → Approved → Sent → Partially received → Received → Paid**. A PO can also be **Closed** (closed short) or **Cancelled**.
+
+### 6.2a Approve the PO
+
+Every PO, suggested or made by hand, has to be approved before it can be sent. Approving checks it against this week's purchasing budget. You can approve your own POs. For admins, warehouse managers and purchasing.
+
+The PO page shows the budget bar:
+
+- **Budget:** this week's budget, ex GST ([6.7](#67-budgets)). "not set" if nobody has set one.
+- **Committed:** the total (ex GST) of POs approved this week that are still going ahead, whatever happens to them after (sent, received or paid). Cancelled POs drop out.
+- **Remaining:** budget minus committed. Red when below zero.
+- **This PO:** the PO's subtotal, ex GST.
+
+**Within budget**
+
+1. Open the PO. Check the lines, including **Sell/pack** and **GM %**: lines under 26% gross margin are highlighted in red.
+2. Click **Approve**.
+
+**Over budget, or no budget set for the week**
+
+The box turns red and says by how much the PO is over.
+
+1. Decide whether it really has to go this week. If not, leave it, or **Cancel** it.
+2. To go ahead, tick **Approve over budget anyway**.
+3. Type the reason, for example "Christmas stock-up" or "Supplier price rise from Monday". It's kept on the PO and shown as **Approved over budget**.
+4. Click **Approve**.
+
+![Approving over budget](img/46-po-approve-over-budget.png)
+
+Approving sets the **Payment due** date: the expected delivery date plus the supplier's payment terms in days ([6.1](#61-suppliers)). With no expected date, it counts from today plus the supplier's lead time. The PO list then marks over-budget approvals with **over budget**.
 
 ### 6.3 Send the PO
+
+The PO must be **Approved** first ([6.2a](#62a-approve-the-po)).
 
 **By email**
 
@@ -476,13 +584,11 @@ You can change a PO only while it's a draft.
 
 ![Email supplier](img/43-po-email.png)
 
-Sending a draft marks it as **Sent**. The **Emails** section on the PO shows each email as queued, sent or failed. If one failed, click **Retry**.
+Sending an approved PO marks it as **Sent**. The **Emails** section on the PO shows each email as queued, sent or failed. A failed email shows a red box at the top of the PO with the reason, and **email failed** in the PO list. Fix the address if it's wrong, then click **Retry**.
 
 **Another way** (phone, supplier portal): click **Mark as sent**.
 
 **PDF** opens the PO as a PDF at any time.
-
-PO statuses: **Draft → Sent → Partially received → Received**. A PO can also be **Closed** (closed short) or **Cancelled**.
 
 ### 6.4 Receive a delivery
 
@@ -517,7 +623,98 @@ Clicking **Post receipt** twice doesn't book the stock twice.
 ### 6.5 Close short or cancel
 
 - **Close short:** for a partly received PO when the rest won't come. Enter why (required). The PO becomes **Closed**.
-- **Cancel:** only for a draft or sent PO with nothing received. The reason is optional.
+- **Cancel:** for a suggested, draft, approved or sent PO with nothing received. The reason is optional. A cancelled PO no longer counts against the week's budget.
+
+### 6.5a Mark paid
+
+The app doesn't talk to Xero. When you pay a supplier in Xero, record it on the PO so **Cash out** stops showing it as owed.
+
+1. Open the PO.
+2. Click **Mark paid** and confirm. Who and when are recorded.
+
+You can mark a PO paid once it's **Approved**, **Sent**, **Partially received**, **Received** or **Closed** (short-shipped POs get paid too). Not while it's suggested, a draft, or cancelled.
+
+- **Received** POs become **Paid**.
+- **Paid up front?** An approved, sent or partly received PO keeps its status, so it can still be sent and received as normal, and shows **paid** next to its status in the list. It becomes **Paid** once it's fully received.
+
+### 6.6 Suggested POs and reorder suggestions
+
+**Suggested POs.** Every Monday at 6 am the app looks at what each product has sold and what's on hand and on order, and drafts one **Suggested** PO per supplier for what's needed. If the week has no budget yet, it also sets one from the estimate ([6.7](#67-budgets)).
+
+- Only products with **Include in suggested POs** ticked go on them ([4.4a](#44a-purchasing-fields)), and only suppliers that are active.
+- The quantity covers the supplier's lead time plus the time to the next order, plus safety stock, less what's available and already on order, rounded up to the supplier's pack and MOQ.
+- Each line's cost is the last price paid for that pack (else the product's average cost). GST starts at 0% for GST-free products and 10% otherwise.
+- A PO below the supplier's minimum order gets an amber note. It's still made: you decide.
+
+![A suggested PO](img/47-po-suggested.png)
+
+What to do with them:
+
+- **Approve** to go ahead ([6.2a](#62a-approve-the-po)).
+- **Edit** to change quantities. Once you save, it becomes a **Draft** and the next run leaves it alone. Its quantities count as on order, so the next run won't suggest them again.
+- **Leave it.** Until it's approved or edited, each run replaces its lines with fresh figures. If nothing is needed any more, it's cancelled.
+
+**Generate suggestions** on **Purchase orders** runs the same check straight away, for example on a Thursday after a big week. It updates the existing suggested POs, so pressing it twice doesn't double up.
+
+**Reorder suggestions** (**Purchasing → Reorder suggestions**) shows the working behind it, product by product, grouped by supplier: average sales a day, cover days, safety stock, available, on order, what's needed and the suggestion. Hover over a line to see how it was worked out.
+
+![Reorder suggestions](img/48-reorder.png)
+
+- **Only items that need ordering** (ticked to start with) and **Stock-out before next delivery** filter the list.
+- **Create draft PO** on a supplier makes a draft from the quantities on screen.
+- **Settings** (admins, managers, purchasing): safety stock (**Days of demand** or a z-score), the lead time and review period for suppliers that have none, and **Email managers a summary at 7am**.
+
+Sales are what was dispatched in the app, plus sales history brought in from before the app went live, over the last 8 weeks. Recent weeks count more. Days when the product was out of stock are left out, so a stock-out doesn't make it look like it doesn't sell.
+
+### 6.7 Budgets
+
+**Purchasing → Budgets** sets how much can be approved in POs each week, ex GST. It shows 4 weeks back and 8 ahead.
+
+![Budgets](img/49-budgets.png)
+
+| Column | Meaning |
+|---|---|
+| **Budget** | The week's budget. — if not set. |
+| **Committed** | POs approved that week ([6.2a](#62a-approve-the-po)). |
+| **Remaining** | Budget minus committed. Red when below zero. |
+| **Estimate (74% of sales)** | 74% of the previous week's sales, worked out from what was dispatched (ex GST). It's an estimate: check it against Xero receipts. |
+
+**Set or change a week's budget** (admins, managers, purchasing)
+
+1. Click **Set** (or **Edit**) on the week. A new week starts with the estimate filled in.
+2. Change **Budget ($ ex GST)** to the figure you want, and add **Notes** if you like.
+3. Click **Save**.
+
+**Remove** deletes a week's budget.
+
+When the Monday suggestions run (or someone clicks **Generate suggestions**) and the week has no budget, one is set from the estimate, with the note "auto-estimate – check against Xero". Check it and correct it. A week with no budget at all counts as having nothing to spend: every approval needs an override.
+
+### 6.8 Cash out
+
+**Purchasing → Cash out** shows what has to be paid to suppliers in each of the next 13 weeks, from this Monday, against an indicative figure for money coming in.
+
+![Cash out](img/49b-cash-out.png)
+
+- **One row per supplier:** the POs due that week, inc GST, by their **Payment due** date. Approved, sent, received and closed POs not yet marked paid are counted. Drafts and suggested POs aren't: approve them first.
+- **Total** is inc GST; **Total ex GST** is alongside.
+- **Supplier payments:** each week's total inc GST, with the ex GST figure underneath.
+- **Inflow (indicative):** what current sales would bring in each week: each product's average daily sales × 7 × its sell price, plus 10% GST unless it's GST-free. The same every week. It's a guide, not a forecast.
+- **Net:** inflow minus supplier payments, inc GST and ex GST. Red weeks pay out more than they bring in.
+- **Overdue:** a red box at the top counts POs past their payment due date and not marked paid.
+
+Wages, rent and other fixed costs stay in Xero and aren't in these figures.
+
+### 6.9 Slow movers
+
+**Purchasing → Slow movers** lists stock that's barely selling: under 0.1 base units a day (for example, fewer than 3 cans a month), with stock on hand. The most money tied up comes first.
+
+![Slow movers](img/49c-slow-movers.png)
+
+- **Sold / day:** the same average the reorder suggestions use.
+- **Value at cost:** on hand × average cost. **Tied up** at the top is the total.
+- **Days of cover:** how long the stock lasts at that rate. "no sales" means nothing sold in 8 weeks.
+
+Inactive products are marked **inactive**. Click the SKU to see the product's stock.
 
 ---
 
@@ -736,8 +933,8 @@ For managers and admins.
 
 If a picker can't find everything, the order's **If short** rule applies at dispatch:
 
-- **Backorder** (the default for Ordermentum and portal orders): what was picked is dispatched. The order becomes **Partially dispatched**, and the rest stays reserved for a later pick.
-- **Cancel the rest:** what was picked is dispatched, and the rest is cancelled.
+- **Backorder** (the default for manual orders): what was picked is dispatched. The order becomes **Partially dispatched**, and the rest stays reserved for a later pick.
+- **Cancel the rest** (the default for Ordermentum and portal orders): what was picked is dispatched, and the rest is cancelled and its stock released. The portal credits the café for what didn't go. Ordermentum orders that arrived before this became the default keep the rule they came with.
 
 Order statuses: **Open** (reserved, waiting) → **Picking** (on a pick list) → **Partially dispatched** or **Dispatched**. An order can also be **Cancelled**.
 
@@ -745,7 +942,13 @@ Order statuses: **Open** (reserved, waiting) → **Picking** (on a pick list) �
 
 ![Oversold order](img/71-order-oversold.png)
 
-- **Oversold:** the order was accepted beyond available stock. Decide: short-ship, substitute, or contact the customer. The flag comes off by itself, with an entry in the audit log, once stock covers the whole order: after a delivery is received, an adjustment, a posted stocktake, or another order is cancelled or reduced. When stock is short, the oldest orders are covered first.
+- **Oversold:** the order was accepted beyond available stock. Each short line has an **OVERSOLD** badge and says how much it's short, for example "short 1 Case". On that line, managers can:
+  - **Substitute…** another product for what's short ([9.5b](#95b-substitutions)),
+  - **Cancel line qty**: cancel part of the line, with a reason (for example "customer declined"). The stock is released,
+  - **View stock** for the product,
+  - or contact the customer and leave it to be backordered.
+
+  The flags come off by themselves, line by line, with an entry in the audit log, once stock covers them: after a delivery is received, an adjustment, a posted stocktake, or another order is cancelled, reduced or substituted. When stock is short, the oldest orders are covered first. The order's flag comes off when no line is short.
 - **Review:** the order page says why. For example, the channel changed the order while it was being picked, it was reduced below what was already dispatched, or its delivery date needs a look ([11.1](#111-how-an-order-gets-its-run)).
 
 When it's dealt with, click **Mark flags handled**.
@@ -758,9 +961,32 @@ A portal order paid by card arrives unpaid: at checkout it has about 30 minutes 
 - **If it isn't paid in time,** the portal cancels it and the stock is released. If that doesn't happen, the badge reads **pay-by passed**, and the order stays held until someone decides.
 - **Release to pick** on the order lets a manager send it for picking unpaid. It's recorded in the audit log, and a later message from the portal won't put the hold back.
 
+### 9.5b Substitutions
+
+When a café agrees to take another product instead of one that's short, a manager records a **substitution**. The original line is reduced (counted as "substituted", not short) and a new line is added for the substitute.
+
+**On the order page** (managers and admins)
+
+1. Click **Substitute** on the line (or **Substitute…** on an oversold line).
+2. Enter how much of the original to replace, in packs plus loose units.
+3. Search for the substitute product, choose its **Pack** and quantity. It starts at the same quantity.
+4. Set the **Price per pack (ex GST)**. Leave it empty for the substitute's sell price, or tick **Keep original price** to charge what the café was paying. **Price difference** shows the change.
+5. Enter a **Note**, such as "Accepted by Jane by phone 14/11". It's required.
+6. Click **Substitute**.
+
+[screenshot: Substitute dialog on the order page]
+
+**On the handheld:** a manager picking a line that comes up short can tap **Substitute…** after **Short / not found**, and use the same steps.
+
+The substitute shows as **SUB for** (original SKU and name) on the order, the pick list, the handheld, the packing slip and the manifest, so the picker and the café know why it's there. If the order is already being picked, the new line appears on the handheld by itself.
+
+**Undo** under **Substitutions** on the order puts the original back and removes the substitute line. It's only offered while the substitute line isn't on a pick list yet.
+
+All substitutions are listed on **Reports → Substitutions** ([14](#14-reports)).
+
 ### 9.6 Cancel an order
 
-For managers and admins. Click **Cancel order** and give a reason. Undispatched stock is released.
+For managers and admins. Click **Cancel order** and give a reason. Undispatched stock is released. For a portal order, the portal is told what was cancelled and credits the customer.
 
 ### 9.7 Change a delivery date
 
@@ -774,6 +1000,8 @@ If the channel later sends a different date, that date wins. If it sends the sam
 ### 9.8 Consolidate runs
 
 **Orders → Consolidate** (managers and admins) pulls orders from later runs onto an earlier day, to fill a delivery day. For example, next Monday's North of Brisbane orders onto this Friday.
+
+![Consolidate runs](img/75-consolidate.png)
 
 1. Choose the **Target date**. The top table shows how full that day is: each run's orders, packs and value, where orders carry prices.
 2. Below are the orders from the next 7 days after it (change **Look ahead** for more), by date and area. Orders already on a pick list can't be selected.
@@ -834,6 +1062,22 @@ The scan box has two buttons:
 - **⌨** shows the phone's keyboard, if you need to type.
 - **📷** uses the camera as a scanner. It only appears on phones and browsers that support it, and needs https.
 
+**The scan box keeps the cursor.** After every scan, button or save, the cursor goes back to the scan box, so the next scan lands there. It only leaves when you tap into another box, such as a quantity.
+
+**The bar at the top**
+
+- **‹ (Back)** goes back one screen: from a pick list or a manifest to the queue, from packing to the pick list, from the queue to the dashboard.
+- The title says where you are, for example the pick list number, day and run.
+- **☰ (Menu)** opens the menu: **Dashboard**, **Pick & pack (phone/handheld)**, **Pick lists (desktop)**, **Orders** and **Capture barcodes** (those your role allows), and **Log out**.
+
+[screenshot: handheld menu open]
+
+**Leaving with lines still to pick.** If you tap Back, a menu link or Log out while lines are left to pick, **Leave this screen?** asks first, with how many lines are left. **Stay** is the first button, so a stray scan can't leave by accident. **Leave** goes; the list stays assigned to you, and **Continue** in the queue takes you back.
+
+**The screens update themselves** every 30 seconds and whenever you come back to them, so a line added from another device (a substitute, say) appears without reloading. Your place and your scans are kept.
+
+**Dark mode.** The pick and pack screens follow your **Appearance** setting ([1.7](#17-your-settings)) and stay readable in Dark.
+
 ### 10.2 The queue
 
 Open **Pick & pack (phone/handheld)** from the menu. Runs are grouped by delivery day: **OVERDUE** in red at the top (anything before today, Brisbane time), then **Today**, **Tomorrow** and each later day. **Orders**, **Pick lists** and the pack screen show the day the same way, and each order has a badge for its source: Ordermentum, Portal or Manual.
@@ -875,6 +1119,7 @@ You see:
 - the lot and best-before date (batch-tracked products)
 - how many to pick, in packs
 - the order and customer
+- **SUB for** (original product) on a substitute line ([9.5b](#95b-substitutions))
 
 Then:
 
@@ -914,6 +1159,10 @@ Both scans are checked by the server as well.
 
 The bin gets a count task. At dispatch, the rest of the order follows its backorder or cancel rule ([9.4](#94-backorders)).
 
+Managers also see **Substitute…** here, to give the café another product for what wasn't found, there and then ([9.5b](#95b-substitutions)).
+
+**Enter quantity won't confirm?** It says why underneath, for example a quantity above what's to pick, or no reason chosen. If the server refuses it, the server's message is shown.
+
 ### 10.5 Pack
 
 When every line is picked, "All lines picked" shows. Tap **Go to packing**.
@@ -922,8 +1171,8 @@ When every line is picked, "All lines picked" shows. Tap **Go to packing**.
 
 For each order:
 
-1. Tick each line as it goes into the carton(s). Each tick saves straight away, so you can leave the screen and come back. Untick a line to reverse it. You can't pack an order until all its lines are picked. Once an order is packed, its lines stay ticked and neither they nor the carton count can be changed.
-2. Enter the number of **Cartons**. This saves straight away too.
+1. Tick each line as it goes into the carton(s). Each tick saves straight away, so you can leave the screen, or swap handhelds, and come back to the same ticks. Untick a line to reverse it. You can't pack an order until all its lines are picked. Once an order is packed, its lines stay ticked and neither they nor the carton count can be changed.
+2. Enter the number of **Cartons**. It saves as you type, and is there when you come back.
 3. Tap **Packed**. Who and when are recorded.
 4. Tap **Packing slip** to open an A5 PDF. Print it and put it in the carton.
 
@@ -1122,6 +1371,7 @@ You can't reset your own two-factor. Ask another admin.
    - Choose a PNG or JPEG of up to 1 MB. A square image of at least 300 px prints best.
    - Click **Upload logo**.
    - **Use the bundled logo** goes back to the standard Local Selection logo.
+3. **Email:** click **Send test email** to send one to yourself. "Sent." means supplier POs, invitations and reports will be delivered. If it says **Failed to send to …**, the reason follows: pass it to whoever looks after the server. A red warning above the button means the server isn't set up to deliver email at all.
 
 ### 13.5 Audit log
 
@@ -1133,7 +1383,29 @@ Filter by event (for example `roles_changed`) or subject (for example `User`).
 
 ---
 
-## 14. Troubleshooting and FAQ
+## 14. Reports
+
+For admins and warehouse managers, under **Reports** in the menu. All money is ex GST.
+
+### 14.1 Stock value & margin
+
+**Reports → Stock value & margin** has three tabs. Each can be exported (**XLSX** or **CSV**, top right).
+
+- **Stock value:** each product's stock at cost and at sell price, gross profit and GM %, per pack (the default sale pack). Choose **Quantity**: **On hand**, or **Available (sellable, not reserved)**. **Sellable products only** and **Hide zero stock** narrow the list. Products with no cost or no sell price are flagged, with a link to fill in costs.
+- **Drop profitability:** what one delivery of a product makes, for **Packs per drop** of it, against the **Delivery cost per drop ($)**. **Break-even** is how many packs one drop needs to cover the delivery. Products that lose money at that drop size are counted at the top.
+- **Real drops:** each dispatched order by delivery date, with its sales, cost, gross profit and net after delivery, by area. Orders under **Free delivery from ($)** are marked.
+
+**Save delivery settings** saves the delivery cost and free-delivery figure for everyone.
+
+[screenshot: Reports → Stock value & margin]
+
+### 14.2 Substitutions
+
+**Reports → Substitutions** lists the substitutions ([9.5b](#95b-substitutions)) between two dates: date, order, customer, original, substitute, price difference and note. Export as **XLSX** or **CSV**.
+
+---
+
+## 15. Troubleshooting and FAQ
 
 **I can't see a menu item a colleague has.**
 Your role doesn't include it. See [2](#2-roles-who-can-do-what), and ask an admin to change your roles.
@@ -1178,7 +1450,40 @@ Check the delivery. If you're keeping it, someone who manages POs ticks **Accept
 Damaged stock needs a quarantine bin at that site. Ask a manager to add one ([5.1](#51-add-or-edit-a-location)).
 
 **"… must be sent before receiving".**
-The PO is still a draft. Click **Mark as sent** or **Email supplier** first.
+The PO hasn't been sent. Approve it if needed ([6.2a](#62a-approve-the-po)), then click **Mark as sent** or **Email supplier**.
+
+**I can't send a PO, or "Approve … before sending it".**
+Every PO needs approving first. Open it and click **Approve** ([6.2a](#62a-approve-the-po)). The **Email supplier** button only appears once it's approved.
+
+**The Approve button is greyed out.**
+The PO is over this week's remaining budget, or the week has no budget. Tick **Approve over budget anyway** and type a reason, or set the week's budget first ([6.7](#67-budgets)).
+
+**I can't edit an approved PO.**
+Approved POs are locked so the budget check stays true. Cancel it and make a new one, or ask the supplier to adjust the delivery and receive what comes.
+
+**My changes to a suggested PO were overwritten.**
+Suggested POs are refreshed by each suggestion run until approved or edited. Use **Edit** and **Save**: that makes it a draft, which the run leaves alone ([6.6](#66-suggested-pos-and-reorder-suggestions)).
+
+**A product never appears on the suggested POs.**
+Check on the product that **Include in suggested POs** is ticked and it has a **Preferred supplier** (or a past PO), and that the supplier is active. Check **Reorder suggestions** to see whether anything is needed: stock on hand and on order may already cover it.
+
+**There's no Mark paid button.**
+A PO can be marked paid once it's approved, and not when it's cancelled. If it's already marked, **Paid** shows who and when.
+
+**Cash out shows a PO I've already paid.**
+Mark it paid ([6.5a](#65a-mark-paid)). Cash out only knows what's recorded here, not what's in Xero.
+
+**Cash out doesn't show a PO.**
+Only approved POs have a payment due date. Drafts and suggested POs aren't shown until they're approved.
+
+**The GST on a PO line is wrong.**
+Change the **GST %** on the line while it's a draft. To fix it for good, tick or untick **GST-free** on the product ([4.4](#44-flags-and-sell-channels)).
+
+**GM % on a PO line looks far too low (or negative).**
+The product's **Default sell price** is probably for one unit while its default sale pack is a carton. Enter the price of the default sale pack ([4.1](#41-create-or-edit-a-product)).
+
+**Leave this screen? keeps appearing on the handheld.**
+You have lines left to pick. Tap **Stay** and finish, or **Leave**: the list stays yours ([10.1](#101-before-you-start)).
 
 **The cost import says the preview expired.**
 Previews last 30 minutes. Upload the file again.
@@ -1194,3 +1499,25 @@ No. Stock movements can't be edited or deleted. Post a correcting adjustment wit
 
 **How do I change my email address?**
 Ask an administrator. They change it on **Admin → Users** ([13.2](#132-change-roles-email-or-deactivate)).
+
+---
+
+## Appendix: Admin setup
+
+One-off and server jobs for an administrator, or whoever runs the server. Warehouse staff don't need this page.
+
+**Before the first Monday run**
+
+1. **Supplier payment terms.** On each supplier, fill in **Payment terms (days after delivery)** (0 for COD), and check **Lead time**, **Order days** or **Review period**, **Minimum order** and **MOQ** ([6.1](#61-suppliers)).
+2. **GST-free products.** Either tick **GST-free** product by product ([4.4](#44-flags-and-sell-channels)), or have the server administrator import the flags for the whole catalogue from a list of SKUs exported from Xero item tax codes. The import lists any SKUs it can't match and leaves them alone, and can be run as a trial first.
+3. **Payment due dates for POs already open.** POs that were sent or received before approvals existed have no payment due date, so Cash out can't place them. After step 1, the server administrator fills them in once: expected date (or the order date) plus the supplier's payment terms. It can be run as a trial first, and doesn't change POs already paid or cancelled.
+4. **This week's budget** ([6.7](#67-budgets)), or let the first Monday run set it from the estimate.
+5. **Purchasing fields on products:** preferred supplier, supplier pack, and any safety stock overrides ([4.4a](#44a-purchasing-fields)).
+
+**The Monday run and other scheduled jobs**
+
+The suggested POs (Mondays 6 am), the 7 am reorder email, nightly stock checks and Ordermentum checks only run if the server's scheduler is running. If suggested POs don't appear on a Monday, ask the server administrator to check it. **Generate suggestions** on **Purchase orders** works regardless.
+
+**Email**
+
+Use **Send test email** on **Company settings** ([13.4](#134-company-settings)) after any change to the server's email settings.
