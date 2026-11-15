@@ -60,9 +60,9 @@ class PurchaseOrderTest extends TestCase
         $this->actingAs($buyer)->post(route('purchase-orders.store'), $this->payload($supplier, $product))->assertSessionHasNoErrors();
 
         [$first, $second] = PurchaseOrder::orderBy('id')->get();
-        $year = now('Australia/Brisbane')->format('Y');
-        $this->assertSame("PO-{$year}-00001", $first->number);
-        $this->assertSame("PO-{$year}-00002", $second->number);
+        $day = now('Australia/Brisbane')->format('Ymd');
+        $this->assertSame("PO-{$day}-0001", $first->number);
+        $this->assertSame("PO-{$day}-0002", $second->number);
         $this->assertSame(PurchaseOrderStatus::Draft, $first->status);
         $this->assertSame('240.00', (string) $first->subtotal);
         $this->assertSame('24.00', (string) $first->tax_total);

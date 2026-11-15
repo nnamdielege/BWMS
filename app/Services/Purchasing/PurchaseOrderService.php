@@ -32,7 +32,7 @@ class PurchaseOrderService
             } else {
                 $po = new PurchaseOrder;
                 $po->forceFill([
-                    'number' => NumberSequence::next('purchase_order', 'PO'),
+                    'number' => $this->newNumber(),
                     'status' => PurchaseOrderStatus::Draft,
                     'created_by' => $actor->id,
                 ]);
@@ -121,6 +121,19 @@ class PurchaseOrderService
 
             return $po;
         });
+    }
+
+    /**
+     * PO-YYYYMMDD-NNNN (Brisbane date the PO is created, restarting at 0001 each day). Existing POs keep
+     * their numbers; a number already taken (POs imported from legacy BWMS used the same format) is skipped.
+     */
+    private function newNumber(): string
+    {
+        do {
+            $number = NumberSequence::daily('purchase_order', 'PO');
+        } while (PurchaseOrder::where('number', $number)->exists());
+
+        return $number;
     }
 
     private function assert(bool $condition, string $message): void
