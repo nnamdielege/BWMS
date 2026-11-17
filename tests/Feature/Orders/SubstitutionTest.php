@@ -327,11 +327,15 @@ class SubstitutionTest extends TestCase
         $this->assertSame(12, $this->reserved($sub));
         $this->assertArrayNotHasKey('substitution_reduced', $order->fresh()->review_notes ?? []);
 
-        // Ordermentum then lowers the line below what was substituted: capped, and flagged.
+        // Ordermentum then lowers the line below what was substituted: BWMS's substitution
+        // is a cancellation it keeps (spec §6), so nothing is undone, and it's flagged.
         $this->channelOrder(OrderChannel::Ordermentum, 'OM-1', 3, [[$this->tea, 6, 'om-line-1']]);
-        $this->assertSame(6, $tea->fresh()->qty_substituted_base);
+        $this->assertSame(12, $tea->fresh()->qty_substituted_base);
+        $this->assertSame(12, $tea->fresh()->qty_cancelled_base);
+        $this->assertSame(12, $tea->fresh()->qty_base, 'floored at what was cancelled');
         $this->assertSame(0, $tea->fresh()->outstandingBase());
         $this->assertArrayHasKey('substitution_reduced', $order->fresh()->review_notes);
+        $this->assertArrayHasKey('reduced_below_cancelled', $order->fresh()->review_notes);
     }
 
     public function test_ordermentum_substitutions_are_listed_on_sync_until_marked_done()

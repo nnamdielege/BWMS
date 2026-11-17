@@ -267,6 +267,12 @@ class OrderService
      * already dispatched and cancel the rest. A quantity reduced below what was
      * dispatched flags the order for review.
      *
+     * A channel's qty is what the customer ordered, not what's left. What BWMS
+     * cancelled on a line (staff's Cancel line qty / Cancel rest, a substitution)
+     * stays cancelled across re-sends: qty_cancelled_base is never lowered, and
+     * qty_base never drops below dispatched + cancelled. A qty below that is
+     * kept at that floor and flagged for review.
+     *
      * @param  list<array{line_ref: string, product_id: int, product_unit_id: int, qty: int, unit_price?: ?string}>  $lines
      */
     private function writeLines(Order $order, array $lines): void
@@ -284,15 +290,21 @@ class OrderService
             $seen[] = $ref;
 
             $line = $existing[$ref] ?? $order->lines()->make(['line_ref' => $ref]);
-            if ($line->exists && $qtyBase < $line->qty_dispatched_base) {
+            $dispatched = (int) ($line->qty_dispatched_base ?? 0);
+            // Everything BWMS cancelled, substitutions included. A re-send never undoes it.
+            $cancelled = (int) ($line->qty_cancelled_base ?? 0);
+            $substituted = (int) ($line->qty_substituted_base ?? 0);
+
+            if ($line->exists && $qtyBase < $dispatched) {
                 $order->flag('reduced_below_dispatched', 'A line was reduced below what was already dispatched.', always: true);
                 $order->save();
             }
-            // A re-send repeats the original line as ordered; what was substituted stays substituted.
-            $newQtyBase = max($qtyBase, $line->qty_dispatched_base ?? 0);
-            $substituted = min((int) $line->qty_substituted_base, $newQtyBase - (int) ($line->qty_dispatched_base ?? 0));
-            if ($substituted < (int) $line->qty_substituted_base) {
-                $order->flag('substitution_reduced', "{$order->channel->label()} reduced a line below what was substituted for it. Check the substitute is still wanted.", always: true);
+            if ($line->exists && $qtyBase < $dispatched + $cancelled) {
+                $packs = fn (int $base) => SendsPortalOrderEvent::packs($base, $unit->base_qty);
+                $order->flag('reduced_below_cancelled', "{$order->channel->label()} sent {$product->sku} as {$packs($qtyBase)}, less than the {$packs($dispatched)} dispatched and {$packs($cancelled)} cancelled in BWMS. BWMS's cancellations were kept. Check with the customer.", always: true);
+                if ($substituted > 0) {
+                    $order->flag('substitution_reduced', "{$order->channel->label()} reduced a line below what was substituted for it. Check the substitute is still wanted.", always: true);
+                }
                 $order->save();
             }
             $line->forceFill([
@@ -300,8 +312,8 @@ class OrderService
                 'product_unit_id' => $unit->id,
                 'qty' => (int) $row['qty'],
                 'base_qty_per_unit' => $unit->base_qty,
-                'qty_base' => $newQtyBase,
-                'qty_cancelled_base' => $substituted,
+                'qty_base' => max($qtyBase, $dispatched + $cancelled),
+                'qty_cancelled_base' => $cancelled,
                 'qty_substituted_base' => $substituted,
                 'unit_price' => $row['unit_price'] ?? null,
                 'sort_order' => $i,

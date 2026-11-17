@@ -223,6 +223,8 @@ Idempotency-Key: portal:order:ORD-7K2M9XQ4LP1A:v1
 | `version` is higher than the last applied | Applied. 200, same body as a reservation. |
 | `version` is the same or lower | **Ignored.** 200 with the current state, so check `lines` if it matters. |
 | A line left out | That line is cancelled. |
+| A line part-cancelled or substituted in BWMS | **Stays cancelled.** `qty` is read as the quantity the customer ordered, and what BWMS cancelled is never put back. Send the line as ordered, not less what BWMS cancelled. |
+| `qty` below what's dispatched plus what BWMS cancelled | Kept at dispatched + cancelled, so nothing BWMS cancelled comes back and nothing is left to pick. Flagged for staff ("reduced below cancelled"). The answer is still 200. |
 | A quantity raised beyond stock | **409** `insufficient_stock`. Nothing changes: not the lines, the date or the version. |
 | Order unknown to BWMS, `status: confirmed` | Creates it, the same as a reservation. |
 | New delivery date, not yet on a pick list | The order moves to the new run. |
@@ -483,7 +485,7 @@ Idempotency-Key: bwms:order-event:ORD-7K2M9XQ4LP1A:cancelled
 
 Delivery and retries are the same as the table in [11](#11-post-apibwmsv1order-events-order-events). A retry sends exactly the same body. An order is only cancelled once, keyed `bwms:order-event:{ref}:cancelled`.
 
-**Part of one line** (added 2026-11-15): staff can also cancel some of a single line, typically an oversold one the customer no longer wants. That sends the same `cancelled` body with just that line, under a key of its own, `bwms:order-event:{ref}:cancelled:line-{id}-{time}`, so an order can have several. Handle each the same way; the cap below stops any double credit.
+**Part of one line** (added 2026-11-15): staff can also cancel some of a single line, typically an oversold one the customer no longer wants. That sends the same `cancelled` body with just that line, under a key of its own, `bwms:order-event:{ref}:cancelled:line-{id}-{time}`, so an order can have several. Handle each the same way; the cap below stops any double credit. The order stays open for the rest. A later `PUT` (a payment, say) still sends the line **as ordered**: BWMS keeps what it cancelled ([6](#6-put-ordersref-full-state-update), updated 2026-11-17).
 
 **On a `cancelled` event:**
 1. Dedupe on the `Idempotency-Key`.
@@ -539,7 +541,7 @@ Idempotency-Key: bwms:order-event:ORD-7K2M9XQ4LP1A:substituted:42
 
 **`substitution_undone`.** Staff can undo a substitution until the substitute is picked. BWMS then sends the same body with `"event": "substitution_undone"` and `at` set to the undo time, keyed `bwms:order-event:{ref}:substitution_undone:{id}`. Reverse it: take `original.qty` off `credited_qty`, remove the `bwms-sub-` item, and reverse any refund or charge made for the difference.
 
-**Re-sends.** A `PUT /orders/{ref}` repeats the original line as the customer ordered it; BWMS keeps the substitution, so don't change your line to match. Never send `bwms-sub-` lines back in a `PUT`: BWMS owns them, and a line left out of a `PUT` does not cancel them.
+**Re-sends.** A `PUT /orders/{ref}` repeats the original line as the customer ordered it; BWMS keeps the substitution, and any quantity staff cancelled, so don't change your line to match. Never send `bwms-sub-` lines back in a `PUT`: BWMS owns them, and a line left out of a `PUT` does not cancel them.
 
 **Short at dispatch** now means **ordered − `dispatched_qty` − `credited_qty`** for each line, so a substituted quantity is never credited twice.
 
@@ -612,6 +614,7 @@ Build tests for these against a stub of BWMS:
 - [ ] A dispatch after a substitution doesn't credit the substituted quantity again.
 - [ ] A `substitution_undone` event reverses both the line and the money.
 - [ ] A `PUT` after a substitution never includes `bwms-sub-` lines.
+- [ ] A `PUT` after a `cancelled` event for part of a line sends the line as ordered, not less what was cancelled.
 - [ ] A `dispatched` event missing a line credits that line in full.
 - [ ] An unpaid checkout order is released and cancelled in BWMS about 30 minutes after placing.
 - [ ] A `payment_failed` order is cancelled in BWMS.
