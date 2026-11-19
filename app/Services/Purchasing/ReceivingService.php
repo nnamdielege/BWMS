@@ -12,9 +12,11 @@ use App\Models\PurchaseOrderLine;
 use App\Models\Receipt;
 use App\Models\ReceiptLine;
 use App\Models\StockBalance;
+use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\Stock\Exceptions\InvalidMovement;
 use App\Services\Stock\MovementDraft;
+use App\Services\Stock\QuarantineService;
 use App\Services\Stock\StockLedger;
 use App\Services\Stock\StockQuery;
 use App\Support\NumberSequence;
@@ -194,7 +196,10 @@ class ReceivingService
                 $this->updateAverageCost($products[$productId], $inputs);
             }
             if ($drafts !== []) {
-                $this->ledger->post($drafts, $actor);
+                // Damaged stock goes to quarantine; the register shows why.
+                $this->ledger->post($drafts, $actor)
+                    ->filter(fn (StockMovement $m) => str_ends_with($m->idempotency_key, ':damaged'))
+                    ->each(fn (StockMovement $m) => QuarantineService::record($m, 'damaged', "Damaged on receipt {$receipt->number}", $actor));
             }
 
             $this->refreshStatus($po);

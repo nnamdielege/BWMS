@@ -55,6 +55,12 @@ class Product extends Model
         return $this->gst_free ? 0 : self::GST_RATE;
     }
 
+    /** Weighted average cost per base unit as a ledger unit_cost, or null while no cost is known. */
+    public function costAtNow(): ?string
+    {
+        return (float) $this->avg_cost > 0 ? number_format((float) $this->avg_cost, 4, '.', '') : null;
+    }
+
     /** Whether the product is sold on a channel ('ordermentum' or 'portal'). */
     public function sellsOn(string $channel): bool
     {

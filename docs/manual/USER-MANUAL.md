@@ -62,6 +62,8 @@ You can also enter counts in a stocktake a manager has started ([8.2](#82-count)
 | Create, approve, send and close purchase orders | **Purchase orders** | [6](#6-purchasing-and-receiving) |
 | Substitute a product for a short line | **Orders** → order → **Substitute** | [9.5b](#95b-substitutions) |
 | Adjust or write off stock | **Stock on hand** → product → **Adjust / write off** | [7.3](#73-adjust-or-write-off-stock) |
+| Write off, return or release what's in quarantine | **Stock → Quarantine** | [7.8](#78-quarantine) |
+| See what's about to pass its best-before | **Stock → Expiring soon** | [7.7](#77-expiring-soon) |
 | Run a stocktake and post it | **Stocktakes** | [8](#8-stocktakes-and-count-tasks) |
 | Deal with oversold orders and orders without a run | **Orders** → order | [9](#9-orders) |
 
@@ -78,6 +80,7 @@ You can also enter counts in a stocktake a manager has started ([8.2](#82-count)
 | Set the week's budget | **Purchasing → Budgets** | [6.7](#67-budgets) |
 | See what's due to suppliers | **Purchasing → Cash out** | [6.8](#68-cash-out) |
 | Find stock that isn't selling | **Purchasing → Slow movers** | [6.9](#69-slow-movers) |
+| Chase credits for stock returned to suppliers | **Purchasing → Supplier credits** | [6.10](#610-supplier-credits) |
 | Close a PO short | PO → **Close short** | [6.5](#65-close-short-or-cancel) |
 | Accept an over-receipt | Receive screen → **Accept the over-receipt** (with the person receiving) | [6.4](#64-receive-a-delivery) |
 | Keep supplier details up to date | **Suppliers** | [6.1](#61-suppliers) |
@@ -282,6 +285,7 @@ The dashboard is the first page after you log in. Each tile shows only if your r
 | **Orders needing attention** | **Oversold:** accepted beyond available stock. **Review:** the channel changed the order while it was being picked. | Open the order and decide ([9.5](#95-oversold-and-review-flags)). |
 | **Bins to count** | Count tasks: a bin went below zero at dispatch, or a picker reported a short pick. "Times" counts how often it was raised. | Managers: **Start count** or **Dismiss** ([8.4](#84-count-tasks)). |
 | **Will run out before their next delivery** | Products whose stock won't last until a delivery ordered today could arrive, at the rate they're selling. Red when above 0. | Click it to open **Reorder suggestions** filtered to those products, and order them ([6.6](#66-suggested-pos-and-reorder-suggestions)). |
+| **Expiring within 14 days** | Batches in sellable bins whose best-before is within the next 14 days (a setting), or has passed. The small print says how many won't sell in time. Amber when any won't. | Click it to open **Expiring soon** ([7.7](#77-expiring-soon)): push them, or move what can't sell to quarantine. |
 | **Negative bins** | Bins where the system shows less than zero. Goods left the warehouse that the system didn't think were there. | Count the bin. Click the SKU to see its movements. |
 
 Warehouse staff see fewer tiles:
@@ -666,7 +670,7 @@ What to do with them:
 
 - **Only items that need ordering** (ticked to start with) and **Stock-out before next delivery** filter the list.
 - **Create draft PO** on a supplier makes a draft from the quantities on screen.
-- **Settings** (admins, managers, purchasing): safety stock (**Days of demand** or a z-score), the lead time and review period for suppliers that have none, and **Email the summary at 7am**. It goes only to the addresses in **Company settings → Reorder email recipients** ([13.4](#134-company-settings)).
+- **Settings** (admins, managers, purchasing): safety stock (**Days of demand** or a z-score), the lead time and review period for suppliers that have none, and **Email the summary at 7am**. It goes only to the addresses in **Company settings → Reorder email recipients** ([13.4](#134-company-settings)). It also lists batches that won't sell before their best-before, unless that's switched off on **Expiring soon** ([7.7](#77-expiring-soon)).
 
 Sales are what was dispatched in the app, plus sales history brought in from before the app went live, over the last 8 weeks. Recent weeks count more. Days when the product was out of stock are left out, so a stock-out doesn't make it look like it doesn't sell.
 
@@ -719,6 +723,14 @@ Wages, rent and other fixed costs stay in Xero and aren't in these figures.
 - **Days of cover:** how long the stock lasts at that rate. "no sales" means nothing sold in 8 weeks.
 
 Inactive products are marked **inactive**. Click the SKU to see the product's stock.
+
+### 6.10 Supplier credits
+
+**Purchasing → Supplier credits** lists stock returned to suppliers from quarantine ([7.8](#78-quarantine)) and the credit expected for each return: the quantity at the average cost when it went back, ex GST.
+
+- **Open** (the default) shows what's still owed, with a total per supplier and the age of the oldest return, so you know who to chase.
+- When the credit note arrives, click **Mark received** and type the supplier's credit note number (optional). Purchasing, managers and admins can do this.
+- **Received** and **All** show past credits, with who marked them and when.
 
 ---
 
@@ -775,6 +787,8 @@ For admins and warehouse managers.
    | Damaged / broken | Remove | |
    | Past best-before | Remove | |
    | Spoiled (cold chain / quality) | Remove | ✓ |
+   | Recall | Remove | |
+   | Other | Remove | ✓ |
    | Samples / tastings | Remove | |
    | Internal use | Remove | ✓ |
    | Lost / missing | Remove | ✓ |
@@ -784,6 +798,8 @@ For admins and warehouse managers.
 6. Add a note if needed, and click **Post adjustment**.
 
 Adjustments can't be edited or deleted. To undo one, post the opposite adjustment.
+
+A write-off keeps the product's average cost at that moment, so the spoilage report ([14.3](#143-spoilage)) values it at what it cost then, not what it costs later.
 
 ### 7.4 Move stock between bins
 
@@ -798,6 +814,8 @@ Warehouse staff can do this too.
 3. Click **Move stock**.
 
 Use this to put away stock from a receiving bin, or to move damaged stock to quarantine.
+
+Moving stock **into a quarantine bin** asks why: **Past best-before**, **Damaged**, **Recall** or **Quality**, with an optional note. The quarantine register shows it ([7.8](#78-quarantine)). Damaged stock from a delivery goes to quarantine on its own, marked **Damaged**.
 
 ### 7.5 Movement history
 
@@ -814,7 +832,31 @@ For batch-tracked products:
 - Each batch has a lot code and a best-before date, entered at receiving.
 - Picking takes the earliest best-before first.
 - A batch is sellable up to and including its best-before date (Brisbane date). From the next day it stops being sellable and isn't picked. It stays on hand with an **expired** tag.
-- Write expired stock off with the reason **Past best-before** ([7.3](#73-adjust-or-write-off-stock)).
+- Write expired stock off with the reason **Past best-before** ([7.3](#73-adjust-or-write-off-stock)), or move it to quarantine first ([7.8](#78-quarantine)).
+
+### 7.7 Expiring soon
+
+**Stock → Expiring soon** lists batches in sellable bins whose best-before is within the next 14 days, or has already passed, soonest first. Everyone who can see stock can open it.
+
+- **Ahead:** sellable stock of the same product that picking takes first (earlier best-before). A batch only starts selling once that's gone.
+- **Sells / day:** the same 8-week average the reorder suggestions use.
+- **Expected to sell:** sells a day × days left (today and the best-before day included), less the stock ahead.
+- **Won't sell:** what's left of the batch at its best-before. **Sells in time** when nothing is. **Past best-before** batches can't be sold at all: move them to quarantine.
+- **At cost:** what won't sell, at average cost (for roles that see costs).
+
+Managers and admins can change **Expiring within (days)** and whether the 7am reorder email lists the batches that won't sell in time (on by default; the email itself is switched on in the reorder settings).
+
+### 7.8 Quarantine
+
+For admins and warehouse managers. **Stock → Quarantine** lists everything in quarantine bins: product, bin, batch, best-before, quantity, value at today's average cost, **days** in quarantine (since the line last arrived in an empty bin) and the **reason** it went there.
+
+Each line has three actions. Each can take part of the line.
+
+| Action | What it does | Needs |
+|---|---|---|
+| **Write off** | Removes the stock as a write-off. Counts as spoilage ([14.3](#143-spoilage)). | A reason (a note for Spoiled and Other) |
+| **Return** | Sends the stock back to a supplier and opens a supplier credit for it at cost ([6.10](#610-supplier-credits)). Not spoilage: the money comes back. | The supplier (the batch's, else the product's usual supplier, is chosen for you) |
+| **Release** | Moves the stock back to a sellable bin. Not possible once past its best-before. | Why it's fit to sell again, and the bin |
 
 ---
 
@@ -1407,6 +1449,19 @@ For admins and warehouse managers, under **Reports** in the menu; the drop repor
 ### 14.2 Substitutions
 
 **Reports → Substitutions** lists the substitutions ([9.5b](#95b-substitutions)) between two dates: date, order, customer, original, substitute, price difference and note. Export as **XLSX** or **CSV**.
+
+### 14.3 Spoilage
+
+**Reports → Spoilage** shows every write-off between two dates (the last 90 days unless you change them).
+
+- **Written off:** the total at cost. Each write-off is valued at the average cost when it was written off. Write-offs from before this report kept no cost: they're valued at today's cost and marked **today**.
+- **Units** written off, and **Of cost of goods sold:** write-offs as a % of the cost of goods dispatched in the same dates.
+- **Written off per week** (or **month**): the trend. Hover a bar for its figure.
+- **By reason / product / range / supplier:** the totals and share of each. Supplier is the batch's supplier, else the product's usual one.
+- **Top 10 products by $ lost.**
+- **Show every write-off** lists each one with its bin, batch, cost and note.
+
+Export as **XLSX** or **CSV** (the summary is grouped the way the screen is). Returns to suppliers aren't spoilage and aren't counted.
 
 ---
 

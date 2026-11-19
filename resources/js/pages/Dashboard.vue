@@ -11,6 +11,7 @@ defineProps<{
         overdue_pos?: number;
         stockout_risk?: number;
         awaiting_putaway?: number;
+        expiring?: { days: number; batches: number; at_risk: number; expired: number };
         sync_failures_24h?: number;
         negative_bins?: { total: number; rows: { product_id: number; sku: string; name: string; on_hand: number; bin: string }[] };
         count_tasks?: {
@@ -60,6 +61,17 @@ const dismiss = (id: number) => {
                     <div class="text-sm text-muted-foreground">Will run out before their next delivery</div>
                     <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.stockout_risk }">{{ widgets.stockout_risk }}</div>
                     <div class="text-xs text-muted-foreground">{{ widgets.stockout_risk === 1 ? 'product' : 'products' }} · reorder suggestions</div>
+                </Link>
+                <Link v-if="widgets.expiring" :href="route('expiring.index')" class="rounded-lg border p-4 hover:bg-muted">
+                    <div class="text-sm text-muted-foreground">Expiring within {{ widgets.expiring.days }} days</div>
+                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-amber-600': widgets.expiring.at_risk || widgets.expiring.expired }">
+                        {{ widgets.expiring.batches }}
+                    </div>
+                    <div class="text-xs text-muted-foreground">
+                        {{ widgets.expiring.batches === 1 ? 'batch' : 'batches' }} · {{ widgets.expiring.at_risk }} won't sell in time<template v-if="widgets.expiring.expired">
+                            · {{ widgets.expiring.expired }} already past best-before</template
+                        >
+                    </div>
                 </Link>
                 <Link v-if="widgets.sync_failures_24h !== undefined" :href="route('sync.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Sync failures (last 24 h)</div>

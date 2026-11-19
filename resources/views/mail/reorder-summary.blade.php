@@ -26,4 +26,26 @@ Open reorder suggestions
 </x-mail::button>
 
 Nothing has been ordered: drafts are made from the suggestions screen.
+
+@if ($expiring !== null && $expiring['lines'] !== [])
+## Expiring soon
+
+{{ count($expiring['lines']) }} {{ count($expiring['lines']) === 1 ? 'batch' : 'batches' }} won't sell before best-before (next {{ $expiring['days'] }} days), about ${{ number_format($expiring['value_left'], 2) }} at cost.
+
+<x-mail::table>
+| Product | Batch | Best before | Won't sell |
+|:--|:--|:--|--:|
+@foreach (array_slice($expiring['lines'], 0, 20) as $l)
+| {{ $l['sku'] }} {{ $l['name'] }} | {{ $l['batch'] }} | {{ $l['best_before'] }}{{ $l['expired'] ? ' (past)' : '' }} | {{ $l['left_over'] }} {{ $l['base_unit'] }} |
+@endforeach
+</x-mail::table>
+
+@if (count($expiring['lines']) > 20)
+…and {{ count($expiring['lines']) - 20 }} more.
+@endif
+
+<x-mail::button :url="$expiringUrl">
+Open expiring soon
+</x-mail::button>
+@endif
 </x-mail::message>

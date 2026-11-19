@@ -9,6 +9,7 @@ use App\Models\PurchaseOrder;
 use App\Models\StockBalance;
 use App\Models\SyncAttempt;
 use App\Services\Purchasing\ReorderPlanner;
+use App\Services\Stock\ExpiringSoon;
 use App\Support\BusinessDate;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -59,6 +60,10 @@ class DashboardController extends Controller
                         'on_hand_at_raise' => $t->on_hand_at_raise, 'times_raised' => $t->times_raised, 'raised_at' => $t->created_at->toIso8601String()]),
                 'can_manage' => $user->can('stocktakes.manage'),
             ];
+
+            // Batches near (or past) their best-before in sellable bins, and how many won't sell in time.
+            $expiring = app(ExpiringSoon::class)->build();
+            $widgets['expiring'] = ['days' => $expiring['days']] + array_intersect_key($expiring['totals'], array_flip(['batches', 'at_risk', 'expired']));
 
             // Only non-zero when a site receives into a non-sellable bin (RECEIVING + put-away).
             $widgets['awaiting_putaway'] = StockBalance::where('on_hand', '>', 0)

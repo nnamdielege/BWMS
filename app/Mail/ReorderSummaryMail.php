@@ -9,8 +9,11 @@ use Illuminate\Mail\Mailables\Envelope;
 /** The 7am reorder summary for managers (reorder:daily-email). Nothing is ordered by it. */
 class ReorderSummaryMail extends Mailable
 {
-    /** @param  list<array{supplier: string, to_order: int, value: float, min: ?float, meets_min: bool, stockouts: list<string>}>  $suppliers */
-    public function __construct(public array $suppliers, public int $stockouts, public string $date) {}
+    /**
+     * @param  list<array{supplier: string, to_order: int, value: float, min: ?float, meets_min: bool, stockouts: list<string>}>  $suppliers
+     * @param  ?array{days: int, batches: int, value_left: float, lines: list<array>}  $expiring  null when the expiring section is switched off
+     */
+    public function __construct(public array $suppliers, public int $stockouts, public string $date, public ?array $expiring = null) {}
 
     public function envelope(): Envelope
     {
@@ -19,6 +22,6 @@ class ReorderSummaryMail extends Mailable
 
     public function content(): Content
     {
-        return new Content(markdown: 'mail.reorder-summary', with: ['url' => route('reorder.index')]);
+        return new Content(markdown: 'mail.reorder-summary', with: ['url' => route('reorder.index'), 'expiringUrl' => route('expiring.index')]);
     }
 }

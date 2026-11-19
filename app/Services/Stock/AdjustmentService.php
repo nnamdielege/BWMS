@@ -2,6 +2,7 @@
 
 namespace App\Services\Stock;
 
+use App\Enums\MovementType;
 use App\Models\Batch;
 use App\Models\Location;
 use App\Models\Product;
@@ -28,6 +29,8 @@ class AdjustmentService
             batch: $batch,
             reason: $reason,
             sourceType: 'adjustment',
+            // A write-off keeps the cost it was lost at; the spoilage report values it so.
+            unitCost: $reason->movement_type === MovementType::WriteOff ? $product->costAtNow() : null,
             note: $note,
         ), $actor);
     }

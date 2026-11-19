@@ -78,6 +78,21 @@ class Setting extends Model
         ];
     }
 
+    /** Expiring soon: best-before within this many days (default 14), and whether the 7am email lists them (default on). */
+    public const EXPIRING_DAYS = 'spoilage.expiring_days';
+
+    public const EXPIRING_IN_EMAIL = 'spoilage.expiring_in_email';
+
+    public static function expiringDays(): int
+    {
+        return max(1, (int) self::get(self::EXPIRING_DAYS, '14'));
+    }
+
+    public static function expiringInEmail(): bool
+    {
+        return self::get(self::EXPIRING_IN_EMAIL, '1') !== '0';
+    }
+
     public static function dropDeliveryCost(): float
     {
         return (float) self::get(self::DROP_DELIVERY_COST, '30');

@@ -256,7 +256,7 @@ class PackQuantityTest extends TestCase
 
         $this->actingAs($this->picker)->post(route('stock.transfer', $wine), [
             'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id,
-            'product_unit_id' => $this->caseOf($wine), 'packs' => 1,
+            'product_unit_id' => $this->caseOf($wine), 'packs' => 1, 'quarantine_reason' => 'damaged',
         ])->assertSessionHasNoErrors();
         $this->assertSame(12, $this->balance($wine, $this->bin('QUARANTINE')));
     }

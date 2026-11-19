@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Mail\ReorderSummaryMail;
 use App\Models\Setting;
 use App\Services\Purchasing\ReorderPlanner;
+use App\Services\Stock\ExpiringSoon;
 use App\Support\BusinessDate;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
@@ -16,7 +17,7 @@ class SendReorderSummary extends Command
 
     protected $description = 'Email the reorder suggestions summary to the recipients in Company settings';
 
-    public function handle(ReorderPlanner $planner): int
+    public function handle(ReorderPlanner $planner, ExpiringSoon $expiringSoon): int
     {
         if (! $this->option('force') && ! Setting::reorder()['daily_email']) {
             $this->line('The daily reorder email is switched off.');
@@ -43,6 +44,21 @@ class SendReorderSummary extends Command
             ];
         }
 
+        // Expiring soon (Stock → Expiring soon settings): the batches that won't sell in time, and those already past best-before.
+        $expiring = null;
+        if (Setting::expiringInEmail()) {
+            $e = $expiringSoon->build();
+            $expiring = [
+                'days' => $e['days'],
+                'batches' => $e['totals']['batches'],
+                'value_left' => $e['totals']['value_left'],
+                'lines' => array_values(array_map(fn ($r) => [
+                    'sku' => $r['sku'], 'name' => $r['name'], 'batch' => $r['batch'], 'best_before' => $r['best_before'],
+                    'left_over' => $r['left_over'], 'base_unit' => $r['base_unit'], 'expired' => $r['status'] === ExpiringSoon::STATUS_EXPIRED,
+                ], array_filter($e['rows'], fn ($r) => $r['status'] !== ExpiringSoon::STATUS_OK))),
+            ];
+        }
+
         // Company settings → Reorder email: just the owner unless changed there.
         $to = collect(Setting::reorderEmailTo());
         if ($to->isEmpty()) {
@@ -51,7 +67,7 @@ class SendReorderSummary extends Command
             return self::SUCCESS;
         }
         foreach ($to as $email) {
-            Mail::to($email)->send(new ReorderSummaryMail($suppliers, $stockouts, BusinessDate::today()));
+            Mail::to($email)->send(new ReorderSummaryMail($suppliers, $stockouts, BusinessDate::today(), $expiring));
         }
         $this->info('Sent to '.$to->implode(', ').'.');
 

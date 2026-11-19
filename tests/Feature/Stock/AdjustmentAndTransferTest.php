@@ -73,7 +73,7 @@ class AdjustmentAndTransferTest extends TestCase
             ->assertForbidden();
 
         $this->actingAs($staff)->post(route('stock.transfer', $p), [
-            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'each' => 4,
+            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'each' => 4, 'quarantine_reason' => 'damaged',
         ])->assertSessionHasNoErrors();
 
         $this->assertSame(6, $this->balance($p));
@@ -86,7 +86,7 @@ class AdjustmentAndTransferTest extends TestCase
         $this->stockIn($p, 2);
 
         $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER))->post(route('stock.transfer', $p), [
-            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'each' => 5,
+            'client_token' => (string) Str::uuid(), 'from_location_id' => $this->bin()->id, 'to_location_id' => $this->bin('QUARANTINE')->id, 'each' => 5, 'quarantine_reason' => 'damaged',
         ])->assertSessionHasErrors('qty');
 
         $this->assertSame(2, $this->balance($p));

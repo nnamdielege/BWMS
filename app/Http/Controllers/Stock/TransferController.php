@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Batch;
 use App\Models\Location;
 use App\Models\Product;
+use App\Models\QuarantineEntry;
 use App\Services\Stock\Exceptions\StockException;
+use App\Services\Stock\QuarantineService;
 use App\Services\Stock\TransferService;
 use App\Support\PackQty;
 use Illuminate\Http\RedirectResponse;
@@ -16,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 
 class TransferController extends Controller
 {
-    public function __construct(private TransferService $transfers) {}
+    public function __construct(private TransferService $transfers, private QuarantineService $quarantine) {}
 
     public function store(Request $request, Product $product): RedirectResponse
     {
@@ -28,6 +30,7 @@ class TransferController extends Controller
             ...PackQty::rules(),
             'batch_id' => ['nullable', 'integer', 'exists:batches,id'],
             'note' => ['nullable', 'string', 'max:1000'],
+            'quarantine_reason' => ['nullable', Rule::in(array_keys(QuarantineEntry::REASONS))],
         ]);
 
         // Typed in a pack plus loose units, saved as base units.
@@ -36,18 +39,23 @@ class TransferController extends Controller
             throw ValidationException::withMessages(['qty' => 'Enter a quantity.']);
         }
 
+        $from = Location::findOrFail($data['from_location_id']);
+        $to = Location::findOrFail($data['to_location_id']);
+        $batch = isset($data['batch_id']) ? Batch::findOrFail($data['batch_id']) : null;
+        // Into quarantine from a normal bin: say why (shown on the quarantine register).
+        $intoQuarantine = $to->is_quarantine && ! $from->is_quarantine;
+        if ($intoQuarantine && empty($data['quarantine_reason'])) {
+            throw ValidationException::withMessages(['quarantine_reason' => 'Choose why the stock is going into quarantine.']);
+        }
+
         try {
-            $this->transfers->transfer(
-                $request->user(), $product,
-                Location::findOrFail($data['from_location_id']), Location::findOrFail($data['to_location_id']),
-                $qty, $data['client_token'],
-                isset($data['batch_id']) ? Batch::findOrFail($data['batch_id']) : null,
-                $data['note'] ?? null,
-            );
+            $intoQuarantine
+                ? $this->quarantine->moveIn($request->user(), $product, $from, $to, $qty, $data['quarantine_reason'], $data['client_token'], $batch, $data['note'] ?? null)
+                : $this->transfers->transfer($request->user(), $product, $from, $to, $qty, $data['client_token'], $batch, $data['note'] ?? null);
         } catch (StockException $e) {
             throw ValidationException::withMessages(['qty' => $e->getMessage()]);
         }
 
-        return back()->with('success', 'Stock moved.');
+        return back()->with('success', $intoQuarantine ? 'Stock moved to quarantine.' : 'Stock moved.');
     }
 }

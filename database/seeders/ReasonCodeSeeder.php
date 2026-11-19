@@ -17,6 +17,8 @@ class ReasonCodeSeeder extends Seeder
             ['code' => 'DAMAGED', 'name' => 'Damaged / broken', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => false],
             ['code' => 'EXPIRED', 'name' => 'Past best-before', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => false],
             ['code' => 'SPOILED', 'name' => 'Spoiled (cold chain / quality)', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
+            ['code' => 'RECALL', 'name' => 'Recall', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => false],
+            ['code' => 'OTHER', 'name' => 'Other', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
             ['code' => 'SAMPLE', 'name' => 'Samples / tastings', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => false],
             ['code' => 'INTERNAL', 'name' => 'Internal use', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
             ['code' => 'FOUND', 'name' => 'Found stock', 'movement_type' => 'adjustment', 'direction' => 'in', 'requires_note' => true],

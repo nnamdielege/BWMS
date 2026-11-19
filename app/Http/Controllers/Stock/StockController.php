@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Stock;
 use App\Http\Controllers\Controller;
 use App\Models\Location;
 use App\Models\Product;
+use App\Models\QuarantineEntry;
 use App\Models\ReasonCode;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
@@ -72,7 +73,8 @@ class StockController extends Controller
                 ->with(['location.parent', 'batch', 'reasonCode', 'creator:id,name'])
                 ->latest('id')->limit(25)->get()->map(fn (StockMovement $m) => self::movementRow($m)),
             'bins' => Location::bins()->where('is_active', true)->with('parent.parent')->orderBy('code')->get()
-                ->map(fn (Location $l) => ['id' => $l->id, 'label' => $l->path()]),
+                ->map(fn (Location $l) => ['id' => $l->id, 'label' => $l->path(), 'quarantine' => $l->is_quarantine]),
+            'quarantine_reasons' => QuarantineEntry::REASONS,
             'batches' => $product->is_batch_tracked
                 ? $product->batches()->orderBy('best_before')->get()->map(fn ($b) => ['id' => $b->id, 'label' => $b->label()])
                 : [],

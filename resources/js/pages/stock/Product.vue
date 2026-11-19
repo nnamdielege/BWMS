@@ -14,6 +14,7 @@ import { computed } from 'vue';
 interface Option {
     id: number;
     label: string;
+    quarantine?: boolean;
 }
 interface Reason {
     id: number;
@@ -44,6 +45,7 @@ const props = defineProps<{
     bins: Option[];
     batches: Option[];
     reasons: Reason[];
+    quarantine_reasons: Record<string, string>;
     can: { adjust: boolean; transfer: boolean };
 }>();
 
@@ -95,6 +97,13 @@ const transfer = useForm({
     product_unit_id: largestPackId,
     qty: blankQty(),
     note: '',
+    quarantine_reason: null as string | null,
+});
+// Into quarantine from a normal bin asks why (shown on the quarantine register).
+const intoQuarantine = computed(() => {
+    const to = props.bins.find((b) => b.id === transfer.to_location_id);
+    const from = props.bins.find((b) => b.id === transfer.from_location_id);
+    return !!to?.quarantine && !from?.quarantine;
 });
 const pickBalance = (b: (typeof props.balances)[number]) => {
     transfer.from_location_id = b.location_id;
@@ -219,7 +228,16 @@ const packs = computed(() => props.product.units.filter((u) => u.base_qty > 1));
                         </select>
                         <PackQtyInput v-model="transfer.qty" :pack="packFor(transfer.product_unit_id)" />
                     </div>
-                    <InputError :message="transfer.errors.qty || qtyError(transfer.errors) || transfer.errors.to_location_id" />
+                    <template v-if="intoQuarantine">
+                        <select v-model="transfer.quarantine_reason" class="h-9 w-full rounded-md border bg-background px-2 text-sm" required>
+                            <option :value="null" disabled>Why is it going into quarantine?</option>
+                            <option v-for="(label, key) in quarantine_reasons" :key="key" :value="key">{{ label }}</option>
+                        </select>
+                        <Input v-model="transfer.note" placeholder="Note (optional)" />
+                    </template>
+                    <InputError
+                        :message="transfer.errors.qty || qtyError(transfer.errors) || transfer.errors.to_location_id || transfer.errors.quarantine_reason"
+                    />
                     <Button type="submit" :disabled="transfer.processing">Move stock</Button>
                 </form>
             </div>

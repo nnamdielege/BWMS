@@ -26,12 +26,16 @@ use App\Http\Controllers\Purchasing\PurchasingReportController;
 use App\Http\Controllers\Purchasing\ReceiptController;
 use App\Http\Controllers\Purchasing\ReorderController;
 use App\Http\Controllers\Purchasing\SupplierController;
+use App\Http\Controllers\Purchasing\SupplierCreditController;
 use App\Http\Controllers\RangeController;
 use App\Http\Controllers\Reports\MarginReportController;
+use App\Http\Controllers\Reports\SpoilageReportController;
 use App\Http\Controllers\Reports\SubstitutionReportController;
 use App\Http\Controllers\Stock\AdjustmentController;
 use App\Http\Controllers\Stock\CountTaskController;
+use App\Http\Controllers\Stock\ExpiringController;
 use App\Http\Controllers\Stock\MovementController;
+use App\Http\Controllers\Stock\QuarantineController;
 use App\Http\Controllers\Stock\StockController;
 use App\Http\Controllers\Stock\StocktakeController;
 use App\Http\Controllers\Stock\TransferController;
@@ -107,6 +111,13 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     // Stock
     Route::get('stock', [StockController::class, 'index'])->middleware('can:stock.view')->name('stock.index');
     Route::get('stock/movements', [MovementController::class, 'index'])->middleware('can:stock.view')->name('stock.movements');
+    // Quarantine register (managers, admins) and expiring soon. Before stock/{product}.
+    Route::get('stock/quarantine', [QuarantineController::class, 'index'])->middleware('can:stock.adjust')->name('quarantine.index');
+    Route::post('stock/quarantine/write-off', [QuarantineController::class, 'writeOff'])->middleware('can:stock.adjust')->name('quarantine.write-off');
+    Route::post('stock/quarantine/return', [QuarantineController::class, 'returnToSupplier'])->middleware('can:stock.adjust')->name('quarantine.return');
+    Route::post('stock/quarantine/release', [QuarantineController::class, 'release'])->middleware('can:stock.transfer')->name('quarantine.release');
+    Route::get('stock/expiring', [ExpiringController::class, 'index'])->middleware('can:stock.view')->name('expiring.index');
+    Route::put('stock/expiring/settings', [ExpiringController::class, 'settings'])->middleware('can:reports.margin')->name('expiring.settings');
     Route::get('stock/{product}', [StockController::class, 'show'])->middleware('can:stock.view')->name('stock.show');
     Route::post('stock/{product}/adjustments', [AdjustmentController::class, 'store'])->middleware('can:stock.adjust')->name('stock.adjust');
     Route::post('stock/{product}/transfers', [TransferController::class, 'store'])->middleware('can:stock.transfer')->name('stock.transfer');
@@ -143,6 +154,8 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::delete('purchasing/budgets/{budget}', [PurchasingBudgetController::class, 'destroy'])->middleware('can:purchase_orders.manage')->name('purchasing-budgets.destroy');
     Route::get('purchasing/cash-out', [PurchasingReportController::class, 'cashOut'])->middleware('can:purchase_orders.view')->name('purchasing.cash-out');
     Route::get('purchasing/slow-movers', [PurchasingReportController::class, 'slowMovers'])->middleware('can:purchase_orders.view')->name('purchasing.slow-movers');
+    Route::get('purchasing/supplier-credits', [SupplierCreditController::class, 'index'])->middleware('can:purchase_orders.view')->name('supplier-credits.index');
+    Route::post('purchasing/supplier-credits/{credit}/received', [SupplierCreditController::class, 'receive'])->middleware('can:purchase_orders.manage')->name('supplier-credits.receive');
     Route::post('purchase-orders/suggest', [PurchaseOrderController::class, 'suggest'])->middleware('can:purchase_orders.manage')->name('purchase-orders.suggest');
 
     Route::get('purchase-orders', [PurchaseOrderController::class, 'index'])->middleware('can:purchase_orders.view')->name('purchase-orders.index');
@@ -221,6 +234,10 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::put('settings', [MarginReportController::class, 'settings'])->name('settings');
         Route::get('export/{view}/{format}', [MarginReportController::class, 'export'])
             ->whereIn('view', ['stock', 'drops', 'real'])->whereIn('format', ['xlsx', 'csv'])->name('export');
+    });
+    Route::middleware('can:reports.margin')->prefix('reports/spoilage')->name('reports.spoilage.')->group(function () {
+        Route::get('/', [SpoilageReportController::class, 'index'])->name('index');
+        Route::get('export/{format}', [SpoilageReportController::class, 'export'])->whereIn('format', ['xlsx', 'csv'])->name('export');
     });
     Route::middleware('can:reports.margin')->prefix('reports/substitutions')->name('reports.substitutions.')->group(function () {
         Route::get('/', [SubstitutionReportController::class, 'index'])->name('index');

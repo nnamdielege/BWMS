@@ -13,6 +13,7 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\Purchasing\PurchaseOrderService;
+use App\Services\Stock\QuarantineRegister;
 use App\Services\Stock\StockQuery;
 use Database\Factories\ProductFactory;
 use Database\Seeders\DefaultSiteSeeder;
@@ -118,6 +119,11 @@ class ReceivingTest extends TestCase
         $this->assertSame(106, $line->qty_received_base);
         $this->assertSame(14, $line->qty_rejected_base);
         $this->assertSame(PurchaseOrderStatus::PartiallyReceived, $po->fresh()->status);
+
+        // The quarantine register shows why it's there.
+        $row = app(QuarantineRegister::class)->build()['rows'][0];
+        $this->assertSame('Damaged', $row['reason']);
+        $this->assertStringStartsWith('Damaged on receipt GRN', $row['reason_note']);
     }
 
     public function test_rejection_needs_a_reason()
