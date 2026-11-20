@@ -28,7 +28,7 @@ class QuarantineController extends Controller
     {
         return Inertia::render('stock/Quarantine', [
             'register' => $register->build(),
-            'reasons' => ReasonCode::where('movement_type', MovementType::WriteOff)->where('is_active', true)->orderBy('name')->get(['id', 'name', 'requires_note']),
+            'reasons' => ReasonCode::where('movement_type', MovementType::WriteOff)->where('is_active', true)->whereNotIn('code', ReasonCode::GIVEAWAY_CODES)->orderBy('name')->get(['id', 'name', 'requires_note']),
             'suppliers' => Supplier::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'release_bins' => Location::sellable()->with('parent.parent')->orderBy('sort_order')->orderBy('code')->get()
                 ->map(fn (Location $l) => ['id' => $l->id, 'label' => $l->path()]),

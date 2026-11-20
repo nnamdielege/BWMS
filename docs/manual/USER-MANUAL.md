@@ -789,13 +789,13 @@ For admins and warehouse managers.
    | Spoiled (cold chain / quality) | Remove | ✓ |
    | Recall | Remove | |
    | Other | Remove | ✓ |
-   | Samples / tastings | Remove | |
-   | Internal use | Remove | ✓ |
    | Lost / missing | Remove | ✓ |
    | Found stock | Add | ✓ |
    | Data-entry correction | Either | ✓ |
 
 6. Add a note if needed, and click **Post adjustment**.
+
+Samples, gifts, favours, staff use and internal use aren't on this list. Record them on **Stock → Give away** ([7.9](#79-give-away)).
 
 Adjustments can't be edited or deleted. To undo one, post the opposite adjustment.
 
@@ -857,6 +857,22 @@ Each line has three actions. Each can take part of the line.
 | **Write off** | Removes the stock as a write-off. Counts as spoilage ([14.3](#143-spoilage)). | A reason (a note for Spoiled and Other) |
 | **Return** | Sends the stock back to a supplier and opens a supplier credit for it at cost ([6.10](#610-supplier-credits)). Not spoilage: the money comes back. | The supplier (the batch's, else the product's usual supplier, is chosen for you) |
 | **Release** | Moves the stock back to a sellable bin. Not possible once past its best-before. | Why it's fit to sell again, and the bin |
+
+### 7.9 Give away
+
+For admins and warehouse managers. **Stock → Give away** records stock given away. It's written off at today's average cost.
+
+1. Find the product: search or scan it.
+2. Enter the quantity and choose the pack, for example 2 × Carton. Choose the bin (and batch) it comes from.
+3. Choose the reason: **Sample / tasting**, **Gift**, **Favour / promo**, **Staff use** or **Internal use**.
+4. **To:** choose a customer, or choose **Someone else** and type a name (a staff member, a prospect, a charity…).
+5. **Purpose:** what it's for.
+6. **Approved by:** a manager or admin. You can choose yourself.
+7. Click **Record**.
+
+These reasons can only be recorded here. The normal adjust form and the quarantine write-off don't offer them. They aren't spoilage ([14.3](#143-spoilage)). They show in **Reports → Samples, gifts & favours** ([14.9](#149-samples-gifts--favours)).
+
+The panel on the right shows this month's spend at cost. Managers and admins can set a **monthly budget**. The bar turns red when spend goes over it. Leave the budget empty for none. Budget changes are in the audit log.
 
 ---
 
@@ -1540,6 +1556,17 @@ On the page:
   - A variance is large when it's worth $50 or more either way. Change this under **Settings** on the page.
 
 Changes to the settings are recorded in the audit log.
+
+### 14.9 Samples, gifts & favours
+
+**Reports → Samples, gifts & favours** shows everything recorded on **Stock → Give away** ([7.9](#79-give-away)) in the dates, at cost.
+
+- **By reason / recipient / product / entered by:** times, units and cost. A recipient who isn't a customer is marked **(not a customer)**.
+- **Spend against budget:** each month's spend. The line marks the monthly budget, if one is set.
+- **Samples to customers: did they order?** For each sample to a customer, whether they ordered that product within **30** and **60 days**. Cancelled orders don't count.
+  - It's **pending** until the days have passed with no order. Pending samples are left out of the %.
+  - The tiles show the conversion %: samples followed by an order ÷ samples whose window has ended.
+- **Show every give-away** lists each one with its purpose and who approved it.
 
 ---
 

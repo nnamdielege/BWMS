@@ -78,7 +78,7 @@ class StockController extends Controller
             'batches' => $product->is_batch_tracked
                 ? $product->batches()->orderBy('best_before')->get()->map(fn ($b) => ['id' => $b->id, 'label' => $b->label()])
                 : [],
-            'reasons' => ReasonCode::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name', 'direction', 'requires_note', 'movement_type']),
+            'reasons' => ReasonCode::where('is_active', true)->whereNotIn('code', ReasonCode::GIVEAWAY_CODES)->orderBy('name')->get(['id', 'code', 'name', 'direction', 'requires_note', 'movement_type']),
             'can' => [
                 'adjust' => $request->user()->can('stock.adjust'),
                 'transfer' => $request->user()->can('stock.transfer'),

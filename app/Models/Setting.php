@@ -109,6 +109,16 @@ class Setting extends Model
         return $raw === null ? self::DEFAULT_LOSS_REASONS : array_values(array_filter(array_map('trim', explode(',', $raw))));
     }
 
+    /** Optional monthly budget for samples, gifts and favours, dollars at cost. Empty = no budget. */
+    public const GIVEAWAY_BUDGET = 'giveaway.monthly_budget';
+
+    public static function giveawayBudget(): ?float
+    {
+        $v = self::get(self::GIVEAWAY_BUDGET);
+
+        return $v === null || trim($v) === '' ? null : max(0.0, (float) $v);
+    }
+
     public static function dropDeliveryCost(): float
     {
         return (float) self::get(self::DROP_DELIVERY_COST, '30');

@@ -12,6 +12,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Services\Reports\SpoilageReport;
 use App\Services\Stock\AdjustmentService;
+use App\Services\Stock\GiveawayService;
 use App\Services\Stock\MovementDraft;
 use App\Support\BusinessDate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,6 +47,13 @@ class SpoilageReportTest extends TestCase
     private function writeOff(Product $p, int $qty, string $reason = 'DAMAGED', ?string $note = null): StockMovement
     {
         return app(AdjustmentService::class)->adjust($this->manager, $p, $this->bin(), -$qty, $this->reason($reason), $note, (string) Str::uuid());
+    }
+
+    /** A sample, gift or the like, through Stock → Give away. */
+    private function giveAway(Product $p, int $qty, string $reason): void
+    {
+        app(GiveawayService::class)->record($this->manager, $p, null, $qty, $this->bin(), null, $this->reason($reason), null, 'Office',
+            'Tasting', $this->manager, (string) Str::uuid());
     }
 
     /** A write-off as older ones were posted: no cost kept on the movement. */
@@ -202,8 +210,8 @@ class SpoilageReportTest extends TestCase
         $this->stockIn($p, 100);
         $this->writeOff($p, 3, 'DAMAGED');
         $this->writeOff($p, 4, 'SPOILED', 'Fridge failed');
-        $this->writeOff($p, 5, 'SAMPLE');
-        $this->writeOff($p, 6, 'INTERNAL', 'Office kitchen');
+        $this->giveAway($p, 5, 'SAMPLE');
+        $this->giveAway($p, 6, 'INTERNAL');
         $this->sale($p, 20, '2.0000');
         $today = BusinessDate::today();
 

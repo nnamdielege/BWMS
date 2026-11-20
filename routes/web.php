@@ -35,6 +35,7 @@ use App\Http\Controllers\Reports\SubstitutionReportController;
 use App\Http\Controllers\Stock\AdjustmentController;
 use App\Http\Controllers\Stock\CountTaskController;
 use App\Http\Controllers\Stock\ExpiringController;
+use App\Http\Controllers\Stock\GiveawayController;
 use App\Http\Controllers\Stock\MovementController;
 use App\Http\Controllers\Stock\QuarantineController;
 use App\Http\Controllers\Stock\StockController;
@@ -119,6 +120,10 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     Route::post('stock/quarantine/release', [QuarantineController::class, 'release'])->middleware('can:stock.transfer')->name('quarantine.release');
     Route::get('stock/expiring', [ExpiringController::class, 'index'])->middleware('can:stock.view')->name('expiring.index');
     Route::put('stock/expiring/settings', [ExpiringController::class, 'settings'])->middleware('can:reports.margin')->name('expiring.settings');
+    // Give away: samples, gifts, favours, staff and internal use (managers, admins). Before stock/{product}.
+    Route::get('stock/give-away', [GiveawayController::class, 'index'])->middleware('can:stock.adjust')->name('giveaways.index');
+    Route::post('stock/give-away', [GiveawayController::class, 'store'])->middleware('can:stock.adjust')->name('giveaways.store');
+    Route::put('stock/give-away/budget', [GiveawayController::class, 'budget'])->middleware('can:reports.margin')->name('giveaways.budget');
     Route::get('stock/{product}', [StockController::class, 'show'])->middleware('can:stock.view')->name('stock.show');
     Route::post('stock/{product}/adjustments', [AdjustmentController::class, 'store'])->middleware('can:stock.adjust')->name('stock.adjust');
     Route::post('stock/{product}/transfers', [TransferController::class, 'store'])->middleware('can:stock.transfer')->name('stock.transfer');
@@ -250,6 +255,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         'sold' => Insights\StockSoldController::class,
         'reconciliation' => Insights\ReconciliationController::class,
         'exceptions' => Insights\ExceptionsController::class,
+        'giveaways' => Insights\GiveawayReportController::class,
     ] as $slug => $controller) {
         Route::middleware('can:reports.margin')->prefix("reports/{$slug}")->name("reports.{$slug}.")->group(function () use ($controller) {
             Route::get('/', [$controller, 'index'])->name('index');

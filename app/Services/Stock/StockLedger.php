@@ -275,6 +275,10 @@ class StockLedger
             if ($d->reason->requires_note && trim((string) $d->note) === '') {
                 throw new InvalidMovement("Reason {$d->reason->code} requires a note.");
             }
+            // Samples, gifts and the like need a recipient, purpose and approver: only Stock → Give away records them.
+            if ($d->reason->isGiveaway() && $d->sourceType !== GiveawayService::SOURCE) {
+                throw new InvalidMovement("{$d->reason->name}: record it on Stock → Give away, with the recipient, purpose and who approved it.");
+            }
         } elseif ($d->reason) {
             throw new InvalidMovement('Reason codes apply only to adjustments and write-offs.');
         }

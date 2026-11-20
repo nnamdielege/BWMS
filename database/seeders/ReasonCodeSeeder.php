@@ -19,7 +19,11 @@ class ReasonCodeSeeder extends Seeder
             ['code' => 'SPOILED', 'name' => 'Spoiled (cold chain / quality)', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
             ['code' => 'RECALL', 'name' => 'Recall', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => false],
             ['code' => 'OTHER', 'name' => 'Other', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
-            ['code' => 'SAMPLE', 'name' => 'Samples / tastings', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => false],
+            // Give-aways (ReasonCode::GIVEAWAY_CODES): recorded only on Stock → Give away, with recipient, purpose (the note) and approver.
+            ['code' => 'SAMPLE', 'name' => 'Sample / tasting', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
+            ['code' => 'GIFT', 'name' => 'Gift', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
+            ['code' => 'FAVOUR', 'name' => 'Favour / promo', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
+            ['code' => 'STAFF', 'name' => 'Staff use', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
             ['code' => 'INTERNAL', 'name' => 'Internal use', 'movement_type' => 'write_off', 'direction' => 'out', 'requires_note' => true],
             ['code' => 'FOUND', 'name' => 'Found stock', 'movement_type' => 'adjustment', 'direction' => 'in', 'requires_note' => true],
             ['code' => 'LOST', 'name' => 'Lost / missing', 'movement_type' => 'adjustment', 'direction' => 'out', 'requires_note' => true],

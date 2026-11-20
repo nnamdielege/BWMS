@@ -36,10 +36,10 @@ class ReconciliationReportTest extends TestCase
         $this->milk->forceFill(['avg_cost' => 2])->save();
     }
 
-    private function move(MovementType $type, int $qty, ?string $reason = null, ?string $note = null, ?string $cost = null, int $daysAgo = 1, ?string $bin = null): void
+    private function move(MovementType $type, int $qty, ?string $reason = null, ?string $note = null, ?string $cost = null, int $daysAgo = 1, ?string $bin = null, ?string $source = null): void
     {
         $this->ledger()->postOne(new MovementDraft(product: $this->milk, location: $this->bin($bin ?? 'STOCK'), qty: $qty, type: $type,
-            idempotencyKey: 't:'.Str::uuid(), reason: $reason ? $this->reason($reason) : null, unitCost: $cost,
+            idempotencyKey: 't:'.Str::uuid(), reason: $reason ? $this->reason($reason) : null, sourceType: $source, unitCost: $cost,
             occurredAt: now()->subDays($daysAgo), note: $note, allowNegative: true), $this->manager);
     }
 
@@ -56,7 +56,7 @@ class ReconciliationReportTest extends TestCase
         $this->move(MovementType::Receipt, 50);
         $this->move(MovementType::Sale, -30, cost: '2.0000');
         $this->move(MovementType::WriteOff, -5, 'DAMAGED');
-        $this->move(MovementType::WriteOff, -3, 'SAMPLE');                                   // a give-away, not a write-off
+        $this->move(MovementType::WriteOff, -3, 'SAMPLE', 'Tasting', source: 'giveaway');   // a give-away, not a write-off
         $this->move(MovementType::Adjustment, -4, 'LOST', 'Gone');                           // unexplained: "lost" explains nothing
         $this->move(MovementType::Adjustment, -2, 'CORRECTION', 'Keyed 12 not 10');          // explained
         $this->move(MovementType::Adjustment, 1, 'FOUND', 'Behind the pallet');

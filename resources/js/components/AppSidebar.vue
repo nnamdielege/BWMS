@@ -15,6 +15,7 @@ import {
     Combine,
     DollarSign,
     FileText,
+    Gift,
     Import,
     Layers,
     LayoutGrid,
@@ -65,6 +66,7 @@ const navGroups: NavGroup[] = [
             { title: 'Stocktakes', href: '/stocktakes', icon: ClipboardList, permission: 'stocktakes.count' },
             { title: 'Expiring soon', href: '/stock/expiring', icon: CalendarClock, permission: 'stock.view' },
             { title: 'Quarantine', href: '/stock/quarantine', icon: ShieldAlert, permission: 'stock.adjust' },
+            { title: 'Give away', href: '/stock/give-away', icon: Gift, permission: 'stock.adjust' },
         ],
     },
     {
@@ -101,6 +103,7 @@ const navGroups: NavGroup[] = [
             { title: 'Stock sold', href: '/reports/sold', icon: TrendingUp, permission: 'reports.margin' },
             { title: 'Stock reconciliation', href: '/reports/reconciliation', icon: Scale, permission: 'reports.margin' },
             { title: 'Exceptions & audit', href: '/reports/exceptions', icon: ShieldAlert, permission: 'reports.margin' },
+            { title: 'Samples, gifts & favours', href: '/reports/giveaways', icon: Gift, permission: 'reports.margin' },
         ],
     },
     {
