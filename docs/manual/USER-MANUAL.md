@@ -1525,6 +1525,22 @@ On the page:
 - **Shrinkage %** = unexplained loss ÷ cost of goods sold in the same dates, per range and overall.
 - SKUs are listed biggest unexplained loss first. Tick **Only SKUs with a loss or difference** to hide the rest.
 
+### 14.8 Exceptions & audit
+
+**Reports → Exceptions & audit** lists patterns worth a second look. They're theft indicators, not proof. Click any figure to open the stock movements (or pick lists, stocktakes) behind it.
+
+- **Adjustments and write-offs** by user, by reason and by hour of day.
+  - Anything outside working hours, or at a weekend, is flagged and listed under **After hours or at the weekend**.
+  - Working hours start as 06:00 to 18:00 (Brisbane). Change them under **Settings** on the page.
+- **Repeated losses:** a SKU, or a bin, with 2 or more unexplained losses in the dates. Unexplained losses are stock counts that came up short and **Lost / missing** adjustments.
+- **Bins that went negative:** after a dispatch (the count task raised then), or negative right now.
+- **Short picks by picker and SKU:** picked less than the pick list asked for, where there was stock to pick.
+- **Picks entered without scanning** (**Enter quantity**), by picker and the reason they gave.
+- **Counted and posted by the same person, with a large variance:** stocktake lines where the person who counted also posted the stocktake.
+  - A variance is large when it's worth $50 or more either way. Change this under **Settings** on the page.
+
+Changes to the settings are recorded in the audit log.
+
 ---
 
 ## 15. Troubleshooting and FAQ

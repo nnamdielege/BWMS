@@ -249,12 +249,14 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         'received' => Insights\StockReceivedController::class,
         'sold' => Insights\StockSoldController::class,
         'reconciliation' => Insights\ReconciliationController::class,
+        'exceptions' => Insights\ExceptionsController::class,
     ] as $slug => $controller) {
         Route::middleware('can:reports.margin')->prefix("reports/{$slug}")->name("reports.{$slug}.")->group(function () use ($controller) {
             Route::get('/', [$controller, 'index'])->name('index');
             Route::get('export/{format}', [$controller, 'export'])->whereIn('format', ['xlsx', 'csv'])->name('export');
         });
     }
+    Route::put('reports/exceptions/settings', [Insights\ExceptionsController::class, 'settings'])->middleware('can:reports.margin')->name('reports.exceptions.settings');
 
     Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');
     Route::post('sync/listings/{listing}/push', [SyncController::class, 'push'])->middleware('can:sync.manage')->name('sync.push');

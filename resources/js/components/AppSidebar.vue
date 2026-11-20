@@ -100,6 +100,7 @@ const navGroups: NavGroup[] = [
             { title: 'Stock received', href: '/reports/received', icon: PackageCheck, permission: 'reports.margin' },
             { title: 'Stock sold', href: '/reports/sold', icon: TrendingUp, permission: 'reports.margin' },
             { title: 'Stock reconciliation', href: '/reports/reconciliation', icon: Scale, permission: 'reports.margin' },
+            { title: 'Exceptions & audit', href: '/reports/exceptions', icon: ShieldAlert, permission: 'reports.margin' },
         ],
     },
     {
