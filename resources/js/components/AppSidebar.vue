@@ -22,6 +22,7 @@ import {
     ListRestart,
     MapPin,
     Package,
+    PackageCheck,
     ReceiptText,
     RefreshCw,
     ScanLine,
@@ -94,6 +95,7 @@ const navGroups: NavGroup[] = [
             { title: 'Stock value & margin', href: '/reports/margin', icon: ChartColumn, permission: 'reports.margin' },
             { title: 'Substitutions', href: '/reports/substitutions', icon: ArrowLeftRight, permission: 'reports.margin' },
             { title: 'Spoilage', href: '/reports/spoilage', icon: Trash2, permission: 'reports.margin' },
+            { title: 'Stock received', href: '/reports/received', icon: PackageCheck, permission: 'reports.margin' },
         ],
     },
     {

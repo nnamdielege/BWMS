@@ -23,7 +23,7 @@ class XlsxWriter
 
     private const STYLE_COST = 5;
 
-    /** @var list<array{cells: list<mixed>, bold: bool}> */
+    /** @var list<array{cells: list<mixed>, bold: bool, money: ?list<int>}> */
     private array $rows = [];
 
     /** @var array<int, float> */
@@ -43,10 +43,13 @@ class XlsxWriter
 
     public function __construct(private string $sheetName = 'Sheet1') {}
 
-    /** @param  list<string|int|float|null>  $cells */
-    public function row(array $cells, bool $bold = false): static
+    /**
+     * @param  list<string|int|float|null>  $cells
+     * @param  ?list<int>  $money  this row's money columns, in place of the sheet's (for sheets that stack tables)
+     */
+    public function row(array $cells, bool $bold = false, ?array $money = null): static
     {
-        $this->rows[] = ['cells' => array_values($cells), 'bold' => $bold];
+        $this->rows[] = ['cells' => array_values($cells), 'bold' => $bold, 'money' => $money];
 
         return $this;
     }
@@ -201,7 +204,7 @@ class XlsxWriter
             $xml .= "<row r=\"{$n}\">";
             $count = $boxed ? max(count($row['cells']), max($this->boxColumns) + 1) : count($row['cells']);
             for ($c = 0; $c < $count; $c++) {
-                $xml .= $this->cell(self::column($c).$n, $row['cells'][$c] ?? null, $c, $row['bold'], $boxed && in_array($c, $this->boxColumns, true));
+                $xml .= $this->cell(self::column($c).$n, $row['cells'][$c] ?? null, $c, $row['bold'], $boxed && in_array($c, $this->boxColumns, true), $row['money']);
             }
             $xml .= '</row>';
         }
@@ -216,13 +219,14 @@ class XlsxWriter
         return $xml.'</worksheet>';
     }
 
-    private function cell(string $ref, mixed $value, int $column, bool $bold, bool $box): string
+    private function cell(string $ref, mixed $value, int $column, bool $bold, bool $box, ?array $money = null): string
     {
         if ($value === null || $value === '') {
             return $box ? "<c r=\"{$ref}\" s=\"".self::STYLE_BOX.'"/>' : '';
         }
         if (is_int($value) || is_float($value)) {
             $style = match (true) {
+                $money !== null => in_array($column, $money, true) ? ($bold ? self::STYLE_BOLD_MONEY : self::STYLE_MONEY) : ($bold ? self::STYLE_BOLD : 0),
                 ($this->numberStyles[$column] ?? null) === self::STYLE_MONEY => $bold ? self::STYLE_BOLD_MONEY : self::STYLE_MONEY,
                 isset($this->numberStyles[$column]) => $this->numberStyles[$column],
                 default => $bold ? self::STYLE_BOLD : 0,

@@ -1466,6 +1466,32 @@ Export as **XLSX** or **CSV** (the summary is grouped the way the screen is). Re
 
 Only the **loss reasons** set in **Company settings** ([13.4](#134-company-settings)) count. Samples, tastings, gifts, favours, staff use and internal use are not spoilage. They keep their reason and are left out of the totals, the % and the trend. A write-off with no reason still counts.
 
+### 14.4 Stock insight reports: the filters
+
+The stock insight reports (14.5 onwards) are for managers and admins. Each has the same filter bar:
+
+- **From / To** (the last 30 days unless you change them, up to two years).
+- **Site** (shown when there's more than one).
+- **Range** and **Supplier** (the product's usual supplier, except where a report says otherwise).
+- **SKU:** search or scan one product. Click **×** to clear it.
+
+Money is ex GST and at cost unless a report says otherwise. **Export** gives the same figures as **XLSX** or **CSV**. Exports are recorded in the audit log.
+
+### 14.5 Stock received
+
+**Reports → Stock received** shows what came in on receipts in the dates, at the PO cost. Supplier is the PO's supplier.
+
+- **Tiles:** cost received, units, damaged / rejected at receipt (and what the damaged stock cost), and short / over against the POs.
+- **By SKU / Supplier / PO:** packs, units, cost, number of receipts, damaged, rejected, ordered, over, short and outstanding.
+  - **Over:** received beyond what the PO line ordered.
+  - **Short:** ordered but never received, counted once the PO is finished (received, paid or closed short). Until then it shows as **Outstanding**.
+- **Supplier performance:** each PO whose first delivery falls in the dates.
+  - **On time:** the first delivery came on or before the expected date. POs without an expected date aren't counted.
+  - **Avg days late.**
+  - **Lead time:** days from sending the PO (or its order date) to the first delivery, beside the lead time set on the supplier.
+  - **Fill rate:** good stock received ÷ ordered, on finished POs. Damaged, rejected and over-delivered stock don't count towards it.
+- **Show every receipt line** lists each line with its receipt, PO, accepted, damaged, rejected and the reason.
+
 ---
 
 ## 15. Troubleshooting and FAQ

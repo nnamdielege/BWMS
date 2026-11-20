@@ -28,6 +28,7 @@ use App\Http\Controllers\Purchasing\ReorderController;
 use App\Http\Controllers\Purchasing\SupplierController;
 use App\Http\Controllers\Purchasing\SupplierCreditController;
 use App\Http\Controllers\RangeController;
+use App\Http\Controllers\Reports\Insights;
 use App\Http\Controllers\Reports\MarginReportController;
 use App\Http\Controllers\Reports\SpoilageReportController;
 use App\Http\Controllers\Reports\SubstitutionReportController;
@@ -243,6 +244,15 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::get('/', [SubstitutionReportController::class, 'index'])->name('index');
         Route::get('export/{format}', [SubstitutionReportController::class, 'export'])->whereIn('format', ['xlsx', 'csv'])->name('export');
     });
+    // Stock insight reports (filters, page, XLSX/CSV export). Managers and admins.
+    foreach ([
+        'received' => Insights\StockReceivedController::class,
+    ] as $slug => $controller) {
+        Route::middleware('can:reports.margin')->prefix("reports/{$slug}")->name("reports.{$slug}.")->group(function () use ($controller) {
+            Route::get('/', [$controller, 'index'])->name('index');
+            Route::get('export/{format}', [$controller, 'export'])->whereIn('format', ['xlsx', 'csv'])->name('export');
+        });
+    }
 
     Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');
     Route::post('sync/listings/{listing}/push', [SyncController::class, 'push'])->middleware('can:sync.manage')->name('sync.push');
