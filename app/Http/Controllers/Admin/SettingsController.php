@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Mail\TestMail;
+use App\Models\ReasonCode;
 use App\Models\Setting;
 use App\Support\Audit;
 use App\Support\Branding;
@@ -11,6 +12,7 @@ use App\Support\MailHealth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Throwable;
@@ -24,6 +26,8 @@ class SettingsController extends Controller
             'requireBinScan' => Setting::requiresBinScan(),
             'reorderEmailTo' => implode(', ', Setting::reorderEmailTo()),
             'reorderEmailOn' => Setting::reorder()['daily_email'],
+            'lossReasons' => Setting::spoilageLossReasons(),
+            'lossReasonOptions' => self::lossReasonOptions(),
             'logo' => ['url' => Branding::logoUrl(), 'uploaded' => Branding::hasUploadedLogo()],
             'mail' => ['mailer' => MailHealth::mailer(), 'problem' => MailHealth::problem(), 'from' => config('mail.from.address')],
             'testEmail' => session('test_email'),
@@ -43,11 +47,23 @@ class SettingsController extends Controller
                 }
             }
         }];
+        $rules['spoilage_loss_reasons'] = ['sometimes', 'array'];
+        $rules['spoilage_loss_reasons.*'] = ['string', Rule::in(array_column(self::lossReasonOptions(), 'code'))];
         $data = $request->validate($rules);
 
         Setting::put(collect(Setting::COMPANY_KEYS)->mapWithKeys(fn ($k) => [$k => $data[str_replace('.', '_', $k)] ?? ''])->all());
         if (array_key_exists('require_bin_scan', $data)) {
             Setting::put([Setting::REQUIRE_BIN_SCAN => $data['require_bin_scan'] ? '1' : '0']);
+        }
+        if (array_key_exists('spoilage_loss_reasons', $data)) {
+            $before = Setting::spoilageLossReasons();
+            sort($before);
+            $codes = array_values(array_unique($data['spoilage_loss_reasons']));
+            sort($codes);
+            Setting::put([Setting::SPOILAGE_LOSS_REASONS => implode(',', $codes)]);
+            if ($codes !== $before) {
+                Audit::record('spoilage_loss_reasons_changed', null, old: ['codes' => $before], new: ['codes' => $codes]);
+            }
         }
         if (array_key_exists('reorder_email_to', $data)) {
             $to = implode(', ', array_values(array_unique(array_map('strtolower', array_filter(array_map('trim', explode(',', (string) $data['reorder_email_to'])))))));
@@ -59,6 +75,13 @@ class SettingsController extends Controller
         }
 
         return back()->with('success', 'Company details saved.');
+    }
+
+    /** @return list<array{code: string, name: string}> write-off reasons that can count as spoilage: any but give-aways */
+    private static function lossReasonOptions(): array
+    {
+        return ReasonCode::where('movement_type', 'write_off')->whereNotIn('code', ReasonCode::GIVEAWAY_CODES)
+            ->orderBy('name')->get(['code', 'name'])->toArray();
     }
 
     /**

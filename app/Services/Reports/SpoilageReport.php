@@ -3,6 +3,8 @@
 namespace App\Services\Reports;
 
 use App\Enums\MovementType;
+use App\Models\ReasonCode;
+use App\Models\Setting;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Services\Documents\CsvWriter;
@@ -12,7 +14,10 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Reports → Spoilage: every write-off between two dates (Brisbane), money ex GST.
+ * Reports → Spoilage: every loss write-off between two dates (Brisbane), money ex GST.
+ * Loss = a write-off whose reason is one of the company's loss reasons (Setting::spoilageLossReasons;
+ * a write-off with no reason counts too). Samples, gifts and the like are not loss: they
+ * keep their reason and show in their own report.
  *
  * Each write-off is valued at the cost stored on its movement (the average cost when
  * it was written off). Older write-offs have none: they fall back to today's average
@@ -62,6 +67,7 @@ class SpoilageReport
             'trend' => $this->trend($rows, $from, $to, $period),
             'top' => array_slice($groups['product'], 0, 10),
             'period' => $period,
+            'loss_reasons' => self::lossReasons()->pluck('name')->all(),
         ];
     }
 
@@ -75,7 +81,9 @@ class SpoilageReport
     private function rows(Carbon $start, Carbon $end): array
     {
         $tz = config('bwms.business_timezone');
+        $lossIds = self::lossReasons()->pluck('id');
         $moves = StockMovement::where('type', MovementType::WriteOff)
+            ->where(fn ($q) => $q->whereNull('reason_code_id')->orWhereIn('reason_code_id', $lossIds))
             ->whereBetween('occurred_at', [$start, $end])
             ->with([
                 'product' => fn ($q) => $q->withTrashed()->select(['id', 'sku', 'name', 'base_unit', 'avg_cost', 'range_id', 'supplier_id']),
@@ -116,6 +124,12 @@ class SpoilageReport
                 'by' => $m->creator?->name,
             ];
         })->values()->all();
+    }
+
+    /** The write-off reasons counted as loss. */
+    public static function lossReasons(): Collection
+    {
+        return ReasonCode::whereIn('code', Setting::spoilageLossReasons())->orderBy('name')->get(['id', 'code', 'name']);
     }
 
     /**
@@ -209,6 +223,7 @@ class SpoilageReport
         $t = $report['totals'];
         $header = [
             ['Spoilage', "{$from} to {$to}"],
+            ['Loss reasons: '.implode(', ', $report['loss_reasons']).'. Samples, gifts and other give-aways are not counted.'],
             ['Money ex GST. Each write-off at the average cost when it was written off; "today" = no cost was kept, valued at today\'s average cost.'],
         ];
         $summary = [

@@ -93,6 +93,22 @@ class Setting extends Model
         return self::get(self::EXPIRING_IN_EMAIL, '1') !== '0';
     }
 
+    /**
+     * Which write-off reasons count as spoilage (loss): reason codes, comma-separated.
+     * Samples, gifts, favours, staff and internal use are never loss; they have their own report.
+     */
+    public const SPOILAGE_LOSS_REASONS = 'spoilage.loss_reasons';
+
+    public const DEFAULT_LOSS_REASONS = ['EXPIRED', 'DAMAGED', 'SPOILED', 'RECALL', 'OTHER'];
+
+    /** @return list<string> reason codes */
+    public static function spoilageLossReasons(): array
+    {
+        $raw = self::get(self::SPOILAGE_LOSS_REASONS);
+
+        return $raw === null ? self::DEFAULT_LOSS_REASONS : array_values(array_filter(array_map('trim', explode(',', $raw))));
+    }
+
     public static function dropDeliveryCost(): float
     {
         return (float) self::get(self::DROP_DELIVERY_COST, '30');

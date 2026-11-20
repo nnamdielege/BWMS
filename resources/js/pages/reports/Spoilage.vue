@@ -38,11 +38,20 @@ const props = defineProps<{
     filters: { from: string; to: string; period: 'week' | 'month'; group: GroupBy };
     report: {
         rows: Row[];
-        totals: { value: number; units: number; lines: number; at_current_cost: number; no_cost: number; cogs: number; percent_of_cogs: number | null };
+        totals: {
+            value: number;
+            units: number;
+            lines: number;
+            at_current_cost: number;
+            no_cost: number;
+            cogs: number;
+            percent_of_cogs: number | null;
+        };
         groups: Record<GroupBy, Group[]>;
         trend: { start: string; label: string; value: number; units: number }[];
         top: Group[];
         period: 'week' | 'month';
+        loss_reasons: string[];
     };
 }>();
 
@@ -103,11 +112,15 @@ const hover = ref<number | null>(null);
                         <option value="month">Month</option>
                     </select>
                 </label>
-                <div class="text-sm">Export: <a :href="exportUrl('xlsx')" class="underline">XLSX</a> <a :href="exportUrl('csv')" class="underline">CSV</a></div>
+                <div class="text-sm">
+                    Export: <a :href="exportUrl('xlsx')" class="underline">XLSX</a> <a :href="exportUrl('csv')" class="underline">CSV</a>
+                </div>
             </header>
             <p class="text-xs text-muted-foreground">
-                Every write-off in these dates, ex GST, at the average cost when it was written off. Older write-offs kept no cost and are valued at today's
-                average cost (marked "today"). Spoilage % = write-offs ÷ cost of goods dispatched in the same dates.
+                Write-offs for loss ({{ report.loss_reasons.join(', ') || 'no reasons chosen' }}) in these dates, ex GST, at the average cost when it
+                was written off. Older write-offs kept no cost and are valued at today's average cost (marked "today"). Spoilage % = write-offs ÷ cost
+                of goods dispatched in the same dates. Samples, gifts and other give-aways are not counted; the loss reasons are set in Company
+                settings.
             </p>
 
             <div class="grid gap-4 sm:grid-cols-3">
@@ -127,22 +140,35 @@ const hover = ref<number | null>(null);
                 </div>
                 <div class="rounded-lg border p-4">
                     <div class="text-sm text-muted-foreground">Of cost of goods sold</div>
-                    <div class="text-3xl font-semibold tabular-nums">{{ report.totals.percent_of_cogs === null ? '—' : `${report.totals.percent_of_cogs}%` }}</div>
+                    <div class="text-3xl font-semibold tabular-nums">
+                        {{ report.totals.percent_of_cogs === null ? '—' : `${report.totals.percent_of_cogs}%` }}
+                    </div>
                     <div class="text-xs text-muted-foreground">cost of goods sold {{ money(report.totals.cogs) }}</div>
                 </div>
             </div>
 
             <section class="rounded-lg border p-4">
                 <h2 class="mb-2 font-semibold">Written off per {{ report.period }}</h2>
-                <svg :viewBox="`0 0 ${W} ${H}`" class="w-full max-w-3xl text-muted-foreground" role="img" :aria-label="`Value written off per ${report.period}`">
+                <svg
+                    :viewBox="`0 0 ${W} ${H}`"
+                    class="w-full max-w-3xl text-muted-foreground"
+                    role="img"
+                    :aria-label="`Value written off per ${report.period}`"
+                >
                     <g v-for="t in ticks" :key="t">
                         <line :x1="PAD.l" :x2="W - PAD.r" :y1="y(t)" :y2="y(t)" stroke="currentColor" stroke-opacity="0.2" />
-                        <text :x="PAD.l - 6" :y="y(t) + 4" text-anchor="end" class="fill-current text-[10px] tabular-nums">${{ t >= 1000 ? `${t / 1000}k` : t }}</text>
+                        <text :x="PAD.l - 6" :y="y(t) + 4" text-anchor="end" class="fill-current text-[10px] tabular-nums">
+                            ${{ t >= 1000 ? `${t / 1000}k` : t }}
+                        </text>
                     </g>
                     <g v-for="(t, i) in report.trend" :key="t.start" @mouseenter="hover = i" @mouseleave="hover = null">
                         <!-- hit target: the full column, wider than the bar -->
                         <rect :x="PAD.l + i * slot" :y="PAD.t" :width="slot" :height="H - PAD.t - PAD.b" fill="transparent" />
-                        <path :d="barPath(i, t.value)" class="fill-sky-600 dark:fill-sky-400" :fill-opacity="hover === null || hover === i ? 1 : 0.5" />
+                        <path
+                            :d="barPath(i, t.value)"
+                            class="fill-sky-600 dark:fill-sky-400"
+                            :fill-opacity="hover === null || hover === i ? 1 : 0.5"
+                        />
                         <text
                             v-if="i % labelEvery === 0"
                             :x="PAD.l + i * slot + slot / 2"
@@ -156,8 +182,9 @@ const hover = ref<number | null>(null);
                 </svg>
                 <div class="h-5 text-sm tabular-nums">
                     <template v-if="hover !== null">
-                        {{ report.period === 'week' ? 'Week of' : '' }} {{ report.trend[hover].label }}: <strong>{{ money(report.trend[hover].value) }}</strong>,
-                        {{ report.trend[hover].units }} units
+                        {{ report.period === 'week' ? 'Week of' : '' }} {{ report.trend[hover].label }}:
+                        <strong>{{ money(report.trend[hover].value) }}</strong
+                        >, {{ report.trend[hover].units }} units
                     </template>
                 </div>
             </section>
@@ -179,7 +206,12 @@ const hover = ref<number | null>(null);
                     </div>
                     <table class="w-full text-left text-sm">
                         <thead class="border-b text-muted-foreground">
-                            <tr><th class="py-1">{{ groupLabels[filter.group] }}</th><th class="text-right">Value</th><th class="text-right">Units</th><th class="text-right">Share</th></tr>
+                            <tr>
+                                <th class="py-1">{{ groupLabels[filter.group] }}</th>
+                                <th class="text-right">Value</th>
+                                <th class="text-right">Units</th>
+                                <th class="text-right">Share</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <tr v-for="g in report.groups[filter.group]" :key="g.key" class="border-b">
@@ -201,7 +233,10 @@ const hover = ref<number | null>(null);
                         <li v-for="g in report.top" :key="g.key" class="flex items-center gap-2">
                             <span class="w-2/5 truncate" :title="g.label">{{ g.label }}</span>
                             <span class="h-3 flex-1 rounded-sm bg-muted">
-                                <span class="block h-3 rounded-sm bg-sky-600 dark:bg-sky-400" :style="{ width: `${(g.value / (report.top[0]?.value || 1)) * 100}%` }"></span>
+                                <span
+                                    class="block h-3 rounded-sm bg-sky-600 dark:bg-sky-400"
+                                    :style="{ width: `${(g.value / (report.top[0]?.value || 1)) * 100}%` }"
+                                ></span>
                             </span>
                             <span class="w-20 text-right tabular-nums">{{ money(g.value) }}</span>
                         </li>
@@ -218,24 +253,45 @@ const hover = ref<number | null>(null);
                     <table class="w-full min-w-[60rem] text-left text-sm">
                         <thead class="border-b text-muted-foreground">
                             <tr>
-                                <th class="py-2">Date</th><th>Product</th><th>Reason</th><th>Bin / batch</th>
-                                <th class="text-right">Units</th><th class="text-right">Cost / unit</th><th class="text-right">Value</th><th>Note</th>
+                                <th class="py-2">Date</th>
+                                <th>Product</th>
+                                <th>Reason</th>
+                                <th>Bin / batch</th>
+                                <th class="text-right">Units</th>
+                                <th class="text-right">Cost / unit</th>
+                                <th class="text-right">Value</th>
+                                <th>Note</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-for="r in report.rows" :key="r.id" class="border-b align-top">
                                 <td class="whitespace-nowrap py-1 tabular-nums">{{ r.date }}</td>
-                                <td><Link :href="route('stock.show', r.product_id)" class="font-mono underline">{{ r.sku }}</Link> {{ r.name }}</td>
+                                <td>
+                                    <Link :href="route('stock.show', r.product_id)" class="font-mono underline">{{ r.sku }}</Link> {{ r.name }}
+                                </td>
                                 <td>{{ r.reason ?? '—' }}</td>
-                                <td class="text-xs">{{ r.bin }}<div v-if="r.batch" class="text-muted-foreground">{{ r.batch }} <template v-if="r.best_before">BB {{ r.best_before }}</template></div></td>
+                                <td class="text-xs">
+                                    {{ r.bin }}
+                                    <div v-if="r.batch" class="text-muted-foreground">
+                                        {{ r.batch }} <template v-if="r.best_before">BB {{ r.best_before }}</template>
+                                    </div>
+                                </td>
                                 <td class="text-right tabular-nums">{{ r.units }} {{ r.base_unit }}</td>
                                 <td class="text-right tabular-nums">
                                     {{ money(r.unit_cost) }}
-                                    <span v-if="r.cost_basis === 'current'" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-900" title="No cost was kept; valued at today's average cost">today</span>
+                                    <span
+                                        v-if="r.cost_basis === 'current'"
+                                        class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-900"
+                                        title="No cost was kept; valued at today's average cost"
+                                        >today</span
+                                    >
                                     <span v-if="r.cost_basis === 'none'" class="ml-1 rounded bg-red-100 px-1 text-xs text-red-800">no cost</span>
                                 </td>
                                 <td class="text-right tabular-nums">{{ money(r.value) }}</td>
-                                <td class="text-xs">{{ r.note }}<div class="text-muted-foreground">{{ r.by }}</div></td>
+                                <td class="text-xs">
+                                    {{ r.note }}
+                                    <div class="text-muted-foreground">{{ r.by }}</div>
+                                </td>
                             </tr>
                         </tbody>
                     </table>

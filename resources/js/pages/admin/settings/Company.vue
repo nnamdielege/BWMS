@@ -13,6 +13,8 @@ const props = defineProps<{
     requireBinScan: boolean;
     reorderEmailTo: string;
     reorderEmailOn: boolean;
+    lossReasons: string[];
+    lossReasonOptions: { code: string; name: string }[];
     logo: { url: string; uploaded: boolean };
     mail: { mailer: string; problem: string | null; from: string | null };
     testEmail: { ok: boolean; to: string; message: string } | null;
@@ -29,6 +31,7 @@ const form = useForm({
     po_terms: props.settings['po.terms'] ?? '',
     require_bin_scan: props.requireBinScan,
     reorder_email_to: props.reorderEmailTo,
+    spoilage_loss_reasons: [...props.lossReasons],
 });
 
 const logoForm = useForm<{ logo: File | null }>({ logo: null });
@@ -37,7 +40,11 @@ const removeLogo = () => router.delete(route('admin.settings.logo.destroy'), { p
 
 const testing = ref(false);
 const sendTest = () =>
-    router.post(route('admin.settings.test-email'), {}, { preserveScroll: true, onStart: () => (testing.value = true), onFinish: () => (testing.value = false) });
+    router.post(
+        route('admin.settings.test-email'),
+        {},
+        { preserveScroll: true, onStart: () => (testing.value = true), onFinish: () => (testing.value = false) },
+    );
 </script>
 
 <template>
@@ -72,7 +79,9 @@ const sendTest = () =>
                 <input v-model="form.require_bin_scan" type="checkbox" class="mt-0.5" aria-label="Require bin scan when picking" />
                 <span>
                     <span class="font-medium">Require bin scan when picking</span>
-                    <span class="block text-muted-foreground">When off, the product scan alone confirms a line. The bin still shows in large letters.</span>
+                    <span class="block text-muted-foreground"
+                        >When off, the product scan alone confirms a line. The bin still shows in large letters.</span
+                    >
                 </span>
             </label>
             <div class="grid gap-1">
@@ -84,6 +93,18 @@ const sendTest = () =>
                 </span>
                 <InputError :message="form.errors.reorder_email_to" />
             </div>
+            <fieldset class="grid gap-1">
+                <legend class="text-sm font-medium">Spoilage loss reasons</legend>
+                <span class="text-xs text-muted-foreground">
+                    Write-offs with these reasons count as spoilage in Reports → Spoilage. Samples, gifts, favours, staff and internal use never do:
+                    they have their own report.
+                </span>
+                <label v-for="r in lossReasonOptions" :key="r.code" class="flex items-center gap-2 text-sm">
+                    <input v-model="form.spoilage_loss_reasons" type="checkbox" :value="r.code" />
+                    {{ r.name }}
+                </label>
+                <InputError :message="form.errors.spoilage_loss_reasons" />
+            </fieldset>
             <Button type="submit" :disabled="form.processing">Save</Button>
         </form>
 
@@ -117,13 +138,18 @@ const sendTest = () =>
                 {{ mail.problem }}
             </p>
             <p class="text-sm text-muted-foreground">
-                Mailer "{{ mail.mailer }}"{{ mail.from ? `, from ${mail.from}` : '' }}. Send a test to yourself to check that supplier emails will be delivered.
+                Mailer "{{ mail.mailer }}"{{ mail.from ? `, from ${mail.from}` : '' }}. Send a test to yourself to check that supplier emails will be
+                delivered.
             </p>
             <Button type="button" variant="outline" :disabled="testing" @click="sendTest">{{ testing ? 'Sending…' : 'Send test email' }}</Button>
             <p
                 v-if="testEmail"
-                class="rounded-lg border p-3 text-sm break-words"
-                :class="testEmail.ok ? 'border-green-300 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200' : 'border-red-300 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200'"
+                class="break-words rounded-lg border p-3 text-sm"
+                :class="
+                    testEmail.ok
+                        ? 'border-green-300 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200'
+                        : 'border-red-300 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200'
+                "
                 role="status"
             >
                 <span class="font-semibold">{{ testEmail.ok ? 'Sent.' : `Failed to send to ${testEmail.to}:` }}</span> {{ testEmail.message }}

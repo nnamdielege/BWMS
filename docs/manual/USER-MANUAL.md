@@ -1414,6 +1414,7 @@ You can't reset your own two-factor. Ask another admin.
 
 1. **Company details** (name, ABN, address, phone, email, default delivery address, PO terms) are printed on purchase orders. The email is the reply-to address for PO emails. Click **Save**.
    - **Reorder email recipients:** who gets the 7am reorder summary, comma-separated. It starts as the owner only. Leave it empty to send it to no one. The email itself is switched on or off in **Reorder suggestions → Settings**. Changes are in the audit log.
+   - **Spoilage loss reasons:** which write-off reasons count as spoilage in **Reports → Spoilage** ([14.3](#143-spoilage)). It starts as Past best-before, Damaged / broken, Spoiled (cold chain / quality), Recall and Other. Samples, gifts, favours, staff and internal use can't be chosen: they're never loss. Changes are in the audit log.
 2. **Logo:** shown on purchase orders, packing slips, bin labels and emails.
    - Choose a PNG or JPEG of up to 1 MB. A square image of at least 300 px prints best.
    - Click **Upload logo**.
@@ -1452,7 +1453,7 @@ For admins and warehouse managers, under **Reports** in the menu; the drop repor
 
 ### 14.3 Spoilage
 
-**Reports → Spoilage** shows every write-off between two dates (the last 90 days unless you change them).
+**Reports → Spoilage** shows every write-off for loss between two dates (the last 90 days unless you change them).
 
 - **Written off:** the total at cost. Each write-off is valued at the average cost when it was written off. Write-offs from before this report kept no cost: they're valued at today's cost and marked **today**.
 - **Units** written off, and **Of cost of goods sold:** write-offs as a % of the cost of goods dispatched in the same dates.
@@ -1462,6 +1463,8 @@ For admins and warehouse managers, under **Reports** in the menu; the drop repor
 - **Show every write-off** lists each one with its bin, batch, cost and note.
 
 Export as **XLSX** or **CSV** (the summary is grouped the way the screen is). Returns to suppliers aren't spoilage and aren't counted.
+
+Only the **loss reasons** set in **Company settings** ([13.4](#134-company-settings)) count. Samples, tastings, gifts, favours, staff use and internal use are not spoilage. They keep their reason and are left out of the totals, the % and the trend. A write-off with no reason still counts.
 
 ---
 

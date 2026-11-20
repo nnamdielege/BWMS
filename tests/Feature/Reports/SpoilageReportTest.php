@@ -6,6 +6,7 @@ use App\Authorization\Permissions;
 use App\Enums\MovementType;
 use App\Models\Product;
 use App\Models\Range;
+use App\Models\Setting;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
@@ -193,5 +194,38 @@ class SpoilageReportTest extends TestCase
             ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
         $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF))->get(route('reports.spoilage.index'))->assertForbidden();
+    }
+
+    public function test_only_loss_reasons_count_samples_and_internal_use_do_not()
+    {
+        $p = $this->product(2.0);
+        $this->stockIn($p, 100);
+        $this->writeOff($p, 3, 'DAMAGED');
+        $this->writeOff($p, 4, 'SPOILED', 'Fridge failed');
+        $this->writeOff($p, 5, 'SAMPLE');
+        $this->writeOff($p, 6, 'INTERNAL', 'Office kitchen');
+        $this->sale($p, 20, '2.0000');
+        $today = BusinessDate::today();
+
+        $r = app(SpoilageReport::class)->build($today, $today);
+        $this->assertSame(7, $r['totals']['units']);
+        $this->assertSame(14.0, $r['totals']['value']);
+        $this->assertSame(35.0, $r['totals']['percent_of_cogs']); // 14 of 40
+        $this->assertSame(14.0, array_sum(array_column($r['trend'], 'value')));
+        $this->assertEqualsCanonicalizing(['Damaged / broken', 'Spoiled (cold chain / quality)'], array_column($r['groups']['reason'], 'label'));
+        // Existing write-offs keep their reason: the ledger is untouched.
+        $this->assertSame(4, StockMovement::where('type', 'write_off')->count());
+
+        // The list is a company setting.
+        $admin = $this->userWithRole(Permissions::ROLE_ADMIN);
+        $this->actingAs($admin)->get(route('admin.settings.edit'))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('lossReasons', Setting::DEFAULT_LOSS_REASONS)
+            ->where('lossReasonOptions', fn ($o) => ! collect($o)->pluck('code')->intersect(['SAMPLE', 'INTERNAL'])->count()));
+        $this->actingAs($admin)->put(route('admin.settings.update'), ['company_name' => 'Co', 'spoilage_loss_reasons' => ['SAMPLE']])
+            ->assertSessionHasErrors('spoilage_loss_reasons.0');
+        $this->actingAs($admin)->put(route('admin.settings.update'), ['company_name' => 'Co', 'spoilage_loss_reasons' => ['DAMAGED']])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(['DAMAGED'], Setting::spoilageLossReasons());
+        $this->assertSame(6.0, app(SpoilageReport::class)->build($today, $today)['totals']['value']);
     }
 }
