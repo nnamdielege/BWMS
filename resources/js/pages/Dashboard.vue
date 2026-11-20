@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { money } from '@/lib/money';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 
@@ -12,6 +13,15 @@ defineProps<{
         stockout_risk?: number;
         awaiting_putaway?: number;
         expiring?: { days: number; batches: number; at_risk: number; expired: number };
+        insights?: {
+            month: string;
+            from: string;
+            shrinkage: number;
+            shrinkage_percent: number | null;
+            giveaways: number;
+            giveaway_budget: number | null;
+            top_loss: { product_id: number; sku: string; name: string; value: number; units: number } | null;
+        };
         sync_failures_24h?: number;
         negative_bins?: { total: number; rows: { product_id: number; sku: string; name: string; on_hand: number; bin: string }[] };
         count_tasks?: {
@@ -57,25 +67,89 @@ const dismiss = (id: number) => {
                     <div class="text-sm text-muted-foreground">Overdue purchase orders</div>
                     <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.overdue_pos }">{{ widgets.overdue_pos }}</div>
                 </Link>
-                <Link v-if="widgets.stockout_risk !== undefined" :href="route('reorder.index', { stockout_only: 1, only_needed: 0 })" class="rounded-lg border p-4 hover:bg-muted">
+                <Link
+                    v-if="widgets.stockout_risk !== undefined"
+                    :href="route('reorder.index', { stockout_only: 1, only_needed: 0 })"
+                    class="rounded-lg border p-4 hover:bg-muted"
+                >
                     <div class="text-sm text-muted-foreground">Will run out before their next delivery</div>
-                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.stockout_risk }">{{ widgets.stockout_risk }}</div>
+                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.stockout_risk }">
+                        {{ widgets.stockout_risk }}
+                    </div>
                     <div class="text-xs text-muted-foreground">{{ widgets.stockout_risk === 1 ? 'product' : 'products' }} · reorder suggestions</div>
                 </Link>
                 <Link v-if="widgets.expiring" :href="route('expiring.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Expiring within {{ widgets.expiring.days }} days</div>
-                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-amber-600': widgets.expiring.at_risk || widgets.expiring.expired }">
+                    <div
+                        class="text-3xl font-semibold tabular-nums"
+                        :class="{ 'text-amber-600': widgets.expiring.at_risk || widgets.expiring.expired }"
+                    >
                         {{ widgets.expiring.batches }}
                     </div>
                     <div class="text-xs text-muted-foreground">
-                        {{ widgets.expiring.batches === 1 ? 'batch' : 'batches' }} · {{ widgets.expiring.at_risk }} won't sell in time<template v-if="widgets.expiring.expired">
+                        {{ widgets.expiring.batches === 1 ? 'batch' : 'batches' }} · {{ widgets.expiring.at_risk }} won't sell in time<template
+                            v-if="widgets.expiring.expired"
+                        >
                             · {{ widgets.expiring.expired }} already past best-before</template
                         >
                     </div>
                 </Link>
+                <template v-if="widgets.insights">
+                    <Link :href="route('reports.reconciliation.index', { from: widgets.insights.from })" class="rounded-lg border p-4 hover:bg-muted">
+                        <div class="text-sm text-muted-foreground">Shrinkage in {{ widgets.insights.month }}</div>
+                        <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-amber-600': widgets.insights.shrinkage > 0 }">
+                            {{ money(widgets.insights.shrinkage) }}
+                        </div>
+                        <div class="text-xs text-muted-foreground">
+                            unexplained loss at cost<template v-if="widgets.insights.shrinkage_percent !== null">
+                                · {{ widgets.insights.shrinkage_percent }}% of cost of goods sold</template
+                            >
+                        </div>
+                    </Link>
+                    <Link :href="route('reports.giveaways.index', { from: widgets.insights.from })" class="rounded-lg border p-4 hover:bg-muted">
+                        <div class="text-sm text-muted-foreground">Samples &amp; gifts in {{ widgets.insights.month }}</div>
+                        <div
+                            class="text-3xl font-semibold tabular-nums"
+                            :class="{
+                                'text-red-600':
+                                    widgets.insights.giveaway_budget !== null && widgets.insights.giveaways > widgets.insights.giveaway_budget,
+                            }"
+                        >
+                            {{ money(widgets.insights.giveaways) }}
+                        </div>
+                        <div class="text-xs text-muted-foreground">
+                            at cost<template v-if="widgets.insights.giveaway_budget !== null">
+                                · budget {{ money(widgets.insights.giveaway_budget) }}</template
+                            >
+                        </div>
+                    </Link>
+                    <Link
+                        :href="
+                            widgets.insights.top_loss
+                                ? route('reports.reconciliation.index', {
+                                      from: widgets.insights.from,
+                                      product_id: widgets.insights.top_loss.product_id,
+                                  })
+                                : route('reports.reconciliation.index', { from: widgets.insights.from })
+                        "
+                        class="rounded-lg border p-4 hover:bg-muted"
+                    >
+                        <div class="text-sm text-muted-foreground">Top unexplained loss, {{ widgets.insights.month }}</div>
+                        <div class="truncate text-3xl font-semibold">{{ widgets.insights.top_loss?.sku ?? '—' }}</div>
+                        <div class="truncate text-xs text-muted-foreground">
+                            <template v-if="widgets.insights.top_loss">
+                                {{ money(widgets.insights.top_loss.value) }} · {{ widgets.insights.top_loss.units }} units ·
+                                {{ widgets.insights.top_loss.name }}
+                            </template>
+                            <template v-else>no unexplained loss this month</template>
+                        </div>
+                    </Link>
+                </template>
                 <Link v-if="widgets.sync_failures_24h !== undefined" :href="route('sync.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Sync failures (last 24 h)</div>
-                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.sync_failures_24h }">{{ widgets.sync_failures_24h }}</div>
+                    <div class="text-3xl font-semibold tabular-nums" :class="{ 'text-red-600': widgets.sync_failures_24h }">
+                        {{ widgets.sync_failures_24h }}
+                    </div>
                 </Link>
                 <Link v-if="widgets.awaiting_putaway" :href="route('stock.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Stock lines awaiting put-away</div>

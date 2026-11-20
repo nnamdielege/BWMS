@@ -3,12 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\CountTask;
+use App\Models\Giveaway;
 use App\Models\Location;
 use App\Models\Order;
 use App\Models\PurchaseOrder;
+use App\Models\Setting;
 use App\Models\StockBalance;
 use App\Models\SyncAttempt;
 use App\Services\Purchasing\ReorderPlanner;
+use App\Services\Reports\Insights\InsightFilters;
+use App\Services\Reports\Insights\ReconciliationReport;
 use App\Services\Stock\ExpiringSoon;
 use App\Support\BusinessDate;
 use Illuminate\Http\Request;
@@ -68,6 +72,23 @@ class DashboardController extends Controller
             // Only non-zero when a site receives into a non-sellable bin (RECEIVING + put-away).
             $widgets['awaiting_putaway'] = StockBalance::where('on_hand', '>', 0)
                 ->whereIn('location_id', Location::bins()->where('is_receiving', true)->where('is_sellable', false)->select('id'))->count();
+        }
+
+        if ($user->can('reports.margin')) {
+            // This month so far (Brisbane): unexplained loss, give-aways, and the SKU losing most.
+            $tz = config('bwms.business_timezone');
+            $from = now($tz)->startOfMonth()->toDateString();
+            $rec = app(ReconciliationReport::class)->build(new InsightFilters($from, BusinessDate::today()));
+            $top = $rec['top'][0] ?? null;
+            $widgets['insights'] = [
+                'month' => now($tz)->format('F'),
+                'from' => $from,
+                'shrinkage' => $rec['totals']['loss_value'],
+                'shrinkage_percent' => $rec['totals']['shrinkage_percent'],
+                'giveaways' => round((float) Giveaway::where('occurred_at', '>=', now($tz)->startOfMonth()->utc())->sum('value'), 2),
+                'giveaway_budget' => Setting::giveawayBudget(),
+                'top_loss' => $top ? ['product_id' => $top['product_id'], 'sku' => $top['sku'], 'name' => $top['name'], 'value' => $top['loss_value'], 'units' => $top['loss_units']] : null,
+            ];
         }
 
         if ($user->can('sync.view')) {

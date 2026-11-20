@@ -286,6 +286,9 @@ The dashboard is the first page after you log in. Each tile shows only if your r
 | **Bins to count** | Count tasks: a bin went below zero at dispatch, or a picker reported a short pick. "Times" counts how often it was raised. | Managers: **Start count** or **Dismiss** ([8.4](#84-count-tasks)). |
 | **Will run out before their next delivery** | Products whose stock won't last until a delivery ordered today could arrive, at the rate they're selling. Red when above 0. | Click it to open **Reorder suggestions** filtered to those products, and order them ([6.6](#66-suggested-pos-and-reorder-suggestions)). |
 | **Expiring within 14 days** | Batches in sellable bins whose best-before is within the next 14 days (a setting), or has passed. The small print says how many won't sell in time. Amber when any won't. | Click it to open **Expiring soon** ([7.7](#77-expiring-soon)): push them, or move what can't sell to quarantine. |
+| **Shrinkage in (month)** | Managers and admins. Unexplained loss this month at cost: stock counts that came up short, and **Lost / missing** adjustments. The small print gives it as a % of cost of goods sold. | Click it to open **Stock reconciliation** ([14.7](#147-stock-reconciliation)) for this month. |
+| **Samples & gifts in (month)** | Managers and admins. Everything given away this month at cost. Red when over the monthly budget, if one is set. | Click it to open **Samples, gifts & favours** ([14.9](#149-samples-gifts--favours)). |
+| **Top unexplained loss** | Managers and admins. The SKU with the most unexplained loss this month, and how much. | Click it to open the reconciliation for that SKU, then the movements behind the loss. |
 | **Negative bins** | Bins where the system shows less than zero. Goods left the warehouse that the system didn't think were there. | Count the bin. Click the SKU to see its movements. |
 
 Warehouse staff see fewer tiles:
