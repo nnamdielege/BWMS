@@ -21,7 +21,9 @@ class BarcodeController extends Controller
 
     public function index(Request $request): Response
     {
-        $code = trim((string) $request->validate(['code' => ['nullable', 'string', 'max:100']])['code'] ?? '');
+        // Opened from the menu there's no ?code: read it with a default, never straight off the array.
+        $data = $request->validate(['code' => ['nullable', 'string', 'max:100']]);
+        $code = trim((string) ($data['code'] ?? ''));
         $match = $code === '' ? null : Barcode::where('barcode', $code)->with('unit.product:id,sku,name,base_unit', 'unit.barcodes:id,product_unit_id')->first();
 
         return Inertia::render('products/BarcodeLookup', [

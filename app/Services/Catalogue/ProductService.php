@@ -26,6 +26,11 @@ class ProductService
             $units = collect($data['units']);
             $this->assertBarcodesFree($product, $units->pluck('barcodes')->flatten()->all());
 
+            // Packs dropped from the form go first, so another pack can take over a removed one's name.
+            if ($product->exists) {
+                $this->deleteRemovedUnits($product, $units->pluck('id')->filter()->map(fn ($id) => (int) $id)->all());
+            }
+
             $keptIds = [];
             foreach ($units as $row) {
                 $unit = isset($row['id'])
@@ -65,7 +70,15 @@ class ProductService
             ]);
         }
 
-        $unit->save();
+        try {
+            $unit->save();
+        } catch (QueryException $e) {
+            // unique (product_id, name): e.g. two packs swapping names in one save. A message, never a 500.
+            if (($e->errorInfo[1] ?? null) === 1062 && str_contains($e->getMessage(), 'product_units_product_id_name_unique')) {
+                throw ValidationException::withMessages(['units' => "This product already has a pack called {$unit->name}."]);
+            }
+            throw $e;
+        }
     }
 
     /** @param  list<string>  $codes */

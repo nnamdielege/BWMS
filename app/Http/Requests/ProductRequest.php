@@ -20,11 +20,18 @@ class ProductRequest extends FormRequest
     {
         $this->merge([
             'sku' => strtoupper(trim((string) $this->input('sku'))),
-            'units' => collect($this->input('units', []))->map(fn ($u) => [
+            // Names trimmed: MySQL ignores trailing spaces, so "Carton " is the same pack as "Carton".
+            'units' => collect(is_array($this->input('units')) ? $this->input('units') : [])->map(fn ($u) => is_array($u) ? [
                 ...$u,
-                'barcodes' => collect($u['barcodes'] ?? [])->map(fn ($b) => trim((string) $b))->filter()->values()->all(),
-            ])->all(),
+                'name' => is_string($u['name'] ?? null) ? trim($u['name']) : ($u['name'] ?? null),
+                'barcodes' => collect(is_array($u['barcodes'] ?? null) ? $u['barcodes'] : [])->map(fn ($b) => trim((string) $b))->filter()->values()->all(),
+            ] : $u)->all(),
         ]);
+    }
+
+    public function messages(): array
+    {
+        return ['units.*.name.distinct' => 'This product already has a pack called :input.'];
     }
 
     public function rules(): array

@@ -113,6 +113,28 @@ class ProductTest extends TestCase
         $this->assertSame([1, 6], $product->fresh()->units->pluck('base_qty')->all());
     }
 
+    public function test_a_pack_name_the_product_already_has_is_a_message_not_a_500()
+    {
+        $manager = $this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER);
+        $product = Product::factory()->withPack('Carton', 12)->create();
+        $base = ProductFactory::unitOf($product, 1);
+        $carton = ProductFactory::unitOf($product, 12);
+        $save = fn (array $units) => $this->actingAs($manager)->put(route('products.update', $product), $this->payload(['sku' => $product->sku, 'units' => $units]));
+
+        // Renaming one pack to another's name, any case, with or without stray spaces.
+        foreach (['Carton', 'carton', 'Carton '] as $name) {
+            $save([['id' => $base->id, 'name' => $name, 'base_qty' => 1], ['id' => $carton->id, 'name' => 'Carton', 'base_qty' => 12]])
+                ->assertSessionHasErrors(['units.1.name' => 'This product already has a pack called Carton.']);
+        }
+        // Two packs swapping names in one save: refused with the message, nothing half-saved.
+        $save([['id' => $base->id, 'name' => 'Carton', 'base_qty' => 1], ['id' => $carton->id, 'name' => $base->name, 'base_qty' => 12]])
+            ->assertSessionHasErrors(['units' => 'This product already has a pack called Carton.']);
+        $this->assertSame('Carton', $carton->fresh()->name);
+        // Taking over the name of a pack removed in the same save is fine.
+        $save([['id' => $base->id, 'name' => 'Each', 'base_qty' => 1], ['name' => 'Carton', 'base_qty' => 24]])->assertSessionHasNoErrors();
+        $this->assertSame(['Each' => 1, 'Carton' => 24], $product->fresh()->units->pluck('base_qty', 'name')->all());
+    }
+
     public function test_barcode_lookup_resolves_product_and_pack()
     {
         $manager = $this->userWithRole(Permissions::ROLE_WAREHOUSE_MANAGER);
