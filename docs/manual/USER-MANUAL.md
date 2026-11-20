@@ -240,7 +240,7 @@ Each user has one or more roles. The menu on the left only shows what your roles
 |---|:-:|:-:|:-:|:-:|:-:|
 | See products, locations, stock, POs, orders | ✓ | ✓ | ✓ | ✓ | ✓ |
 | See suppliers, product costs, the Sync screen | ✓ | ✓ | | ✓ | ✓ |
-| Edit products, packs, costs; import products; turn on batch tracking | ✓ | ✓ | | | |
+| Edit products, packs, costs; import products; turn batch tracking on or off | ✓ | ✓ | | | |
 | Edit locations and bins | ✓ | ✓ | | | |
 | Print bin labels | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Move stock between bins | ✓ | ✓ | ✓ | | |
@@ -494,6 +494,22 @@ The app can't read the portal catalogue directly. Export the portal's products t
 Each bin's stock goes into a batch with lot `UNKNOWN`, through stock movements with the reason **Batch tracking enabled**. **On-hand quantities don't change.** It's in the audit log. From then on, receiving asks for a lot and best-before as normal.
 
 A product is refused while it's on an open pick list or a stocktake in progress, or has a bin below zero. The rest of the selection still goes ahead, and you're told which ones didn't.
+
+### 4.9 Turn off batch tracking
+
+On **Catalogue → Batch tracking**, click **Turn it off instead**. Admins and warehouse managers can use it.
+
+1. Add products: a whole range of batch-tracked products, or one product at a time.
+2. Check the preview. For each bin it lists the batches that will merge (lot, best-before, quantity) and the on hand afterwards.
+3. Click **Turn off** and confirm.
+
+In each bin, all the product's batches merge into one balance with no lot or best-before. It's done through stock movements with the reason **Batch tracking disabled**, and **on-hand quantities don't change**: the net change in every bin is zero. Each product gets an entry in the audit log, listing the batches merged in each bin. From then on, receiving stops asking for a lot and best-before, and picking no longer goes by best-before.
+
+**Expired stock.** Merging hides the best-before, so stock already past it would become sellable again. Products with expired batches are listed in an amber box and skipped, unless you tick **Include expired stock in the merge**. Usually it's better to write the expired stock off first ([7.3](#73-adjust-or-write-off-stock)) or move it to quarantine ([7.8](#78-quarantine)).
+
+The same refusals apply as for turning it on: an open pick list, a stocktake in progress, or a bin below zero. The others still go ahead, and you're told which were skipped and why.
+
+The **Batch tracking enabled** and **Batch tracking disabled** reasons are posted by the app only; they're not offered on the adjust form, and Stock reconciliation doesn't count them as loss.
 
 ---
 

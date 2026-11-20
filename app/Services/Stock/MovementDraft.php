@@ -31,6 +31,8 @@ final class MovementDraft
         public readonly bool $allowNegative = false,
         /** Only BatchTrackingService: the leg out of the unbatched slot, on a product just turned batch-tracked. */
         public readonly bool $leavesUnbatchedStock = false,
+        /** Only BatchTrackingService: the leg out of a batch, on a product just turned off batch tracking. */
+        public readonly bool $leavesBatch = false,
     ) {}
 
     public function batchKey(): int

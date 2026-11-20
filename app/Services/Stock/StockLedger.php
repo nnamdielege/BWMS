@@ -255,7 +255,7 @@ class StockLedger
         if ($d->product->is_batch_tracked && ! $d->batch && ! ($d->leavesUnbatchedStock && $d->qty < 0)) {
             throw new InvalidMovement("{$sku} is batch-tracked: a batch (lot / best-before) is required.");
         }
-        if (! $d->product->is_batch_tracked && $d->batch) {
+        if (! $d->product->is_batch_tracked && $d->batch && ! ($d->leavesBatch && $d->qty < 0)) {
             throw new InvalidMovement("{$sku} is not batch-tracked; remove the batch.");
         }
         if ($d->batch && $d->batch->product_id !== $d->product->id) {

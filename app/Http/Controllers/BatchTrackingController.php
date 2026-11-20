@@ -23,6 +23,18 @@ class BatchTrackingController extends Controller
         $ids = collect(explode(',', (string) $request->query('products')))->filter(fn ($id) => ctype_digit($id))->unique()->take(self::MAX);
         $products = Product::whereIn('id', $ids)->with('range:id,name')->orderBy('sku')->get();
 
+        if ($request->query('mode') === 'off') {
+            return Inertia::render('products/BatchTrackingOff', [
+                'rows' => $products->map(fn (Product $p) => [
+                    'id' => $p->id, 'sku' => $p->sku, 'name' => $p->name, 'range' => $p->range?->name, 'base_unit' => $p->base_unit,
+                    'bins' => $this->batches->batchBins($p), 'expired' => $this->batches->expired($p), 'blocker' => $this->batches->offBlocker($p),
+                ]),
+                'ranges' => Product::where('is_batch_tracked', true)->whereNotNull('range_id')
+                    ->with('range:id,name')->get(['id', 'range_id'])->groupBy('range.name')->sortKeys()
+                    ->map(fn ($group, $name) => ['name' => $name, 'count' => $group->count(), 'ids' => $group->pluck('id')])->values(),
+            ]);
+        }
+
         return Inertia::render('products/BatchTracking', [
             'rows' => $products->map(fn (Product $p) => [
                 'id' => $p->id, 'sku' => $p->sku, 'name' => $p->name, 'range' => $p->range?->name, 'base_unit' => $p->base_unit,
@@ -64,5 +76,33 @@ class BatchTrackingController extends Controller
         }
 
         return redirect()->route('batch-tracking.index')->with('success', $message);
+    }
+
+    /** Turn it off: one transaction per product; the ones that can't go are listed, the rest go ahead. */
+    public function disable(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array', 'min:1', 'max:'.self::MAX],
+            'products.*' => ['required', 'integer', 'distinct'],
+            'include_expired' => ['boolean'],
+        ]);
+
+        $done = 0;
+        $skipped = [];
+        foreach ($data['products'] as $id) {
+            try {
+                $this->batches->disable(Product::findOrFail($id), (bool) ($data['include_expired'] ?? false), $request->user());
+                $done++;
+            } catch (StockException $e) {
+                $skipped[] = $e->getMessage();
+            }
+        }
+
+        $message = "Batch tracking turned off for {$done} product(s).";
+        if ($skipped !== []) {
+            return back()->with('error', $message.' Skipped: '.implode(' ', $skipped));
+        }
+
+        return redirect()->route('batch-tracking.index', ['mode' => 'off'])->with('success', $message);
     }
 }

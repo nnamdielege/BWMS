@@ -13,6 +13,9 @@ class ReasonCode extends Model
     /** Stock given away (samples, gifts, favours, staff and internal use): never spoilage, never a loss reason. */
     public const GIVEAWAY_CODES = ['SAMPLE', 'GIFT', 'FAVOUR', 'STAFF', 'INTERNAL'];
 
+    /** Posted by the app itself (turning batch tracking on or off), never chosen by hand. */
+    public const SYSTEM_CODES = ['BATCH_ENABLE', 'BATCH_DISABLE'];
+
     protected $fillable = ['code', 'name', 'movement_type', 'direction', 'requires_note', 'is_active'];
 
     protected function casts(): array

@@ -99,6 +99,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     // Batch tracking for products already holding stock: admin and warehouse manager.
     Route::get('batch-tracking', [BatchTrackingController::class, 'index'])->middleware('can:products.manage')->name('batch-tracking.index');
     Route::post('batch-tracking', [BatchTrackingController::class, 'apply'])->middleware('can:products.manage')->name('batch-tracking.apply');
+    Route::post('batch-tracking/disable', [BatchTrackingController::class, 'disable'])->middleware('can:products.manage')->name('batch-tracking.disable');
 
     Route::get('product-packs', [ProductPackController::class, 'index'])->middleware('can:products.view')->name('product-packs.index');
     Route::get('product-packs/export', [ProductPackController::class, 'export'])->middleware('can:products.view')->name('product-packs.export');

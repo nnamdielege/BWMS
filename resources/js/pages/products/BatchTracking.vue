@@ -43,7 +43,11 @@ watch(
 );
 
 const ready = computed(() => props.rows.filter((r) => !r.blocker));
-const missing = computed(() => ready.value.flatMap((r) => r.bins.filter((b) => !dates[key(r.id, b.location_id)]?.unknown && !dates[key(r.id, b.location_id)]?.best_before)).length);
+const missing = computed(
+    () =>
+        ready.value.flatMap((r) => r.bins.filter((b) => !dates[key(r.id, b.location_id)]?.unknown && !dates[key(r.id, b.location_id)]?.best_before))
+            .length,
+);
 const units = (r: Row) => r.bins.reduce((n, b) => n + b.qty, 0);
 const totalUnits = computed(() => ready.value.reduce((n, r) => n + units(r), 0));
 const past = (k: string) => !dates[k]?.unknown && !!dates[k]?.best_before && dates[k].best_before < props.today;
@@ -73,11 +77,14 @@ const firstError = computed(() => Object.values((usePage().props.errors ?? {}) a
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex flex-col gap-6 p-4">
             <section class="max-w-3xl space-y-2 text-sm">
-                <h1 class="text-xl font-semibold">Turn on batch tracking</h1>
+                <div class="flex flex-wrap items-baseline gap-3">
+                    <h1 class="text-xl font-semibold">Turn on batch tracking</h1>
+                    <Link :href="route('batch-tracking.index', { mode: 'off' })" class="underline">Turn it off instead</Link>
+                </div>
                 <p>
                     For products that already hold stock. Each bin's stock goes into a batch with lot <code>UNKNOWN</code>, and
-                    <strong>on-hand quantities don't change</strong>. Enter the best-before per bin, or leave it unknown: unknown stock never expires and is picked first.
-                    After this, receiving asks for a lot and best-before as normal.
+                    <strong>on-hand quantities don't change</strong>. Enter the best-before per bin, or leave it unknown: unknown stock never expires
+                    and is picked first. After this, receiving asks for a lot and best-before as normal.
                 </p>
             </section>
 
@@ -90,14 +97,21 @@ const firstError = computed(() => Object.values((usePage().props.errors ?? {}) a
             </section>
 
             <p v-if="!rows.length" class="text-sm text-muted-foreground">
-                Choose a range or a product. Products the <Link :href="route('product-import.index')" class="underline">product import</Link> skipped for having stock
-                movements can be sent here from its preview.
+                Choose a range or a product. Products the <Link :href="route('product-import.index')" class="underline">product import</Link> skipped
+                for having stock movements can be sent here from its preview.
             </p>
 
             <section v-else class="overflow-x-auto rounded-lg border [contain:inline-size]">
                 <table class="w-full min-w-[720px] text-left text-sm">
                     <thead class="border-b text-muted-foreground">
-                        <tr><th class="px-3 py-2">Product</th><th>Bin</th><th class="text-right">On hand</th><th class="pl-4">Lot</th><th>Best-before</th><th class="pr-3"></th></tr>
+                        <tr>
+                            <th class="px-3 py-2">Product</th>
+                            <th>Bin</th>
+                            <th class="text-right">On hand</th>
+                            <th class="pl-4">Lot</th>
+                            <th>Best-before</th>
+                            <th class="pr-3"></th>
+                        </tr>
                     </thead>
                     <tbody>
                         <template v-for="r in rows" :key="r.id">
@@ -124,7 +138,12 @@ const firstError = computed(() => Object.values((usePage().props.errors ?? {}) a
                                     <td class="py-2 pl-4 font-mono">UNKNOWN</td>
                                     <td class="py-2">
                                         <label class="mr-3 whitespace-nowrap">
-                                            <input v-model="dates[key(r.id, b.location_id)].unknown" type="checkbox" :aria-label="`Unknown best-before ${r.sku} ${b.bin}`" /> Unknown
+                                            <input
+                                                v-model="dates[key(r.id, b.location_id)].unknown"
+                                                type="checkbox"
+                                                :aria-label="`Unknown best-before ${r.sku} ${b.bin}`"
+                                            />
+                                            Unknown
                                         </label>
                                         <input
                                             v-if="!dates[key(r.id, b.location_id)].unknown"
@@ -133,9 +152,13 @@ const firstError = computed(() => Object.values((usePage().props.errors ?? {}) a
                                             class="h-8 rounded-md border border-input bg-background px-2"
                                             :aria-label="`Best-before ${r.sku} ${b.bin}`"
                                         />
-                                        <div v-if="past(key(r.id, b.location_id))" class="text-xs text-amber-900 dark:text-amber-200">Already past: this stock can't be picked.</div>
+                                        <div v-if="past(key(r.id, b.location_id))" class="text-xs text-amber-900 dark:text-amber-200">
+                                            Already past: this stock can't be picked.
+                                        </div>
                                     </td>
-                                    <td class="pr-3 text-right"><button v-if="i === 0" class="text-xs underline" @click="remove(r.id)">Remove</button></td>
+                                    <td class="pr-3 text-right">
+                                        <button v-if="i === 0" class="text-xs underline" @click="remove(r.id)">Remove</button>
+                                    </td>
                                 </tr>
                             </template>
                         </template>

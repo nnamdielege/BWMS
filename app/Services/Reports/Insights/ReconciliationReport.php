@@ -28,7 +28,7 @@ class ReconciliationReport
     public const UNSUPPORTED_REASONS = ['LOST'];
 
     /** Adjustment reasons that move stock between labels, never lose it. */
-    public const NEUTRAL_REASONS = ['BATCH_ENABLE'];
+    public const NEUTRAL_REASONS = ['BATCH_ENABLE', 'BATCH_DISABLE'];
 
     /**
      * Is this movement unexplained loss? Negative stocktake variances always are. A negative
