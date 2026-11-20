@@ -247,6 +247,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     // Stock insight reports (filters, page, XLSX/CSV export). Managers and admins.
     foreach ([
         'received' => Insights\StockReceivedController::class,
+        'sold' => Insights\StockSoldController::class,
     ] as $slug => $controller) {
         Route::middleware('can:reports.margin')->prefix("reports/{$slug}")->name("reports.{$slug}.")->group(function () use ($controller) {
             Route::get('/', [$controller, 'index'])->name('index');

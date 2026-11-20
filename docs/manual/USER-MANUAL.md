@@ -1492,6 +1492,23 @@ Money is ex GST and at cost unless a report says otherwise. **Export** gives the
   - **Fill rate:** good stock received ÷ ordered, on finished POs. Damaged, rejected and over-delivered stock don't count towards it.
 - **Show every receipt line** lists each line with its receipt, PO, accepted, damaged, rejected and the reason.
 
+### 14.6 Stock sold
+
+**Reports → Stock sold** shows stock dispatched in the dates. A sale counts on the day its pick list was dispatched.
+
+- **Sales:** the packs dispatched at the order line's price. Lines with no price use the default (or Ordermentum) price, and the note above the tiles says how many.
+- **Cost:** the cost when it was dispatched. Older dispatches use today's average cost.
+- **GP** = sales − cost. **GM %** = GP ÷ sales.
+- Services (non-stock lines) aren't included.
+
+On the page:
+
+- **Tiles:** sales, cost of goods, gross profit and gross margin.
+- **Sales per week:** hover a week for its GP and the change on the week before.
+- **By SKU / Range / Customer / Channel** (Manual, Portal, Ordermentum).
+- **Top / bottom products and customers**, ranked by GP.
+- **Stopped ordering a product they used to buy:** customers who bought a product on 3 or more orders in the 26 weeks to the end date, then stopped. "Stopped" means it's been more than twice their usual gap, and at least 4 weeks. **Still orders other things** means they're still a customer, just not for that product.
+
 ---
 
 ## 15. Troubleshooting and FAQ

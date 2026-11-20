@@ -34,6 +34,7 @@ import {
     Store,
     Tags,
     Trash2,
+    TrendingUp,
     Truck,
     Users,
     Wallet,
@@ -96,6 +97,7 @@ const navGroups: NavGroup[] = [
             { title: 'Substitutions', href: '/reports/substitutions', icon: ArrowLeftRight, permission: 'reports.margin' },
             { title: 'Spoilage', href: '/reports/spoilage', icon: Trash2, permission: 'reports.margin' },
             { title: 'Stock received', href: '/reports/received', icon: PackageCheck, permission: 'reports.margin' },
+            { title: 'Stock sold', href: '/reports/sold', icon: TrendingUp, permission: 'reports.margin' },
         ],
     },
     {

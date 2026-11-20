@@ -9,9 +9,32 @@ use App\Models\Product;
 use App\Models\User;
 use App\Services\Orders\ChannelOrderData;
 use App\Services\Orders\OrderService;
+use App\Services\Orders\PickListService;
 
 trait OrderFixtures
 {
+    /**
+     * A manual order for $qtyEach units of $product, picked and dispatched now: one pick list,
+     * $picked units picked (all unless given). For the stock sold and exception reports.
+     */
+    protected function dispatchedSale(User $actor, Product $product, int $qtyEach, ?Customer $customer = null, ?string $unitPrice = null,
+        OrderChannel $channel = OrderChannel::Manual, ?int $picked = null): Order
+    {
+        $order = app(OrderService::class)->createManual($actor, [
+            'customer_id' => ($customer ?? Customer::factory()->create())->id,
+            'site_id' => $this->site()->id,
+            'short_ship_policy' => 'cancel',
+            'lines' => [['product_id' => $product->id, 'product_unit_id' => $product->units()->where('base_qty', 1)->value('id'), 'qty' => $qtyEach, 'unit_price' => $unitPrice]],
+        ], true);
+        $order->forceFill(['channel' => $channel])->save();
+        $pickLists = app(PickListService::class);
+        $list = $pickLists->create($actor, $this->site(), [$order->id])['pickList'];
+        $pickLists->recordPicked($list, $list->lines()->pluck('qty_to_pick_base', 'id')->map(fn ($q) => $picked ?? $q)->all());
+        $pickLists->dispatch($list->fresh(), $actor);
+
+        return $order->fresh();
+    }
+
     protected function manualOrder(User $actor, Product $product, int $qtyEach, bool $allowBackorder = false, string $policy = 'backorder', ?int $siteId = null, ?Customer $customer = null): Order
     {
         return app(OrderService::class)->createManual($actor, [
