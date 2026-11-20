@@ -86,9 +86,9 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::post('apply', [ProductImportController::class, 'apply'])->name('apply');
     });
 
-    // Barcode capture on a handheld: admin and warehouse manager.
-    Route::get('capture-barcodes', [BarcodeCaptureController::class, 'index'])->middleware('can:products.manage')->name('barcode-capture.index');
-    Route::post('capture-barcodes', [BarcodeCaptureController::class, 'store'])->middleware('can:products.manage')->name('barcode-capture.store');
+    // Barcode capture on a handheld: admins, managers and warehouse staff. Moving a barcode off another pack: managers and admins.
+    Route::get('capture-barcodes', [BarcodeCaptureController::class, 'index'])->middleware('can:barcodes.capture')->name('barcode-capture.index');
+    Route::post('capture-barcodes', [BarcodeCaptureController::class, 'store'])->middleware('can:barcodes.capture')->name('barcode-capture.store');
     Route::post('capture-barcodes/move', [BarcodeCaptureController::class, 'move'])->middleware('can:products.manage')->name('barcode-capture.move');
     // Barcode lookup (anyone who sees products); change, remove, move: managers and admins.
     Route::get('barcode-lookup', [BarcodeController::class, 'index'])->middleware('can:products.view')->name('barcodes.index');

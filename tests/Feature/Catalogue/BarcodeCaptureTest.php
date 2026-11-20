@@ -150,18 +150,34 @@ class BarcodeCaptureTest extends TestCase
         $this->page(['q' => 'nothing-like-this'])->assertInertia(fn (AssertableInertia $p) => $p->where('product', null)->where('results', [])->where('query', 'nothing-like-this'));
     }
 
-    public function test_it_is_for_managers_and_admins()
+    public function test_it_is_for_managers_admins_and_warehouse_staff()
     {
-        foreach ([Permissions::ROLE_WAREHOUSE_STAFF, Permissions::ROLE_PURCHASING, Permissions::ROLE_READ_ONLY] as $role) {
+        foreach ([Permissions::ROLE_PURCHASING, Permissions::ROLE_READ_ONLY] as $role) {
             $user = $this->userWithRole($role);
             $this->actingAs($user)->get(route('barcode-capture.index'))->assertForbidden();
             $this->actingAs($user)->post(route('barcode-capture.store'), ['product_unit_id' => $this->carton(), 'barcode' => self::GOOD])->assertForbidden();
         }
     }
 
+    public function test_warehouse_staff_capture_but_only_get_the_refusal_for_a_barcode_on_another_pack()
+    {
+        $staff = $this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF);
+        $this->actingAs($staff)->get(route('barcode-capture.index'))->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->where('canMove', false));
+        $this->actingAs($staff)->post(route('barcode-capture.store'), ['product_unit_id' => $this->carton(), 'barcode' => self::GOOD])->assertSessionHasNoErrors();
+        $this->assertSame(self::GOOD, Barcode::sole()->barcode);
+
+        $soy = Product::factory()->create(['sku' => 'SOY-1', 'name' => 'Soy milk']);
+        $soyEach = $soy->units()->value('id');
+        $this->actingAs($staff)->post(route('barcode-capture.store'), ['product_unit_id' => $soyEach, 'barcode' => self::GOOD])
+            ->assertSessionHasErrors(['barcode' => 'This barcode is on MILK-1 Oat milk (Carton).'])
+            ->assertSessionMissing('barcode_conflict');
+        $this->actingAs($staff)->post(route('barcode-capture.move'), ['barcode_id' => Barcode::sole()->id, 'product_unit_id' => $soyEach])->assertForbidden();
+        $this->assertSame($this->carton(), Barcode::sole()->product_unit_id);
+    }
+
     public function test_the_handheld_menu_offers_it_only_to_those_who_can_use_it()
     {
         $this->actingAs($this->manager)->get(route('pick.queue'))->assertInertia(fn (AssertableInertia $p) => $p->where('nav', fn ($nav) => collect($nav['links'])->pluck('title')->contains('Capture barcodes')));
-        $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF))->get(route('pick.queue'))->assertInertia(fn (AssertableInertia $p) => $p->where('nav', fn ($nav) => ! collect($nav['links'])->pluck('title')->contains('Capture barcodes')));
+        $this->actingAs($this->userWithRole(Permissions::ROLE_WAREHOUSE_STAFF))->get(route('pick.queue'))->assertInertia(fn (AssertableInertia $p) => $p->where('nav', fn ($nav) => collect($nav['links'])->pluck('title')->contains('Capture barcodes')));
     }
 }

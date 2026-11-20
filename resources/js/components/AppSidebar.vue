@@ -89,7 +89,7 @@ const navGroups: NavGroup[] = [
             { title: 'Pack setup', href: '/product-packs', icon: Layers, permission: 'products.view' },
             { title: 'Import products', href: '/product-import', icon: Import, permission: 'products.manage' },
             { title: 'Batch tracking', href: '/batch-tracking', icon: Tags, permission: 'products.manage' },
-            { title: 'Capture barcodes', href: '/capture-barcodes', icon: Barcode, permission: 'products.manage' },
+            { title: 'Capture barcodes', href: '/capture-barcodes', icon: Barcode, permission: 'barcodes.capture' },
             { title: 'Barcode lookup', href: '/barcode-lookup', icon: ScanLine, permission: 'products.view' },
             { title: 'Locations', href: '/locations', icon: Warehouse, permission: 'locations.view' },
         ],

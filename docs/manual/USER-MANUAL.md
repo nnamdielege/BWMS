@@ -401,7 +401,7 @@ The amber box lists products still on the single "Unit" pack. That's fine if the
 
 ### 4.5a Capture barcodes
 
-**Catalogue → Capture barcodes** is made for a handheld. Admins and warehouse managers can use it. Walk the warehouse and give each pack its barcode.
+**Catalogue → Capture barcodes** is made for a handheld. Admins, warehouse managers and warehouse staff can use it. Walk the warehouse and give each pack its barcode.
 
 1. Scan a product's barcode or SKU, type a search, or tap it in **Missing barcodes**, which runs in bin walk order.
 2. Scan the barcode for the highlighted pack. It saves straight away, the next pack without a barcode is highlighted, and the scan box is ready again. Tap a pack to scan that one instead.
@@ -409,7 +409,7 @@ The amber box lists products still on the single "Unit" pack. That's fine if the
 
 **N of M have barcodes** counts active stock-tracked products with a barcode on at least one pack. A wrong check digit is refused. So is a bin label scanned by mistake.
 
-**A barcode already on another pack** is refused with **This barcode is on SKU name (pack)**. If it's on the wrong one, tap **Move it here** and confirm. In one step it comes off the old pack and goes on the one you scanned for. The move is in the audit log of both products. Only admins and warehouse managers see the button.
+**A barcode already on another pack** is refused with **This barcode is on SKU name (pack)**. If it's on the wrong one, tap **Move it here** and confirm. In one step it comes off the old pack and goes on the one you scanned for. The move is in the audit log of both products. Only admins and warehouse managers see the button: warehouse staff just get the message.
 
 ### 4.5b Barcode lookup
 

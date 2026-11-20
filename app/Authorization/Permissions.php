@@ -20,6 +20,9 @@ final class Permissions
 
     public const PRODUCTS_MANAGE = 'products.manage';
 
+    /** Catalogue → Capture barcodes: add barcodes to packs on a handheld. Moving one off another pack needs products.manage. */
+    public const BARCODES_CAPTURE = 'barcodes.capture';
+
     public const LOCATIONS_VIEW = 'locations.view';
 
     public const LOCATIONS_MANAGE = 'locations.manage';
@@ -94,7 +97,7 @@ final class Permissions
             self::ROLE_WAREHOUSE_MANAGER => [
                 ...$view,
                 self::USERS_VIEW, self::AUDIT_VIEW,
-                self::PRODUCTS_MANAGE, self::LOCATIONS_MANAGE,
+                self::PRODUCTS_MANAGE, self::BARCODES_CAPTURE, self::LOCATIONS_MANAGE,
                 self::STOCK_ADJUST, self::STOCK_TRANSFER, self::STOCKTAKES_COUNT, self::STOCKTAKES_MANAGE,
                 self::SUPPLIERS_MANAGE, self::PURCHASE_ORDERS_MANAGE, self::RECEIVING_PERFORM,
                 self::ORDERS_MANAGE, self::PICKING_PERFORM, self::SYNC_MANAGE, self::REPORTS_MARGIN,
@@ -102,7 +105,7 @@ final class Permissions
             self::ROLE_WAREHOUSE_STAFF => [
                 self::PRODUCTS_VIEW, self::LOCATIONS_VIEW, self::STOCK_VIEW, self::PURCHASE_ORDERS_VIEW,
                 self::ORDERS_VIEW, self::STOCK_TRANSFER, self::STOCKTAKES_COUNT, self::RECEIVING_PERFORM,
-                self::PICKING_PERFORM,
+                self::PICKING_PERFORM, self::BARCODES_CAPTURE,
             ],
             self::ROLE_PURCHASING => [
                 ...$view,
