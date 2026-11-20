@@ -7,7 +7,7 @@ import { useCan } from '@/composables/useCan';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 type UnitInput = {
     id?: number;
@@ -45,7 +45,7 @@ interface ProductData {
     sell_channels: string;
     is_stock_tracked: boolean;
     is_chilled: boolean;
-    units: (Omit<UnitInput, 'barcodes'> & { barcodes: { barcode: string }[] })[];
+    units: (Omit<UnitInput, 'barcodes'> & { barcodes: { id: number; barcode: string }[] })[];
 }
 
 const props = defineProps<{
@@ -54,6 +54,7 @@ const props = defineProps<{
     ranges: { id: number; name: string }[];
     suppliers: { id: number; name: string }[];
     holdsStock?: boolean;
+    openPickLists?: number;
 }>();
 
 const can = useCan();
@@ -136,6 +137,41 @@ const perUnit = computed(() => {
         .replace(/(\.\d\d)0$/, '$1');
 });
 const addBarcode = (u: UnitInput) => u.barcodes.push('');
+
+// Saved barcodes are changed or removed one at a time (managers, admins), straight away and audited;
+// new ones typed in here save with the product.
+const savedId = (u: UnitInput, code: string) => props.product?.units.find((x) => x.id === u.id)?.barcodes.find((b) => b.barcode === code)?.id ?? null;
+const editing = ref<{ id: number; value: string } | null>(null);
+const barcodeError = ref<string | null>(null);
+const savedCount = (u: UnitInput) => u.barcodes.filter((c) => savedId(u, c)).length;
+const pickWarning = (u: UnitInput) =>
+    savedCount(u) === 1 && props.openPickLists
+        ? `\n\nWarning: ${u.name} will have no barcode, and ${props.openPickLists} open pick list(s) still need this product. Pickers will have to enter the quantity.`
+        : '';
+const barcodeVisit = {
+    preserveScroll: true,
+    preserveState: true,
+    onError: (e: Record<string, string>) => (barcodeError.value = e.barcode ?? Object.values(e)[0]),
+};
+const changeBarcode = (u: UnitInput, b: number) => {
+    const id = savedId(u, u.barcodes[b]);
+    const value = editing.value?.value.trim() ?? '';
+    if (!id || !value || value === u.barcodes[b]) return (editing.value = null);
+    if (!confirm(`Change barcode ${u.barcodes[b]} to ${value} on ${u.name}?`)) return;
+    barcodeError.value = null;
+    router.put(
+        route('barcodes.update', id),
+        { barcode: value },
+        { ...barcodeVisit, onSuccess: () => ((u.barcodes[b] = value), (editing.value = null)) },
+    );
+};
+const removeBarcode = (u: UnitInput, b: number) => {
+    const id = savedId(u, u.barcodes[b]);
+    if (!id) return u.barcodes.splice(b, 1);
+    if (!confirm(`Remove barcode ${u.barcodes[b]} from ${u.name}?${pickWarning(u)}`)) return;
+    barcodeError.value = null;
+    router.delete(route('barcodes.destroy', id), { ...barcodeVisit, onSuccess: () => u.barcodes.splice(b, 1) });
+};
 const setDefault = (field: 'default_purchase' | 'default_sale', i: number) => form.units.forEach((u, j) => (u[field] = i === j));
 
 const submit = () => (isNew ? form.post(route('products.store')) : form.put(route('products.update', p!.id), { preserveScroll: true }));
@@ -302,6 +338,7 @@ const unitErrors = computed(() =>
                     quantity cannot be changed.
                 </p>
                 <InputError v-for="(e, i) in unitErrors" :key="i" :message="e" />
+                <InputError v-if="barcodeError" :message="barcodeError" />
 
                 <fieldset :disabled="readOnly" class="space-y-3">
                     <div v-for="(u, i) in form.units" :key="u.id ?? `new-${i}`" class="grid gap-2 rounded-md border p-3 sm:grid-cols-6">
@@ -335,7 +372,37 @@ const unitErrors = computed(() =>
                         </div>
                         <div class="flex flex-wrap items-center gap-2 sm:col-span-6">
                             <span class="text-sm text-muted-foreground">Barcodes:</span>
-                            <Input v-for="(_, b) in u.barcodes" :key="b" v-model="u.barcodes[b]" class="w-44 font-mono" placeholder="Scan or type" />
+                            <template v-for="(code, b) in u.barcodes" :key="b">
+                                <!-- Saved: change or remove it on its own, straight away. -->
+                                <span v-if="savedId(u, code)" class="flex items-center gap-1 rounded-md border px-2 py-1 text-sm">
+                                    <template v-if="editing && editing.id === savedId(u, code)">
+                                        <Input
+                                            v-model="editing.value"
+                                            class="h-7 w-44 font-mono"
+                                            aria-label="New barcode"
+                                            @keydown.enter.prevent="changeBarcode(u, b)"
+                                        />
+                                        <Button type="button" size="sm" variant="outline" class="h-7" @click="changeBarcode(u, b)">Save</Button>
+                                        <Button type="button" size="sm" variant="ghost" class="h-7" @click="editing = null">Cancel</Button>
+                                    </template>
+                                    <template v-else>
+                                        <span class="font-mono">{{ code }}</span>
+                                        <template v-if="!readOnly">
+                                            <button type="button" class="text-xs underline" @click="editing = { id: savedId(u, code)!, value: code }">
+                                                Change
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="text-xs text-red-700 underline dark:text-red-400"
+                                                @click="removeBarcode(u, b)"
+                                            >
+                                                Remove
+                                            </button>
+                                        </template>
+                                    </template>
+                                </span>
+                                <Input v-else v-model="u.barcodes[b]" class="w-44 font-mono" placeholder="Scan or type" />
+                            </template>
                             <Button v-if="!readOnly" type="button" variant="ghost" size="sm" @click="addBarcode(u)">+ barcode</Button>
                         </div>
                     </div>

@@ -61,13 +61,7 @@ class BarcodeCaptureService
     /** @throws ValidationException with what's wrong, for the person holding the scanner */
     public function add(ProductUnit $unit, string $code): Barcode
     {
-        $code = trim($code);
-        $this->refuseIf(! preg_match('/^[A-Za-z0-9\-]{1,64}$/', $code), "\"{$code}\" isn't a barcode.");
-        $gtinLength = ctype_digit($code) && in_array(strlen($code), [8, 12, 13, 14], true);
-        $this->refuseIf($gtinLength && ! Gtin::isValid($code), "{$code} has a wrong check digit. Scan it again.");
-
-        $bin = Location::where('barcode', $code)->first();
-        $this->refuseIf($bin !== null, "That's the label for bin {$bin?->code}, not a product.");
+        $code = self::checkCode($code);
         $this->refuseIfTaken($code, $unit);
 
         try {
@@ -80,6 +74,45 @@ class BarcodeCaptureService
         }
     }
 
+    /**
+     * A well-formed product barcode: letters, digits and dashes; a GTIN length needs a right
+     * check digit; never a bin label. Returns it trimmed.
+     *
+     * @throws ValidationException
+     */
+    public static function checkCode(string $code): string
+    {
+        $code = trim($code);
+        self::refuse(! preg_match('/^[A-Za-z0-9\-]{1,64}$/', $code), "\"{$code}\" isn't a barcode.");
+        $gtinLength = ctype_digit($code) && in_array(strlen($code), [8, 12, 13, 14], true);
+        self::refuse($gtinLength && ! Gtin::isValid($code), "{$code} has a wrong check digit. Scan it again.");
+        $bin = Location::where('barcode', $code)->first();
+        self::refuse($bin !== null, "That's the label for bin {$bin?->code}, not a product.");
+
+        return $code;
+    }
+
+    /** Where a barcode is, for "This barcode is on …": null when it's free or already on $unit. */
+    public static function holder(string $code, ?ProductUnit $unit = null): ?array
+    {
+        $taken = Barcode::where('barcode', trim($code))->with('unit.product:id,sku,name')->first();
+        if (! $taken || $taken->product_unit_id === $unit?->id) {
+            return null;
+        }
+
+        return [
+            'barcode_id' => $taken->id, 'barcode' => $taken->barcode, 'product_id' => $taken->unit->product->id,
+            'sku' => $taken->unit->product->sku, 'name' => $taken->unit->product->name, 'unit_id' => $taken->unit->id, 'pack' => $taken->unit->name,
+        ];
+    }
+
+    private static function refuse(bool $condition, string $message): void
+    {
+        if ($condition) {
+            throw ValidationException::withMessages(['barcode' => $message]);
+        }
+    }
+
     private function refuseIfTaken(string $code, ProductUnit $unit): void
     {
         $taken = Barcode::where('barcode', $code)->with('unit.product:id,sku,name')->first();
@@ -88,7 +121,7 @@ class BarcodeCaptureService
         }
         $this->refuseIf($taken->product_unit_id === $unit->id, "{$code} is already on this pack.");
         $product = $taken->unit->product;
-        $this->refuseIf(true, "{$code} is already on {$product->sku} {$product->name} ({$taken->unit->name}).");
+        $this->refuseIf(true, "This barcode is on {$product->sku} {$product->name} ({$taken->unit->name}).");
     }
 
     private function refuseIf(bool $condition, string $message): void

@@ -76,7 +76,7 @@ class BarcodeCaptureTest extends TestCase
         $other = Product::factory()->create(['sku' => 'SOY-1', 'name' => 'Soy milk']);
         $other->units()->first()->barcodes()->create(['barcode' => self::GOOD, 'type' => 'ean13']);
 
-        $this->save(self::GOOD)->assertSessionHasErrors(['barcode' => self::GOOD.' is already on SOY-1 Soy milk (Each).']);
+        $this->save(self::GOOD)->assertSessionHasErrors(['barcode' => 'This barcode is on SOY-1 Soy milk (Each).']);
 
         $this->assertSame(1, Barcode::count());
     }
@@ -85,7 +85,7 @@ class BarcodeCaptureTest extends TestCase
     {
         $this->save(self::GOOD);
 
-        $this->save(self::GOOD, $this->product->units()->where('base_qty', 1)->value('id'))->assertSessionHasErrors(['barcode' => self::GOOD.' is already on MILK-1 Oat milk (Carton).']);
+        $this->save(self::GOOD, $this->product->units()->where('base_qty', 1)->value('id'))->assertSessionHasErrors(['barcode' => 'This barcode is on MILK-1 Oat milk (Carton).']);
         $this->save(self::GOOD)->assertSessionHasErrors(['barcode' => self::GOOD.' is already on this pack.']);
     }
 

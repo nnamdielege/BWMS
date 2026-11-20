@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Range;
 use App\Models\StockBalance;
 use App\Models\Supplier;
+use App\Services\Catalogue\BarcodeService;
 use App\Services\Catalogue\ProductService;
 use App\Services\Catalogue\SellPriceCheck;
 use Illuminate\Http\JsonResponse;
@@ -77,6 +78,8 @@ class ProductController extends Controller
         return Inertia::render('products/Form', [
             'product' => $product->load('units.barcodes'),
             'holdsStock' => StockBalance::where('product_id', $product->id)->where('on_hand', '!=', 0)->exists(),
+            // Taking the last barcode off a pack warns when pickers still need this product.
+            'openPickLists' => BarcodeService::openPickLists($product->id),
             'categories' => Category::orderBy('name')->get(['id', 'name']),
             'ranges' => Range::orderBy('name')->get(['id', 'name']),
             'suppliers' => Supplier::where('is_active', true)->orderBy('name')->get(['id', 'name']),

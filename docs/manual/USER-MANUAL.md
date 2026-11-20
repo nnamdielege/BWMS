@@ -346,6 +346,17 @@ Each product has one or more pack sizes. The quantity is how many base units are
 - **Pack code** (optional).
 - **Barcodes:** click **+ barcode** and scan or type it. Add the barcode of each pack, for example the can and the carton. When a picker scans a pack barcode, it counts that pack's quantity.
 
+**Correct a saved barcode** (admins and warehouse managers). Each saved barcode has two buttons:
+
+- **Change:** type or scan the right barcode, click **Save**, and confirm.
+- **Remove:** confirm, and it's gone.
+
+Both happen straight away; you don't need to click **Save** on the product. The new barcode is checked like any other: a right check digit, not a bin label, and not already on another pack (the message says which one). Each change is in the audit log: old → new, the product, the pack and who did it.
+
+Taking the last barcode off a pack is allowed. If an open pick list still needs the product, the confirm warns you first: pickers will have to use **Enter quantity** until the pack has a barcode again.
+
+A barcode on the wrong product is moved, not removed and re-added: use **Move it here** on Capture barcodes ([4.5a](#45a-capture-barcodes)) or **Barcode lookup** ([4.5b](#45b-barcode-lookup)).
+
 Before go-live, packs can also be set up in bulk on **Pack setup** ([4.5](#45-pack-setup-before-go-live)).
 
 ### 4.4 Flags and sell channels
@@ -396,7 +407,20 @@ The amber box lists products still on the single "Unit" pack. That's fine if the
 2. Scan the barcode for the highlighted pack. It saves straight away, the next pack without a barcode is highlighted, and the scan box is ready again. Tap a pack to scan that one instead.
 3. When every pack is done, the next scan finds the next product. **Done** leaves the product early.
 
-**N of M have barcodes** counts active stock-tracked products with a barcode on at least one pack. A wrong check digit is refused, and so is a barcode already in use, with the product that has it. A bin label scanned by mistake is refused too.
+**N of M have barcodes** counts active stock-tracked products with a barcode on at least one pack. A wrong check digit is refused. So is a bin label scanned by mistake.
+
+**A barcode already on another pack** is refused with **This barcode is on SKU name (pack)**. If it's on the wrong one, tap **Move it here** and confirm. In one step it comes off the old pack and goes on the one you scanned for. The move is in the audit log of both products. Only admins and warehouse managers see the button.
+
+### 4.5b Barcode lookup
+
+**Catalogue → Barcode lookup:** scan or type a barcode to see which product and pack it's on. Anyone who can see products can use it.
+
+Admins and warehouse managers also get:
+
+- **Move:** find the product it should be on, choose the pack, click **Move** and confirm.
+- **Remove barcode:** confirm, and it comes off the pack.
+
+Both are in the audit log. As on the product page, taking the last barcode off a pack that open pick lists still need is allowed, with a warning.
 
 ### 4.6 Costs
 

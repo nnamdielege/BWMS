@@ -28,7 +28,7 @@ export interface NavGroup {
 export interface SharedData {
     name: string;
     auth: Auth;
-    flash: { success: string | null; error: string | null };
+    flash: { success: string | null; error: string | null; warning?: string | null };
     ziggy: {
         location: string;
         url: string;

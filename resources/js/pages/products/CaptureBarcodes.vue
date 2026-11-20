@@ -14,6 +14,8 @@ const props = defineProps<{
     product: Product | null;
     results: { id: number; sku: string; name: string }[];
     query: string | null;
+    conflict: { barcode_id: number; barcode: string; sku: string; name: string; pack: string; to_unit_id: number } | null;
+    canMove: boolean;
 }>();
 
 const message = ref<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -41,7 +43,11 @@ watch(
     },
 );
 
-const visitOptions = { preserveState: true, preserveScroll: true, only: ['product', 'results', 'query', 'progress', 'missing', 'errors'] };
+const visitOptions = {
+    preserveState: true,
+    preserveScroll: true,
+    only: ['product', 'results', 'query', 'progress', 'missing', 'errors', 'conflict', 'flash'],
+};
 
 const settle = () => {
     busy.value = false;
@@ -66,6 +72,32 @@ const save = (code: string) => {
             ...visitOptions,
             onSuccess: () => say('ok', `${code} saved on ${label(unit)}.${nextUnit(props.product) ? '' : ' All packs done: scan the next product.'}`),
             onError: (errors) => say('error', Object.values(errors)[0] ?? 'Not saved.'),
+            onFinish: () => {
+                stop();
+                settle();
+            },
+        },
+    );
+};
+
+// The scan is on another pack: managers and admins can move it here, after a confirm.
+const conflictHere = computed(() =>
+    props.canMove && props.conflict && props.product?.units.some((u) => u.id === props.conflict?.to_unit_id) ? props.conflict : null,
+);
+const moveHere = () => {
+    const c = conflictHere.value;
+    const unit = props.product?.units.find((u) => u.id === c?.to_unit_id);
+    if (!c || !unit || busy.value) return;
+    if (!confirm(`Move ${c.barcode} off ${c.sku} ${c.name} (${c.pack}) and onto ${label(unit)}?`)) return;
+    busy.value = true;
+    const stop = catchVisitFailures((text) => say('error', text));
+    router.post(
+        route('barcode-capture.move'),
+        { barcode_id: c.barcode_id, product_unit_id: unit.id },
+        {
+            ...visitOptions,
+            onSuccess: () => say('ok', `${c.barcode} moved to ${label(unit)}.`),
+            onError: (errors) => say('error', Object.values(errors)[0] ?? 'Not moved.'),
             onFinish: () => {
                 stop();
                 settle();
@@ -111,7 +143,7 @@ const percent = computed(() => (props.progress.total ? Math.round((props.progres
                     @click="activeId = u.id"
                 >
                     <span class="font-semibold">{{ label(u) }}</span>
-                    <span v-if="u.barcodes.length" class="block font-mono text-sm break-all text-muted-foreground">{{ u.barcodes.join(', ') }}</span>
+                    <span v-if="u.barcodes.length" class="block break-all font-mono text-sm text-muted-foreground">{{ u.barcodes.join(', ') }}</span>
                     <span v-else class="block text-sm text-muted-foreground">No barcode yet</span>
                 </button>
             </div>
@@ -122,17 +154,31 @@ const percent = computed(() => (props.progress.total ? Math.round((props.progres
         <div
             v-if="message"
             class="mt-2 rounded-lg px-3 py-2 text-sm font-medium"
-            :class="message.kind === 'ok' ? 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200' : 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200'"
+            :class="
+                message.kind === 'ok'
+                    ? 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200'
+                    : 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200'
+            "
             :role="message.kind === 'ok' ? 'status' : 'alert'"
         >
             {{ message.text }}
+            <button
+                v-if="message.kind === 'error' && conflictHere"
+                class="mt-2 block w-full rounded-lg border border-current px-3 py-2 font-semibold"
+                @mousedown.prevent
+                @click="moveHere"
+            >
+                Move it here
+            </button>
         </div>
 
         <section v-if="!product && query" class="mt-3">
             <h2 class="mb-1 text-sm font-semibold">{{ results.length ? `Found for "${query}"` : `Nothing found for "${query}"` }}</h2>
             <ul v-if="results.length" class="divide-y rounded-xl border text-sm">
                 <li v-for="r in results" :key="r.id">
-                    <button class="w-full p-3 text-left" @mousedown.prevent @click="find({ product: r.id })"><span class="font-mono">{{ r.sku }}</span> {{ r.name }}</button>
+                    <button class="w-full p-3 text-left" @mousedown.prevent @click="find({ product: r.id })">
+                        <span class="font-mono">{{ r.sku }}</span> {{ r.name }}
+                    </button>
                 </li>
             </ul>
         </section>
@@ -143,7 +189,9 @@ const percent = computed(() => (props.progress.total ? Math.round((props.progres
                 <li v-for="m in missing" :key="m.id">
                     <button class="flex w-full items-center gap-3 p-3 text-left" @mousedown.prevent @click="find({ product: m.id })">
                         <span class="w-16 shrink-0 font-mono font-semibold">{{ m.bin ?? 'No stock' }}</span>
-                        <span class="min-w-0 truncate"><span class="font-mono">{{ m.sku }}</span> {{ m.name }}</span>
+                        <span class="min-w-0 truncate"
+                            ><span class="font-mono">{{ m.sku }}</span> {{ m.name }}</span
+                        >
                     </button>
                 </li>
             </ul>
