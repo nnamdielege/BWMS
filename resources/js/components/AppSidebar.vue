@@ -25,6 +25,7 @@ import {
     PackageCheck,
     ReceiptText,
     RefreshCw,
+    Scale,
     ScanLine,
     ScrollText,
     Settings,
@@ -98,6 +99,7 @@ const navGroups: NavGroup[] = [
             { title: 'Spoilage', href: '/reports/spoilage', icon: Trash2, permission: 'reports.margin' },
             { title: 'Stock received', href: '/reports/received', icon: PackageCheck, permission: 'reports.margin' },
             { title: 'Stock sold', href: '/reports/sold', icon: TrendingUp, permission: 'reports.margin' },
+            { title: 'Stock reconciliation', href: '/reports/reconciliation', icon: Scale, permission: 'reports.margin' },
         ],
     },
     {

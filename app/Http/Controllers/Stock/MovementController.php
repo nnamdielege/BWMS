@@ -20,11 +20,14 @@ class MovementController extends Controller
             'type' => ['nullable', Rule::enum(MovementType::class)],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
+            // A report's flag links to the movements behind it: "12,40,41".
+            'ids' => ['nullable', 'string', 'max:4000', 'regex:/^\d+(,\d+)*$/'],
         ]);
         $tz = config('bwms.business_timezone');
 
         $movements = StockMovement::query()
             ->with(['product:id,sku,name', 'location.parent', 'batch', 'reasonCode', 'creator:id,name'])
+            ->when($filters['ids'] ?? null, fn ($q, $ids) => $q->whereIn('id', array_slice(explode(',', $ids), 0, 500)))
             ->when($filters['sku'] ?? null, fn ($q, $sku) => $q->whereHas('product', fn ($p) => $p->where('sku', $sku)))
             ->when($filters['type'] ?? null, fn ($q, $t) => $q->where('type', $t))
             ->when($filters['from'] ?? null, fn ($q, $d) => $q->where('occurred_at', '>=', now()->parse($d, $tz)->startOfDay()->utc()))

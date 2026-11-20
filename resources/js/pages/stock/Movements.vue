@@ -10,7 +10,7 @@ import { reactive } from 'vue';
 
 const props = defineProps<{
     movements: Paginated<MovementRow>;
-    filters: { sku?: string; type?: string; from?: string; to?: string };
+    filters: { sku?: string; type?: string; from?: string; to?: string; ids?: string };
     types: { value: string; label: string }[];
 }>();
 
@@ -38,6 +38,10 @@ const apply = () => router.get(route('stock.movements'), { ...form }, { preserve
                 <Button type="submit" variant="outline">Filter</Button>
             </form>
 
+            <p v-if="filters.ids" class="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                The {{ filters.ids.split(',').length }} movement(s) behind a report flag.
+                <a :href="route('stock.movements')" class="underline">Show all movements</a>
+            </p>
             <MovementTable :movements="movements.data" show-product />
             <Pagination :links="movements.links" />
         </div>

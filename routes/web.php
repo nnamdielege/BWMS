@@ -248,6 +248,7 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
     foreach ([
         'received' => Insights\StockReceivedController::class,
         'sold' => Insights\StockSoldController::class,
+        'reconciliation' => Insights\ReconciliationController::class,
     ] as $slug => $controller) {
         Route::middleware('can:reports.margin')->prefix("reports/{$slug}")->name("reports.{$slug}.")->group(function () use ($controller) {
             Route::get('/', [$controller, 'index'])->name('index');

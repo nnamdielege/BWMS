@@ -1509,6 +1509,22 @@ On the page:
 - **Top / bottom products and customers**, ranked by GP.
 - **Stopped ordering a product they used to buy:** customers who bought a product on 3 or more orders in the 26 weeks to the end date, then stopped. "Stopped" means it's been more than twice their usual gap, and at least 4 weeks. **Still orders other things** means they're still a customer, just not for that product.
 
+### 14.7 Stock reconciliation
+
+**Reports → Stock reconciliation** accounts for every unit of each SKU over the dates (base units):
+
+> opening + received − dispatched − write-offs − give-aways ± adjustments ± stocktake variances ± other = **expected closing**
+
+**Other** is transfers into or out of the site, returns to suppliers, customer returns and opening balances. Transfers between bins of one site cancel out.
+
+- **Actual** is the stock on hand at the end date. It should match **Expected**. If any SKU differs, it's highlighted and the **Books vs balances** tile says so. Tell support: it means the stock records disagree.
+- **Unexplained loss** is the shrinkage (theft) indicator:
+  - every stock count that came up short (negative stocktake variance), plus
+  - every adjustment that took stock out with no supporting reason: **Lost / missing**, or no note.
+  - It's valued at the cost on each movement, else today's cost. Click the figure to see the movements behind it.
+- **Shrinkage %** = unexplained loss ÷ cost of goods sold in the same dates, per range and overall.
+- SKUs are listed biggest unexplained loss first. Tick **Only SKUs with a loss or difference** to hide the rest.
+
 ---
 
 ## 15. Troubleshooting and FAQ
