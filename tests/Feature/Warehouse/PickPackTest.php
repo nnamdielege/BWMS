@@ -422,6 +422,7 @@ class PickPackTest extends TestCase
                     ['title' => 'Pick & pack (phone/handheld)', 'href' => route('pick.queue')],
                     ['title' => 'Pick lists (desktop)', 'href' => route('pick-lists.index')],
                     ['title' => 'Orders', 'href' => route('orders.index')],
+                    ['title' => 'Capture barcodes', 'href' => route('barcode-capture.index')],
                 ]));
         }
     }
