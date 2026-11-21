@@ -285,6 +285,9 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         Route::get('runs/{run}/export', [IncomeAllocationController::class, 'runExport'])->name('runs.export');
         Route::get('settings', [AllocationSettingsController::class, 'edit'])->name('settings');
         Route::put('settings', [AllocationSettingsController::class, 'update'])->name('settings.update');
+        Route::post('staff', [AllocationSettingsController::class, 'storeStaff'])->name('staff.store');
+        Route::put('staff/{staff}', [AllocationSettingsController::class, 'updateStaff'])->name('staff.update');
+        Route::delete('staff/{staff}', [AllocationSettingsController::class, 'destroyStaff'])->name('staff.destroy');
     });
 
     Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');

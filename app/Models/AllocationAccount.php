@@ -30,6 +30,9 @@ class AllocationAccount extends Model
 
     public const DEBT_SERVICE = 'debt_service';
 
+    /** Calculated from staff: off the top after Tax, before the weighted split. */
+    public const PAYROLL = 'payroll';
+
     /** Roles that take a weighted share of what's left after Tax. */
     public const SPLIT_ROLES = [self::STOCK, self::OWNERS_COMP, self::OPEX, self::PROFIT, self::VAULT, self::DEBT_SERVICE];
 

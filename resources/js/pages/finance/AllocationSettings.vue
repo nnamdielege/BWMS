@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 interface Account {
     id: number;
@@ -34,8 +34,23 @@ const props = defineProps<{
         vault_weeks_max: number;
         director_salaries_fortnight: number | null;
         debt_priority: string[];
+        payg_rate: number;
     };
+    staff: Staff[];
 }>();
+
+interface Staff {
+    id: number;
+    name: string;
+    role: string | null;
+    pay_type: 'hourly' | 'salary';
+    rate: number;
+    hours_per_week: number | null;
+    super_percent: number;
+    start_date: string;
+    end_date: string | null;
+    is_active: boolean;
+}
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Finance', href: '/finance/allocation' },
@@ -54,7 +69,45 @@ const form = useForm({
     vault_weeks_max: props.settings.vault_weeks_max,
     director_salaries_fortnight: props.settings.director_salaries_fortnight,
     debt_priority: [...props.settings.debt_priority],
+    payg_rate: props.settings.payg_rate,
 });
+
+// Staff: one form for adding and editing. Pay facts only — no TFN, bank details or personal data.
+const editingStaff = ref<number | null>(null);
+const blankStaff = () => ({
+    name: '',
+    role: '',
+    pay_type: 'hourly' as 'hourly' | 'salary',
+    rate: '' as string | number,
+    hours_per_week: '' as string | number | null,
+    super_percent: 12 as string | number,
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: '' as string | null,
+    is_active: true,
+});
+const staffForm = useForm(blankStaff());
+const editStaff = (s: Staff) => {
+    editingStaff.value = s.id;
+    staffForm.clearErrors();
+    Object.assign(staffForm, { ...s, role: s.role ?? '', hours_per_week: s.hours_per_week ?? '', end_date: s.end_date ?? '' });
+};
+const resetStaff = () => {
+    editingStaff.value = null;
+    staffForm.clearErrors();
+    Object.assign(staffForm, blankStaff());
+};
+const saveStaff = () =>
+    editingStaff.value === null
+        ? staffForm.post(route('finance.allocation.staff.store'), { preserveScroll: true, onSuccess: resetStaff })
+        : staffForm.put(route('finance.allocation.staff.update', editingStaff.value), { preserveScroll: true, onSuccess: resetStaff });
+const removeStaff = (s: Staff) => {
+    if (confirm(`Remove ${s.name} from payroll? Untick Active instead to keep the record.`))
+        router.delete(route('finance.allocation.staff.destroy', s.id), { preserveScroll: true });
+};
+const payLabel = (s: Staff) =>
+    s.pay_type === 'salary'
+        ? `$${s.rate.toLocaleString('en-AU')} a year`
+        : `$${s.rate.toLocaleString('en-AU', { minimumFractionDigits: 2 })} an hour × ${s.hours_per_week} h`;
 const daysText = computed({
     get: () => form.days.join(', '),
     set: (v: string) =>
@@ -74,7 +127,11 @@ const liveShare = computed(() => {
     const total = takes.reduce((s, a) => s + Number(a.weight), 0);
     return Object.fromEntries(takes.map((a) => [a.role, total > 0 ? Math.round((Number(a.weight) / total) * 10000) / 100 : 0]));
 });
-const roleLabel: Record<string, string> = { income: 'Source: receipts land here', tax: 'Calculated: GST + company tax' };
+const roleLabel: Record<string, string> = {
+    income: 'Source: receipts land here',
+    tax: 'Calculated: GST + company tax',
+    payroll: 'Calculated: wages + super',
+};
 const errorFor = (i: number, f: string) => (form.errors as Record<string, string>)[`accounts.${i}.${f}`];
 const save = () => form.put(route('finance.allocation.settings.update'), { preserveScroll: true });
 </script>
@@ -146,6 +203,9 @@ const save = () => form.put(route('finance.allocation.settings.update'), { prese
                                 </td>
                                 <td>
                                     <input v-if="a.role === 'debt_service'" v-model="a.is_active" type="checkbox" :aria-label="`${a.name} on`" />
+                                    <span v-else-if="a.role === 'payroll'" class="text-xs text-muted-foreground">
+                                        {{ a.is_active ? 'On' : 'Off until a staff member is active' }}
+                                    </span>
                                 </td>
                             </tr>
                         </tbody>
@@ -188,6 +248,14 @@ const save = () => form.put(route('finance.allocation.settings.update'), { prese
                         </span>
                         <InputError :message="form.errors.company_tax_rate" />
                     </div>
+                    <div class="grid gap-1">
+                        <label class="text-sm" for="payg">Estimated PAYG withholding (% of gross wages)</label>
+                        <Input id="payg" v-model="form.payg_rate" type="number" min="0" max="100" step="0.01" class="w-32" />
+                        <span class="text-xs text-muted-foreground">
+                            0 = don't show it. PAYG is paid to the ATO from Payroll out of gross wages, so it doesn't change the Payroll transfer.
+                        </span>
+                        <InputError :message="form.errors.payg_rate" />
+                    </div>
                 </div>
 
                 <div class="space-y-3 rounded-lg border p-3">
@@ -228,5 +296,94 @@ const save = () => form.put(route('finance.allocation.settings.update'), { prese
 
             <Button type="submit" :disabled="form.processing">Save settings</Button>
         </form>
+
+        <section class="space-y-2 p-4 pt-0">
+            <h2 class="font-semibold">Staff</h2>
+            <p class="text-xs text-muted-foreground">
+                For the Payroll estimate only: each period's wages for the days someone is employed, plus super, go to Payroll after Tax and before
+                the split. Keep no TFNs, bank details or other personal data here — payroll itself stays in Xero Payroll. Hourly: rate × hours a week
+                × days ÷ 7. Salary: a year's pay × days ÷ 365.
+            </p>
+            <table v-if="staff.length" class="w-full text-left text-sm">
+                <thead class="border-b text-muted-foreground">
+                    <tr>
+                        <th class="py-1">Name</th>
+                        <th>Role</th>
+                        <th>Pay</th>
+                        <th class="text-right">Super</th>
+                        <th>Dates</th>
+                        <th>Active</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="s in staff" :key="s.id" class="border-b" :class="{ 'text-muted-foreground': !s.is_active }">
+                        <td class="py-1 font-medium">{{ s.name }}</td>
+                        <td>{{ s.role ?? '—' }}</td>
+                        <td>{{ payLabel(s) }}</td>
+                        <td class="text-right tabular-nums">{{ s.super_percent }}%</td>
+                        <td class="whitespace-nowrap text-xs">{{ s.start_date }} – {{ s.end_date ?? 'ongoing' }}</td>
+                        <td>{{ s.is_active ? 'Yes' : 'No' }}</td>
+                        <td class="whitespace-nowrap text-right">
+                            <Button size="sm" variant="outline" @click="editStaff(s)">Edit</Button>
+                            <Button size="sm" variant="ghost" @click="removeStaff(s)">Remove</Button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <form class="flex flex-wrap items-end gap-2 rounded-lg border p-3" @submit.prevent="saveStaff">
+                <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-name">Name</label>
+                    <Input id="s-name" v-model="staffForm.name" class="w-40" maxlength="100" required />
+                </div>
+                <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-role">Role</label>
+                    <Input id="s-role" v-model="staffForm.role" class="w-36" maxlength="100" />
+                </div>
+                <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-type">Pay type</label>
+                    <select id="s-type" v-model="staffForm.pay_type" class="h-9 rounded-md border bg-transparent px-2 text-sm">
+                        <option value="hourly">Hourly</option>
+                        <option value="salary">Salary</option>
+                    </select>
+                </div>
+                <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-rate">{{
+                        staffForm.pay_type === 'salary' ? 'Salary a year ($)' : 'Rate an hour ($)'
+                    }}</label>
+                    <Input id="s-rate" v-model="staffForm.rate" type="number" min="0.01" step="0.01" class="w-32" required />
+                </div>
+                <div v-if="staffForm.pay_type === 'hourly'" class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-hours">Hours a week</label>
+                    <Input id="s-hours" v-model="staffForm.hours_per_week" type="number" min="0.25" step="0.25" class="w-24" required />
+                </div>
+                <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-super">Super %</label>
+                    <Input id="s-super" v-model="staffForm.super_percent" type="number" min="0" max="100" step="0.01" class="w-20" required />
+                </div>
+                <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-start">Start</label>
+                    <Input id="s-start" v-model="staffForm.start_date" type="date" class="w-40" required />
+                </div>
+                <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground" for="s-end">End (optional)</label>
+                    <Input id="s-end" v-model="staffForm.end_date" type="date" class="w-40" />
+                </div>
+                <label class="flex items-center gap-1 text-sm"><input v-model="staffForm.is_active" type="checkbox" /> Active</label>
+                <Button type="submit" :disabled="staffForm.processing">{{ editingStaff === null ? 'Add staff member' : 'Save' }}</Button>
+                <Button v-if="editingStaff !== null" type="button" variant="ghost" @click="resetStaff">Cancel</Button>
+            </form>
+            <InputError
+                :message="
+                    staffForm.errors.name ||
+                    staffForm.errors.pay_type ||
+                    staffForm.errors.rate ||
+                    staffForm.errors.hours_per_week ||
+                    staffForm.errors.super_percent ||
+                    staffForm.errors.start_date ||
+                    staffForm.errors.end_date
+                "
+            />
+        </section>
     </AppLayout>
 </template>

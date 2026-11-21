@@ -1514,7 +1514,16 @@ Use one or the other for the same money, or it's counted twice. **Remove** takes
 - **Company income tax provision:** a % of the period's net profit estimate (sales ex GST − cost of goods − the OpEx and Owner's Comp transfers), never negative. **Off (0%) until you set a rate**; shown only when it's above 0. Confirm the rate, and whether the company is in profit, with your accountant.
 - If Tax is more than the receipts, it's capped at the receipts with a warning, and nothing goes to the other accounts.
 
-**4. Transfers.** What's left after Tax is split by the weights of Stock, Owner's Comp, OpEx, Profit and Vault (and Debt Service when it's on), rescaled to 100%. Each account's amount is to the cent, the rounding remainder goes to Stock, and the total always equals the receipts. Each line has its Xero code and a reference such as `PF ALLOC 25-NOV Stock`. **Copy $** copies one amount; **Copy all** copies every line; **Download CSV** gives a file for internet banking.
+**Payroll** (PF8, once a staff member is active) comes off next, after Tax and before the split. For each active staff member it adds up their wages for the days of the period they're employed, plus super:
+
+- Hourly: rate × hours a week × days ÷ 7.
+- Salary: a year's pay × days ÷ 365.
+- Super is a % of wages (12% unless you change it).
+- Someone who starts or leaves mid-period is paid only for the days they're employed.
+
+The page shows each person and the total. With an **estimated PAYG withholding** % set (off by default), it also shows the PAYG line: the part of gross wages paid to the ATO from Payroll. It's inside the wages, so the transfer doesn't change. If Tax and Payroll together are more than the receipts, a warning shows the shortfall and nothing is left for the other accounts. The advice says what % of receipts Payroll is, and warns when it pushes Stock below the period's cost of goods. The company tax profit estimate takes Payroll off, like cost of goods.
+
+**4. Transfers.** What's left after Tax and Payroll is split by the weights of Stock, Owner's Comp, OpEx, Profit and Vault (and Debt Service when it's on), rescaled to 100%. Each account's amount is to the cent, the rounding remainder goes to Stock, and the total always equals the receipts. Each line has its Xero code and a reference such as `PF ALLOC 25-NOV Stock`. **Copy $** copies one amount; **Copy all** copies every line; **Download CSV** gives a file for internet banking.
 
 **5. Mark transfers done** once they're made in internet banking. It records the allocation (one per allocation day) and takes the receipts, so the next allocation starts from zero. If the receipts changed since you calculated, it asks you to check again. **History** lists every allocation with each account's amount and the totals, with a CSV for each.
 
@@ -1526,7 +1535,9 @@ Use one or the other for the same money, or it's counted twice. **Remove** takes
 - **Profit:** on the last allocation of a quarter, distribute 50% and keep 50%, with the amounts.
 - **Quarterly review** (last allocation of a quarter): each weight against its target weight, moving 1 point a quarter toward it.
 
-**Accounts & settings:** each account's name, Xero code, purpose, bank, **last 4 digits only** (never the full account number), weight and target weight; Debt Service (temporary, off until ticked) and its payoff order (supplier credit → ATO → business loan → equipment finance); allocation days; GST basis; net off GST credits; company tax %; fixed costs a week; Vault weeks; director salaries a fortnight. Every change, receipt, import and allocation is in the audit log.
+**Accounts & settings:** each account's name, Xero code, purpose, bank, **last 4 digits only** (never the full account number), weight and target weight; Debt Service (temporary, off until ticked) and its payoff order (supplier credit → ATO → business loan → equipment finance); allocation days; GST basis; net off GST credits; company tax %; fixed costs a week; Vault weeks; director salaries a fortnight; PAYG withholding %.
+
+**Staff** (on the same page): name, role, pay type (hourly or salary), rate, hours a week, super % (default 12%), start and end dates, active. Keep no TFNs, bank details or other personal data here: payroll itself stays in Xero Payroll. Set the Payroll account's Xero code in the accounts table. Every change, staff member, receipt, import and allocation is in the audit log.
 
 ---
 

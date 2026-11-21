@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use App\Models\AllocationAccount;
+use App\Models\AllocationStaff;
 use App\Models\Setting;
 use App\Services\Finance\AllocationMath;
 use App\Services\Finance\AllocationSettings;
@@ -34,6 +35,11 @@ class AllocationSettingsController extends Controller
             ])->values(),
             'percent' => AllocationMath::rescaled($split),
             'settings' => AllocationSettings::all(),
+            'staff' => AllocationStaff::orderByDesc('is_active')->orderBy('name')->get()->map(fn (AllocationStaff $s) => [
+                'id' => $s->id, 'name' => $s->name, 'role' => $s->role, 'pay_type' => $s->pay_type, 'rate' => $s->rate,
+                'hours_per_week' => $s->hours_per_week, 'super_percent' => $s->super_percent, 'start_date' => $s->start_date->toDateString(),
+                'end_date' => $s->end_date?->toDateString(), 'is_active' => $s->is_active,
+            ]),
         ]);
     }
 
@@ -62,6 +68,7 @@ class AllocationSettingsController extends Controller
             'director_salaries_fortnight' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
             'debt_priority' => ['nullable', 'array', 'max:10'],
             'debt_priority.*' => ['string', 'max:60'],
+            'payg_rate' => ['nullable', 'numeric', 'between:0,100'],
         ]);
 
         DB::transaction(function () use ($data) {
@@ -72,8 +79,12 @@ class AllocationSettingsController extends Controller
                     'institution' => $row['institution'] ?? null, 'last4' => $row['last4'] ?? null,
                     'target_weight' => $a->isSplit() && isset($row['target_weight']) && $row['target_weight'] !== '' ? $row['target_weight'] : null,
                     'weight' => $a->isSplit() ? ($row['weight'] ?? 0) : null,
-                    // Only Debt Service can be switched off; the rest are the system.
-                    'is_active' => $a->role === AllocationAccount::DEBT_SERVICE ? (bool) ($row['is_active'] ?? false) : true,
+                    // Only Debt Service is switched by hand; Payroll follows the staff list; the rest are always on.
+                    'is_active' => match ($a->role) {
+                        AllocationAccount::DEBT_SERVICE => (bool) ($row['is_active'] ?? false),
+                        AllocationAccount::PAYROLL => $a->is_active, // on while any staff member is active
+                        default => true,
+                    },
                 ])->save();
             }
             if (AllocationAccount::all()->filter->takesShare()->isEmpty()) {
@@ -92,9 +103,52 @@ class AllocationSettingsController extends Controller
                 AllocationSettings::VAULT_WEEKS_MAX => (string) (float) $data['vault_weeks_max'],
                 AllocationSettings::DIRECTOR_SALARIES => isset($data['director_salaries_fortnight']) ? (string) $data['director_salaries_fortnight'] : '',
                 AllocationSettings::DEBT_PRIORITY => implode("\n", array_values(array_filter(array_map('trim', $data['debt_priority'] ?? [])))),
+                AllocationSettings::PAYG_RATE => (string) (float) ($data['payg_rate'] ?? 0),
             ]);
         });
 
         return back()->with('success', 'Income allocation settings saved.');
+    }
+
+    public function storeStaff(Request $request): RedirectResponse
+    {
+        $staff = AllocationStaff::create($this->staffData($request));
+        AllocationStaff::syncPayrollAccount();
+
+        return back()->with('success', "{$staff->name} added to payroll.");
+    }
+
+    public function updateStaff(Request $request, AllocationStaff $staff): RedirectResponse
+    {
+        $staff->fill($this->staffData($request))->save();
+        AllocationStaff::syncPayrollAccount();
+
+        return back()->with('success', "{$staff->name} saved.");
+    }
+
+    public function destroyStaff(AllocationStaff $staff): RedirectResponse
+    {
+        $staff->delete();
+        AllocationStaff::syncPayrollAccount();
+
+        return back()->with('success', "{$staff->name} removed from payroll.");
+    }
+
+    /** Pay facts only: no TFN, bank details or other personal data. */
+    private function staffData(Request $request): array
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'role' => ['nullable', 'string', 'max:100'],
+            'pay_type' => ['required', 'in:hourly,salary'],
+            'rate' => ['required', 'numeric', 'gt:0', 'max:9999999'],
+            'hours_per_week' => ['nullable', 'required_if:pay_type,hourly', 'numeric', 'gt:0', 'max:168'],
+            'super_percent' => ['required', 'numeric', 'between:0,100'],
+            'start_date' => ['required', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:start_date'],
+            'is_active' => ['boolean'],
+        ]);
+
+        return $data + ['is_active' => true];
     }
 }

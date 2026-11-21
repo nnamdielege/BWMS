@@ -48,7 +48,30 @@ interface Calc {
         set_aside: number;
         cash: { matched: number; unmatched: number; assumed_fully_taxable: number; period_share: number | null } | null;
     };
-    company_tax: { rate: number; shown: boolean; sales_ex: number; cogs: number; opex_oc: number; profit: number; amount: number };
+    company_tax: { rate: number; shown: boolean; sales_ex: number; cogs: number; opex_oc: number; payroll: number; profit: number; amount: number };
+    payroll: {
+        on: boolean;
+        people: {
+            id: number;
+            name: string;
+            role: string | null;
+            pay_type: string;
+            days: number;
+            gross: number;
+            super: number;
+            payg: number;
+            total: number;
+        }[];
+        gross: number;
+        super: number;
+        payg: number;
+        payg_rate: number;
+        payg_shown: boolean;
+        required: number;
+        amount: number;
+        short: number;
+        percent_of_receipts: number | null;
+    };
     tax: { gst: number; company: number; total: number; required: number; capped: boolean; short: number };
     transfers: Transfer[];
     total: number;
@@ -73,6 +96,7 @@ interface Account {
     xero_code: string | null;
     is_split: boolean;
     takes_share: boolean;
+    is_active: boolean;
 }
 interface Run {
     id: number;
@@ -172,7 +196,11 @@ const markDone = () => {
 const levelClass = (l: string) =>
     l === 'warn' ? 'border-amber-500/60 bg-amber-50 dark:bg-amber-950/30' : l === 'ok' ? 'border-green-600/40' : 'border-border';
 const historyRoles = computed(() =>
-    props.accounts.filter((a) => a.role !== 'income' && (a.takes_share || a.role === 'tax' || props.history.totals[a.role] !== undefined)),
+    props.accounts.filter(
+        (a) =>
+            a.role !== 'income' &&
+            (a.takes_share || a.role === 'tax' || (a.role === 'payroll' && a.is_active) || props.history.totals[a.role] !== undefined),
+    ),
 );
 </script>
 
@@ -366,6 +394,10 @@ const historyRoles = computed(() =>
                             <dd class="text-right tabular-nums">{{ money(calc.company_tax.sales_ex) }}</dd>
                             <dt>Cost of goods sold</dt>
                             <dd class="text-right tabular-nums">−{{ money(calc.company_tax.cogs) }}</dd>
+                            <template v-if="calc.company_tax.payroll">
+                                <dt>Payroll (wages and super)</dt>
+                                <dd class="text-right tabular-nums">−{{ money(calc.company_tax.payroll) }}</dd>
+                            </template>
                             <dt>OpEx and Owner's Comp transfers</dt>
                             <dd class="text-right tabular-nums">−{{ money(calc.company_tax.opex_oc) }}</dd>
                             <dt>Net profit estimate</dt>
@@ -378,6 +410,63 @@ const historyRoles = computed(() =>
                         </p>
                     </div>
                 </div>
+            </section>
+
+            <!-- Payroll -->
+            <section v-if="calc.payroll.on" class="space-y-2">
+                <h2 class="font-semibold">
+                    Payroll · {{ calc.transfers.find((t) => t.role === 'payroll')?.name ?? 'Payroll' }} · {{ money(calc.payroll.amount) }}
+                </h2>
+                <p class="text-xs text-muted-foreground">
+                    After Tax, before the split: wages for the days of {{ day(calc.from) }} – {{ day(calc.to) }} each active staff member is employed,
+                    plus super. An estimate; pay runs stay in Xero Payroll.
+                </p>
+                <table class="w-full max-w-4xl text-left text-sm">
+                    <thead class="border-b text-muted-foreground">
+                        <tr>
+                            <th class="py-1">Staff member</th>
+                            <th>Pay</th>
+                            <th class="text-right">Days</th>
+                            <th class="text-right">Gross wages</th>
+                            <th v-if="calc.payroll.payg_shown" class="text-right">of which PAYG</th>
+                            <th class="text-right">Super</th>
+                            <th class="text-right">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="p in calc.payroll.people" :key="p.id" class="border-b">
+                            <td class="py-1">
+                                {{ p.name }}<span v-if="p.role" class="text-xs text-muted-foreground"> · {{ p.role }}</span>
+                            </td>
+                            <td class="text-xs">{{ p.pay_type }}</td>
+                            <td class="text-right tabular-nums">{{ p.days }}</td>
+                            <td class="text-right tabular-nums">{{ money(p.gross) }}</td>
+                            <td v-if="calc.payroll.payg_shown" class="text-right tabular-nums">{{ money(p.payg) }}</td>
+                            <td class="text-right tabular-nums">{{ money(p.super) }}</td>
+                            <td class="text-right tabular-nums">{{ money(p.total) }}</td>
+                        </tr>
+                        <tr v-if="!calc.payroll.people.length">
+                            <td colspan="7" class="py-1 text-muted-foreground">Nobody active is employed in this period.</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="font-semibold">
+                            <td class="py-1" colspan="3">Total</td>
+                            <td class="text-right tabular-nums">{{ money(calc.payroll.gross) }}</td>
+                            <td v-if="calc.payroll.payg_shown" class="text-right tabular-nums">{{ money(calc.payroll.payg) }}</td>
+                            <td class="text-right tabular-nums">{{ money(calc.payroll.super) }}</td>
+                            <td class="text-right tabular-nums">{{ money(calc.payroll.required) }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <p v-if="calc.payroll.payg_shown" class="text-xs text-muted-foreground">
+                    Estimated PAYG withholding at {{ calc.payroll.payg_rate }}%: {{ money(calc.payroll.payg) }} of gross wages is paid to the ATO from
+                    Payroll rather than to staff. It's inside gross wages, so it doesn't add to the transfer.
+                </p>
+                <p v-if="calc.payroll.short > 0" class="text-sm text-amber-700 dark:text-amber-400">
+                    Receipts cover {{ money(calc.payroll.amount) }} of the {{ money(calc.payroll.required) }} Payroll needs: short by
+                    {{ money(calc.payroll.short) }}.
+                </p>
             </section>
 
             <!-- Transfers -->
@@ -412,7 +501,7 @@ const historyRoles = computed(() =>
                                 <td class="py-1 font-medium">{{ t.name }}</td>
                                 <td>{{ t.xero_code ?? '—' }}</td>
                                 <td class="text-xs">{{ [t.institution, t.last4 ? `…${t.last4}` : null].filter(Boolean).join(' ') || '—' }}</td>
-                                <td class="text-right tabular-nums">{{ t.role === 'tax' ? 'calculated' : `${t.percent}%` }}</td>
+                                <td class="text-right tabular-nums">{{ t.percent === null ? 'calculated' : `${t.percent}%` }}</td>
                                 <td class="text-right font-medium tabular-nums">{{ money(t.amount) }}</td>
                                 <td class="pl-4 font-mono text-xs">{{ t.reference }}</td>
                                 <td class="text-right">

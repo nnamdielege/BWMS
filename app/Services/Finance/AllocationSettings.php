@@ -32,6 +32,14 @@ final class AllocationSettings
 
     public const DEBT_PRIORITY = 'finance.debt_priority';
 
+    /** Estimated PAYG withholding as a % of gross wages; 0 = don't show the line. */
+    public const PAYG_RATE = 'finance.payg_rate';
+
+    public static function paygRate(): float
+    {
+        return min(100.0, max(0.0, (float) Setting::get(self::PAYG_RATE, '0')));
+    }
+
     public const DEFAULT_DEBT_PRIORITY = ['Supplier credit', 'ATO', 'Business loan', 'Equipment finance'];
 
     /** @return list<int> days of the month, ascending (default 10th and 25th) */
@@ -102,6 +110,7 @@ final class AllocationSettings
             'vault_weeks_max' => $max,
             'director_salaries_fortnight' => self::directorSalariesFortnight(),
             'debt_priority' => self::debtPriority(),
+            'payg_rate' => self::paygRate(),
         ];
     }
 

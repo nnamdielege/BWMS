@@ -75,6 +75,33 @@ final class AllocationMath
         ];
     }
 
+    /** Days of $from–$to (inclusive) someone is employed: the overlap with $start to $end (open if null). */
+    public static function employedDays(string $from, string $to, string $start, ?string $end): int
+    {
+        $a = max($from, $start);
+        $b = $end === null ? $to : min($to, $end);
+
+        return $a > $b ? 0 : (int) Carbon::parse($a)->diffInDays(Carbon::parse($b)) + 1;
+    }
+
+    /**
+     * One person's pay for $days days, in cents. Hourly: rate × hours a week × days ÷ 7. Salary
+     * (rate a year): rate × days ÷ 365. Super on top of gross at $superPercent. PAYG withholding
+     * is an estimate of the part of gross paid to the ATO instead of the employee: inside gross,
+     * not added to it.
+     *
+     * @return array{gross: int, super: int, payg: int, total: int}
+     */
+    public static function pay(string $payType, float $rate, ?float $hoursPerWeek, float $superPercent, int $days, float $paygPercent = 0): array
+    {
+        $gross = $payType === 'salary'
+            ? (int) round($rate * 100 * $days / 365)
+            : (int) round($rate * 100 * (float) $hoursPerWeek * $days / 7);
+        $super = (int) round($gross * $superPercent / 100);
+
+        return ['gross' => $gross, 'super' => $super, 'payg' => (int) round($gross * $paygPercent / 100), 'total' => $gross + $super];
+    }
+
     /**
      * Split $cents by weight, rescaled to 100%: each share rounded down to the cent, the
      * remainder to $remainderTo (or the biggest weight if that takes no share). The parts add up to $cents.

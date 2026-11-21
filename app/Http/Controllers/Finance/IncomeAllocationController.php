@@ -40,7 +40,7 @@ class IncomeAllocationController extends Controller
                 ->map(fn (AllocationReceipt $r) => ['id' => $r->id, 'received_on' => $r->received_on->toDateString(), 'description' => $r->description,
                     'amount' => (float) $r->amount, 'source' => $r->source, 'order' => $r->order?->number]),
             'accounts' => AllocationAccount::ordered()->map(fn (AllocationAccount $a) => ['role' => $a->role, 'name' => $a->name, 'xero_code' => $a->xero_code,
-                'is_split' => $a->isSplit(), 'takes_share' => $a->takesShare()]),
+                'is_split' => $a->isSplit(), 'takes_share' => $a->takesShare(), 'is_active' => $a->is_active]),
             'history' => $this->allocator->history(),
         ]);
     }

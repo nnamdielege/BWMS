@@ -7,6 +7,7 @@ use App\Models\AllocationAccount;
 use App\Models\AllocationReceipt;
 use App\Models\AllocationRun;
 use App\Models\AllocationRunLine;
+use App\Models\AllocationStaff;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -71,27 +72,37 @@ class IncomeAllocator
         $weights = $accounts->filter->takesShare()->map(fn (AllocationAccount $a) => (float) $a->weight)->all();
         $weightTotal = array_sum($weights);
         $opexOcShare = $weightTotal > 0 ? (($weights[AllocationAccount::OPEX] ?? 0) + ($weights[AllocationAccount::OWNERS_COMP] ?? 0)) / $weightTotal : 0;
-        $company = AllocationMath::companyTax($sales['total_ex'], $sales['cogs'], max(0, $received - min($gstSetAside, $received)), $settings['company_tax_rate'], $opexOcShare);
+        // Payroll: wages and super for the period, off the top after Tax. Wages are an expense, so they
+        // come off the profit the company tax provision is worked on, like cost of goods.
+        $payrollAccount = $accounts[AllocationAccount::PAYROLL] ?? null;
+        $payroll = $this->payroll($from, $to, $settings['payg_rate'], (bool) $payrollAccount?->is_active);
+        $wages = $payroll['total'];
+        $company = AllocationMath::companyTax($sales['total_ex'], $sales['cogs'] + $wages, max(0, $received - min($gstSetAside, $received) - $wages),
+            $settings['company_tax_rate'], $opexOcShare);
         $tax = AllocationMath::tax($received, $gstSetAside, $company);
-        $parts = AllocationMath::split($received - $tax['total'], $weights, AllocationAccount::STOCK);
+        $payrollPaid = min($wages, max(0, $received - $tax['total']));
+        $parts = AllocationMath::split($received - $tax['total'] - $payrollPaid, $weights, AllocationAccount::STOCK);
+        $partsWithoutPayroll = AllocationMath::split($received - $tax['total'], $weights, AllocationAccount::STOCK);
         $percent = AllocationMath::rescaled($weights);
+        $payroll += ['paid' => $payrollPaid, 'short' => max(0, $tax['required'] + $wages - $received)];
 
+        // Tax first, then Payroll, then the weighted split in account order.
         $ref = 'PF ALLOC '.strtoupper(Carbon::parse($date)->format('d-M')).' ';
+        $row = fn (AllocationAccount $a, int $cents, bool $calculated) => [
+            'role' => $a->role, 'account_id' => $a->id, 'name' => $a->name, 'xero_code' => $a->xero_code,
+            'institution' => $a->institution, 'last4' => $a->last4, 'weight' => $calculated ? null : $a->weight,
+            'percent' => $calculated ? null : ($percent[$a->role] ?? null), 'cents' => $cents, 'amount' => AllocationMath::dollars($cents),
+            'reference' => mb_substr($ref.$a->shortName(), 0, 60),
+        ];
         $transfers = [];
-        foreach ($accounts as $role => $a) {
-            if ($role === AllocationAccount::TAX) {
-                $cents = $tax['total'];
-            } elseif ($a->takesShare()) {
-                $cents = $parts[$role] ?? 0;
-            } else {
-                continue;
-            }
-            $transfers[] = [
-                'role' => $role, 'account_id' => $a->id, 'name' => $a->name, 'xero_code' => $a->xero_code,
-                'institution' => $a->institution, 'last4' => $a->last4, 'weight' => $role === AllocationAccount::TAX ? null : $a->weight,
-                'percent' => $percent[$role] ?? null, 'cents' => $cents, 'amount' => AllocationMath::dollars($cents),
-                'reference' => mb_substr($ref.$a->shortName(), 0, 60),
-            ];
+        if (isset($accounts[AllocationAccount::TAX])) {
+            $transfers[] = $row($accounts[AllocationAccount::TAX], $tax['total'], true);
+        }
+        if ($payroll['on']) {
+            $transfers[] = $row($payrollAccount, $payrollPaid, true);
+        }
+        foreach ($accounts->filter->takesShare() as $a) {
+            $transfers[] = $row($a, $parts[$a->role] ?? 0, false);
         }
         $opexOc = ($parts[AllocationAccount::OPEX] ?? 0) + ($parts[AllocationAccount::OWNERS_COMP] ?? 0);
 
@@ -120,7 +131,8 @@ class IncomeAllocator
                 'sales_ex' => AllocationMath::dollars($sales['total_ex']),
                 'cogs' => AllocationMath::dollars($sales['cogs']),
                 'opex_oc' => AllocationMath::dollars($opexOc),
-                'profit' => AllocationMath::dollars($sales['total_ex'] - $sales['cogs'] - $opexOc),
+                'payroll' => AllocationMath::dollars($wages),
+                'profit' => AllocationMath::dollars($sales['total_ex'] - $sales['cogs'] - $wages - $opexOc),
                 'amount' => AllocationMath::dollars($company),
             ],
             'tax' => [
@@ -128,12 +140,25 @@ class IncomeAllocator
                 'total' => AllocationMath::dollars($tax['total']), 'required' => AllocationMath::dollars($tax['required']),
                 'capped' => $tax['capped'], 'short' => AllocationMath::dollars($tax['short']),
             ],
+            'payroll' => [
+                'on' => $payroll['on'],
+                'people' => $payroll['people'],
+                'gross' => AllocationMath::dollars($payroll['gross']),
+                'super' => AllocationMath::dollars($payroll['super']),
+                'payg' => AllocationMath::dollars($payroll['payg']),
+                'payg_rate' => $settings['payg_rate'],
+                'payg_shown' => $settings['payg_rate'] > 0,
+                'required' => AllocationMath::dollars($wages),
+                'amount' => AllocationMath::dollars($payrollPaid),
+                'short' => AllocationMath::dollars($payroll['short']),
+                'percent_of_receipts' => $received > 0 ? round($payrollPaid / $received * 100, 1) : null,
+            ],
             'transfers' => $transfers,
             'total' => AllocationMath::dollars(array_sum(array_column($transfers, 'cents'))),
             'opening' => array_map(fn ($c) => $c === null ? null : AllocationMath::dollars($c), $opening),
         ];
         $calc['warnings'] = $this->warnings($calc, $sales, $cash);
-        $calc['advice'] = $this->advice($calc, $accounts, $parts, $opening, $sales, $periodShare);
+        $calc['advice'] = $this->advice($calc, $accounts, $parts, $opening, $sales, $periodShare, $partsWithoutPayroll);
         $calc['review'] = $this->review($calc, $accounts, $percent);
 
         return $calc;
@@ -302,6 +327,11 @@ class IncomeAllocator
             $w[] = 'Tax due ('.self::m($calc['tax']['required']).') is more than the receipts ('.self::m($calc['receipts']['total']).'). '
                 .'The whole of the receipts goes to Tax and nothing to the other accounts; '.self::m($calc['tax']['short']).' is still to set aside.';
         }
+        if ($calc['payroll']['on'] && $calc['payroll']['required'] > 0 && $calc['payroll']['short'] > 0) {
+            $w[] = 'Tax and Payroll ('.self::m($calc['tax']['required'] + $calc['payroll']['required']).') are more than the receipts ('
+                .self::m($calc['receipts']['total']).'): short by '.self::m($calc['payroll']['short']).'. Payroll gets '.self::m($calc['payroll']['amount'])
+                .' of the '.self::m($calc['payroll']['required']).' it needs, and nothing is left for the other accounts.';
+        }
         if ($calc['gst']['basis'] === 'accrual' && $sales['lines'] === 0) {
             $w[] = 'No sales were dispatched in the period, so there is no GST to set aside on the accrual basis. Check the period dates.';
         }
@@ -321,21 +351,38 @@ class IncomeAllocator
      * @param  array<string, int>  $parts  cents per split role
      * @param  array<string, ?int>  $opening  cents per role
      */
-    private function advice(array $calc, Collection $accounts, array $parts, array $opening, array $sales, ?float $periodShare): array
+    private function advice(array $calc, Collection $accounts, array $parts, array $opening, array $sales, ?float $periodShare, array $partsWithoutPayroll): array
     {
         $out = [];
         $received = $calc['receipts']['cents'];
         $s = $calc['settings'];
+        $need = self::stockNeed($received, $sales, $periodShare);
+
+        // Payroll: its share of receipts, and whether it leaves Stock short of cost of goods.
+        if ($calc['payroll']['on']) {
+            $p = $calc['payroll'];
+            $lines = ['Payroll is '.($p['percent_of_receipts'] ?? 0).'% of receipts: '.self::m($p['amount']).' (wages '.self::m($p['gross']).' + super '.self::m($p['super']).').'];
+            $level = 'info';
+            $stock = $parts[AllocationAccount::STOCK] ?? null;
+            $without = $partsWithoutPayroll[AllocationAccount::STOCK] ?? null;
+            if ($p['amount'] > 0 && $need !== null && $stock !== null && $stock < $need) {
+                $level = 'warn';
+                $lines[] = $without >= $need
+                    ? 'Payroll pushes Stock below the period\'s cost of goods: Stock gets '.self::m($stock / 100).' against about '.self::m($need / 100)
+                        .' needed; without Payroll it would get '.self::m($without / 100).'.'
+                    : 'Stock is already short of the period\'s cost of goods (about '.self::m($need / 100).'), and Payroll takes another '
+                        .self::m(($without - $stock) / 100).' from it.';
+            }
+            $out[] = ['role' => AllocationAccount::PAYROLL, 'title' => $accounts[AllocationAccount::PAYROLL]->name, 'level' => $level, 'lines' => $lines];
+        }
 
         // Stock: cost of goods, supplier payments due before the next allocation, the overdraft.
         if (isset($parts[AllocationAccount::STOCK])) {
             $stock = $parts[AllocationAccount::STOCK];
             $lines = [];
             $level = 'ok';
-            if ($sales['total_ex'] > 0 && $received > 0) {
+            if ($need !== null) {
                 $cogsShare = $sales['cogs'] / $sales['total_ex'];
-                $receiptsEx = $received - AllocationMath::gstInReceipt($received, $periodShare ?? 1.0, Product::GST_RATE);
-                $need = (int) round($receiptsEx * $cogsShare);
                 $lines[] = 'Stock gets '.self::m($stock / 100).' ('.round($stock / $received * 100, 1).'% of receipts). Cost of goods ran at '
                     .round($cogsShare * 100, 1).'% of sales ex GST in the period: about '.self::m($need / 100).' of these receipts.';
                 if ($stock < $need) {
@@ -412,6 +459,47 @@ class IncomeAllocator
             $out[] = ['role' => AllocationAccount::DEBT_SERVICE, 'title' => $accounts[AllocationAccount::DEBT_SERVICE]->name, 'level' => 'info', 'lines' => [
                 'Debt Service gets '.self::m($parts[AllocationAccount::DEBT_SERVICE] / 100).'. Pay debts in this order: '.implode(' → ', $s['debt_priority']).'.',
             ]];
+        }
+
+        return $out;
+    }
+
+    /** What these receipts need to cover cost of goods (cents): receipts ex GST × the period's COGS share. Null without sales. */
+    private static function stockNeed(int $received, array $sales, ?float $periodShare): ?int
+    {
+        if ($sales['total_ex'] <= 0 || $received <= 0) {
+            return null;
+        }
+        $receiptsEx = $received - AllocationMath::gstInReceipt($received, $periodShare ?? 1.0, Product::GST_RATE);
+
+        return (int) round($receiptsEx * $sales['cogs'] / $sales['total_ex']);
+    }
+
+    /**
+     * Each active staff member's pay for the days of the period they're employed, in cents.
+     *
+     * @return array{on: bool, people: list<array>, gross: int, super: int, payg: int, total: int}
+     */
+    private function payroll(string $from, string $to, float $paygRate, bool $on): array
+    {
+        $out = ['on' => $on, 'people' => [], 'gross' => 0, 'super' => 0, 'payg' => 0, 'total' => 0];
+        if (! $on) {
+            return $out;
+        }
+        foreach (AllocationStaff::where('is_active', true)->orderBy('name')->get() as $st) {
+            $days = AllocationMath::employedDays($from, $to, $st->start_date->toDateString(), $st->end_date?->toDateString());
+            if ($days === 0) {
+                continue;
+            }
+            $pay = AllocationMath::pay($st->pay_type, $st->rate, $st->hours_per_week, $st->super_percent, $days, $paygRate);
+            $out['people'][] = [
+                'id' => $st->id, 'name' => $st->name, 'role' => $st->role, 'pay_type' => $st->pay_type, 'days' => $days,
+                'gross' => AllocationMath::dollars($pay['gross']), 'super' => AllocationMath::dollars($pay['super']),
+                'payg' => AllocationMath::dollars($pay['payg']), 'total' => AllocationMath::dollars($pay['total']),
+            ];
+            foreach (['gross', 'super', 'payg', 'total'] as $k) {
+                $out[$k] += $pay[$k];
+            }
         }
 
         return $out;
