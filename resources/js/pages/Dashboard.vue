@@ -22,6 +22,7 @@ defineProps<{
             giveaway_budget: number | null;
             top_loss: { product_id: number; sku: string; name: string; value: number; units: number } | null;
         };
+        allocation?: { next_date: string; waiting_count: number; waiting_total: number };
         sync_failures_24h?: number;
         negative_bins?: { total: number; rows: { product_id: number; sku: string; name: string; on_hand: number; bin: string }[] };
         count_tasks?: {
@@ -77,6 +78,23 @@ const dismiss = (id: number) => {
                         {{ widgets.stockout_risk }}
                     </div>
                     <div class="text-xs text-muted-foreground">{{ widgets.stockout_risk === 1 ? 'product' : 'products' }} · reorder suggestions</div>
+                </Link>
+                <Link v-if="widgets.allocation" :href="route('finance.allocation.index')" class="rounded-lg border p-4 hover:bg-muted">
+                    <div class="text-sm text-muted-foreground">
+                        Next income allocation ·
+                        {{
+                            new Date(`${widgets.allocation.next_date}T00:00:00`).toLocaleDateString('en-AU', {
+                                weekday: 'short',
+                                day: 'numeric',
+                                month: 'short',
+                            })
+                        }}
+                    </div>
+                    <div class="text-3xl font-semibold tabular-nums">{{ money(widgets.allocation.waiting_total) }}</div>
+                    <div class="text-xs text-muted-foreground">
+                        waiting in Income · {{ widgets.allocation.waiting_count }}
+                        {{ widgets.allocation.waiting_count === 1 ? 'receipt' : 'receipts' }}
+                    </div>
                 </Link>
                 <Link v-if="widgets.expiring" :href="route('expiring.index')" class="rounded-lg border p-4 hover:bg-muted">
                     <div class="text-sm text-muted-foreground">Expiring within {{ widgets.expiring.days }} days</div>

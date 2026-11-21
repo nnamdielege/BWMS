@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AllocationReceipt;
 use App\Models\CountTask;
 use App\Models\Giveaway;
 use App\Models\Location;
@@ -10,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\Setting;
 use App\Models\StockBalance;
 use App\Models\SyncAttempt;
+use App\Services\Finance\IncomeAllocator;
 use App\Services\Purchasing\ReorderPlanner;
 use App\Services\Reports\Insights\InsightFilters;
 use App\Services\Reports\Insights\ReconciliationReport;
@@ -88,6 +90,16 @@ class DashboardController extends Controller
                 'giveaways' => round((float) Giveaway::where('occurred_at', '>=', now($tz)->startOfMonth()->utc())->sum('value'), 2),
                 'giveaway_budget' => Setting::giveawayBudget(),
                 'top_loss' => $top ? ['product_id' => $top['product_id'], 'sku' => $top['sku'], 'name' => $top['name'], 'value' => $top['loss_value'], 'units' => $top['loss_units']] : null,
+            ];
+        }
+
+        if ($user->can('finance.allocate')) {
+            // Income allocation: the next allocation day and what's waiting in Income for it.
+            $waiting = AllocationReceipt::waiting();
+            $widgets['allocation'] = [
+                'next_date' => app(IncomeAllocator::class)->nextAllocationDate(),
+                'waiting_count' => (clone $waiting)->count(),
+                'waiting_total' => round((float) $waiting->sum('amount'), 2),
             ];
         }
 

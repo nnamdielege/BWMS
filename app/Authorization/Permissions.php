@@ -64,6 +64,9 @@ final class Permissions
 
     public const SETTINGS_MANAGE = 'settings.manage';
 
+    /** Finance → Income allocation (Profit First): bank balances, receipts, director pay. Admins only; in no other role. */
+    public const FINANCE_ALLOCATE = 'finance.allocate';
+
     public const ROLE_ADMIN = 'admin';
 
     public const ROLE_WAREHOUSE_MANAGER = 'warehouse_manager';

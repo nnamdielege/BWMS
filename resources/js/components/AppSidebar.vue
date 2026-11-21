@@ -17,6 +17,7 @@ import {
     FileText,
     Gift,
     Import,
+    Landmark,
     Layers,
     LayoutGrid,
     ListChecks,
@@ -106,6 +107,10 @@ const navGroups: NavGroup[] = [
             { title: 'Exceptions & audit', href: '/reports/exceptions', icon: ShieldAlert, permission: 'reports.margin' },
             { title: 'Samples, gifts & favours', href: '/reports/giveaways', icon: Gift, permission: 'reports.margin' },
         ],
+    },
+    {
+        label: 'Finance',
+        items: [{ title: 'Income allocation', href: '/finance/allocation', icon: Landmark, permission: 'finance.allocate' }],
     },
     {
         label: 'Integrations',

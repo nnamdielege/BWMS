@@ -11,6 +11,8 @@ use App\Http\Controllers\BatchTrackingController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Finance\AllocationSettingsController;
+use App\Http\Controllers\Finance\IncomeAllocationController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\Orders\ConsolidationController;
 use App\Http\Controllers\Orders\CustomerController;
@@ -271,6 +273,19 @@ Route::middleware(['auth', 'active', '2fa.admin'])->group(function () {
         });
     }
     Route::put('reports/exceptions/settings', [Insights\ExceptionsController::class, 'settings'])->middleware('can:reports.margin')->name('reports.exceptions.settings');
+
+    // Finance → Income allocation (Profit First): admins only. Advice; never moves money.
+    Route::middleware('can:finance.allocate')->prefix('finance/allocation')->name('finance.allocation.')->group(function () {
+        Route::get('/', [IncomeAllocationController::class, 'index'])->name('index');
+        Route::post('receipts', [IncomeAllocationController::class, 'storeReceipt'])->name('receipts.store');
+        Route::post('receipts/import', [IncomeAllocationController::class, 'import'])->name('receipts.import');
+        Route::delete('receipts/{receipt}', [IncomeAllocationController::class, 'destroyReceipt'])->name('receipts.destroy');
+        Route::get('export', [IncomeAllocationController::class, 'export'])->name('export');
+        Route::post('done', [IncomeAllocationController::class, 'done'])->name('done');
+        Route::get('runs/{run}/export', [IncomeAllocationController::class, 'runExport'])->name('runs.export');
+        Route::get('settings', [AllocationSettingsController::class, 'edit'])->name('settings');
+        Route::put('settings', [AllocationSettingsController::class, 'update'])->name('settings.update');
+    });
 
     Route::get('sync', [SyncController::class, 'index'])->middleware('can:sync.view')->name('sync.index');
     Route::post('sync/listings/{listing}/push', [SyncController::class, 'push'])->middleware('can:sync.manage')->name('sync.push');

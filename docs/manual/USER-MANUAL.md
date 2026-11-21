@@ -259,6 +259,7 @@ Each user has one or more roles. The menu on the left only shows what your roles
 | See users and the audit log | ✓ | ✓ | | | |
 | Invite users, change roles or email, deactivate, reset 2FA | ✓ | | | | |
 | Company settings, delivery areas | ✓ | | | | |
+| Finance → Income allocation | ✓ | | | | |
 
 ¹ Purchasing may accept over-receipts but can't open the receive screen. In practice, someone who can receive enters the delivery and a manager or admin ticks the box.
 
@@ -289,6 +290,7 @@ The dashboard is the first page after you log in. Each tile shows only if your r
 | **Shrinkage in (month)** | Managers and admins. Unexplained loss this month at cost: stock counts that came up short, and **Lost / missing** adjustments. The small print gives it as a % of cost of goods sold. | Click it to open **Stock reconciliation** ([14.7](#147-stock-reconciliation)) for this month. |
 | **Samples & gifts in (month)** | Managers and admins. Everything given away this month at cost. Red when over the monthly budget, if one is set. | Click it to open **Samples, gifts & favours** ([14.9](#149-samples-gifts--favours)). |
 | **Top unexplained loss** | Managers and admins. The SKU with the most unexplained loss this month, and how much. | Click it to open the reconciliation for that SKU, then the movements behind the loss. |
+| **Next income allocation** | Admins. The next allocation day and the receipts waiting in Income for it. | Click it to open **Income allocation** ([13.6](#136-income-allocation)). |
 | **Negative bins** | Bins where the system shows less than zero. Goods left the warehouse that the system didn't think were there. | Count the bin. Click the SKU to see its movements. |
 
 Warehouse staff see fewer tiles:
@@ -1487,6 +1489,42 @@ You can't reset your own two-factor. Ask another admin.
 Filter by event (for example `roles_changed`) or subject (for example `User`).
 
 ![Audit log](img/98-audit-log.png)
+
+### 13.6 Income allocation
+
+**Finance → Income allocation** (admins only; nobody else sees it) works out how to split the money that landed in the Income account (PF1, 1010) across the other bank accounts on each allocation day (the 10th and 25th by default), Profit First style. **It advises only: it never moves money.** You make the transfers in internet banking, then mark them done.
+
+**1. Receipts.** Everything that landed in Income since the last allocation. Either:
+
+- **Import bank CSV:** the Income account's statement. Only credits are taken; debits are skipped. Rows already imported are skipped, so an overlapping statement is fine. Two identical payments on the same day in one file both count.
+- **Add receipt:** date, description, amount (inc GST), and optionally the order number it pays (SO-2026-00042).
+
+Use one or the other for the same money, or it's counted twice. **Remove** takes out a receipt entered by mistake.
+
+**2. Period and balances.** The allocation day's period runs from the day after the last allocation's period to the day before the allocation day (the 25th covers the 10th to the 24th). Change the dates if you need to. Account balances are optional: enter them to check the Stock overdraft, supplier payments and the Vault target (a negative Stock balance is the overdraft). Click **Calculate**.
+
+**3. Tax first** (PF3, 1012):
+
+- **GST** from WMS sales dispatched in the period, all channels: taxable sales ex GST, GST (10% of each line, to the cent) and GST-free sales, by channel. Products marked GST-free carry none.
+  - **Accrual basis** (default): the GST on those sales.
+  - **Cash basis** (a setting): the GST inside the receipts: each receipt by the taxable share of the order it pays, or of the period's sales if it isn't matched to an order.
+- **GST credits** on stock received in the period are shown with a **net GST payable estimate**, for information. The full GST collected is set aside unless **Net off GST credits** is ticked in settings.
+- **Company income tax provision:** a % of the period's net profit estimate (sales ex GST − cost of goods − the OpEx and Owner's Comp transfers), never negative. **Off (0%) until you set a rate**; shown only when it's above 0. Confirm the rate, and whether the company is in profit, with your accountant.
+- If Tax is more than the receipts, it's capped at the receipts with a warning, and nothing goes to the other accounts.
+
+**4. Transfers.** What's left after Tax is split by the weights of Stock, Owner's Comp, OpEx, Profit and Vault (and Debt Service when it's on), rescaled to 100%. Each account's amount is to the cent, the rounding remainder goes to Stock, and the total always equals the receipts. Each line has its Xero code and a reference such as `PF ALLOC 25-NOV Stock`. **Copy $** copies one amount; **Copy all** copies every line; **Download CSV** gives a file for internet banking.
+
+**5. Mark transfers done** once they're made in internet banking. It records the allocation (one per allocation day) and takes the receipts, so the next allocation starts from zero. If the receipts changed since you calculated, it asks you to check again. **History** lists every allocation with each account's amount and the totals, with a CSV for each.
+
+**Advice** notes never change the split; change the weights in settings if you agree:
+
+- **Stock:** its share against cost of goods (as a % of sales), supplier payments due before the next allocation, and the overdraft (clear it first).
+- **Owner's Comp:** against the director salaries a fortnight in settings.
+- **Vault:** against 4–8 weeks of fixed costs (settings). At the top of the range: "target reached — stop feeding, redirect".
+- **Profit:** on the last allocation of a quarter, distribute 50% and keep 50%, with the amounts.
+- **Quarterly review** (last allocation of a quarter): each weight against its target weight, moving 1 point a quarter toward it.
+
+**Accounts & settings:** each account's name, Xero code, purpose, bank, **last 4 digits only** (never the full account number), weight and target weight; Debt Service (temporary, off until ticked) and its payoff order (supplier credit → ATO → business loan → equipment finance); allocation days; GST basis; net off GST credits; company tax %; fixed costs a week; Vault weeks; director salaries a fortnight. Every change, receipt, import and allocation is in the audit log.
 
 ---
 
