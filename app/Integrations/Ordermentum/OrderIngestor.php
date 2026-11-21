@@ -13,6 +13,7 @@ use App\Models\SyncAttempt;
 use App\Services\Orders\ChannelOrderData;
 use App\Services\Orders\OrderService;
 use App\Services\Stock\Exceptions\InvalidMovement;
+use App\Support\Audit;
 use Illuminate\Support\Carbon;
 
 /**
@@ -113,8 +114,31 @@ class OrderIngestor
         if (! $mapped['cancelled']) {
             $this->rememberPrices($mapped['lines'], $listings);
         }
+        self::rememberNumbers($order, $mapped);
 
         return $this->finish($inbox, IntegrationInbox::STATUS_PROCESSED, null);
+    }
+
+    /**
+     * Ordermentum's invoice and order numbers on the order, so Income allocation can match a bank
+     * receipt that quotes one. A number the payload no longer carries is kept. Not audited: it's
+     * reference data copied from the channel, not a change anyone made.
+     *
+     * @param  array{invoice_number?: ?string, order_number?: ?string}  $numbers
+     */
+    public static function rememberNumbers(Order $order, array $numbers): bool
+    {
+        $values = array_filter([
+            'channel_invoice_number' => $numbers['invoice_number'] ?? null,
+            'channel_order_number' => $numbers['order_number'] ?? null,
+        ], fn ($v) => $v !== null);
+        $order->forceFill($values);
+        if (! $order->isDirty()) {
+            return false;
+        }
+        Audit::withoutModelEvents(fn () => $order->save());
+
+        return true;
     }
 
     /**

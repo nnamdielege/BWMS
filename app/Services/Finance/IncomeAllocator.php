@@ -33,7 +33,7 @@ use Illuminate\Validation\ValidationException;
  */
 class IncomeAllocator
 {
-    public function __construct(private SalesGst $sales) {}
+    public function __construct(private SalesGst $sales, private OrderMatcher $matcher) {}
 
     /** @return array{date: string, from: string, to: string} the allocation day and its period */
     public function defaults(?string $date = null): array
@@ -186,9 +186,16 @@ class IncomeAllocator
     public function addReceipt(User $user, array $data): AllocationReceipt
     {
         $order = null;
-        if (trim((string) ($data['order_number'] ?? '')) !== '') {
-            $order = Order::where('number', strtoupper(trim($data['order_number'])))->first()
-                ?? throw ValidationException::withMessages(['order_number' => 'No order '.trim($data['order_number']).'.']);
+        $ref = trim((string) ($data['order_number'] ?? ''));
+        if ($ref !== '') {
+            // The BWMS number, the portal's ORD-… ref, or Ordermentum's invoice or order number.
+            $ids = $this->matcher->byReference($ref);
+            if (count($ids) !== 1) {
+                throw ValidationException::withMessages(['order_number' => $ids === []
+                    ? "No order {$ref}."
+                    : "{$ref} matches more than one order: use the SO number."]);
+            }
+            $order = Order::find($ids[0]);
         }
 
         return AllocationReceipt::create([
@@ -216,7 +223,7 @@ class IncomeAllocator
                 }
                 AllocationReceipt::create([
                     'received_on' => $c['received_on'], 'description' => $c['description'], 'amount' => AllocationMath::dollars($c['cents']),
-                    'source' => 'csv', 'fingerprint' => $c['fingerprint'], 'order_id' => $this->orderIn($c['description']), 'created_by' => $user->id,
+                    'source' => 'csv', 'fingerprint' => $c['fingerprint'], 'order_id' => $this->matcher->inDescription($c['description']), 'created_by' => $user->id,
                 ]);
                 $added++;
                 $total += $c['cents'];
@@ -473,21 +480,6 @@ class IncomeAllocator
         }
 
         return $out;
-    }
-
-    /** An order number (SO-2026-00042) in a bank description. */
-    private function orderIn(string $description): ?int
-    {
-        if (! preg_match_all('/\bSO-?(\d{4})-?(\d{5})\b/i', $description, $m, PREG_SET_ORDER)) {
-            return null;
-        }
-        foreach ($m as $match) {
-            if ($id = Order::where('number', "SO-{$match[1]}-{$match[2]}")->value('id')) {
-                return $id;
-            }
-        }
-
-        return null;
     }
 
     private static function toDollars(array $values, array $keys): array

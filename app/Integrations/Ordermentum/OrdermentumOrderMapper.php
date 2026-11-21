@@ -89,7 +89,20 @@ class OrdermentumOrderMapper
                 'instructions' => $this->stringOrNull($order['deliveryInstructions'] ?? null),
             ], fn ($v) => $v !== null),
             'lines' => $lines,
-        ];
+        ] + $this->numbers($order);
+    }
+
+    /**
+     * The invoice and order numbers the café sees (for matching bank receipts), from the configured
+     * fields; null when the order has none.
+     *
+     * @return array{invoice_number: ?string, order_number: ?string}
+     */
+    public function numbers(array $order): array
+    {
+        $read = fn (string $key) => ($v = $this->stringOrNull($this->first($order, $this->map[$key] ?? []))) === null ? null : mb_substr(trim($v), 0, 64);
+
+        return ['invoice_number' => $read('invoice_number'), 'order_number' => $read('order_number')];
     }
 
     /** updatedAt in milliseconds (Ordermentum has no version number). Missing -> now, so the fetched state wins. */

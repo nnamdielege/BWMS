@@ -18,6 +18,7 @@ use App\Services\Finance\AllocationMath;
 use App\Services\Finance\AllocationSettings;
 use App\Services\Finance\BankStatementCsv;
 use App\Services\Finance\IncomeAllocator;
+use App\Services\Finance\OrderMatcher;
 use App\Services\Purchasing\PurchaseOrderService;
 use App\Services\Purchasing\ReceivingService;
 use App\Support\BusinessDate;
@@ -278,6 +279,59 @@ class IncomeAllocationTest extends TestCase
         $import($csv."22/11/2026,EFT Bistro,99.99,1100\n")->assertSessionHas('success');
         $this->assertSame(4, AllocationReceipt::count());
         $this->assertSame(1, AuditLog::where('event', 'income_receipts_imported')->where('new_values->added', 3)->count());
+    }
+
+    public function test_bank_descriptions_match_so_numbers_portal_refs_and_ordermentum_numbers()
+    {
+        $so = $this->manualOrder($this->manager, $this->milk, 1);
+        $portal = $this->channelOrder(OrderChannel::Portal, 'ORD-10457', 1, [[$this->apples, 2]]);
+        $om = $this->channelOrder(OrderChannel::Ordermentum, 'om-uuid-77777', 1, [[$this->milk, 3]]);
+        $om->forceFill(['channel_invoice_number' => 'INV-0042', 'channel_order_number' => '88231'])->save();
+        $m = app(OrderMatcher::class);
+
+        $this->assertSame($so->id, $m->inDescription("EFT {$so->number} Cafe"));
+        $this->assertSame($so->id, $m->inDescription('eft '.strtolower(str_replace('-', '', $so->number))));
+        foreach (['Payment ORD-10457 thanks', 'PMT ord 10457', 'Ord10457', 'REF:ORD/10457'] as $d) {
+            $this->assertSame($portal->id, $m->inDescription($d), $d);
+        }
+        foreach (['Ordermentum INV-0042', 'OM PAY INV 0042', 'inv0042', 'Order #88231 Cafe Rio'] as $d) {
+            $this->assertSame($om->id, $m->inDescription($d), $d);
+        }
+        // Not a match: unknown refs, Ordermentum's internal id, too short, or more than one order.
+        foreach (['ORD-99999', 'om-uuid-77777', '77777', 'Transfer 042', 'ORD-10457 and INV-0042', 'Rent'] as $d) {
+            $this->assertNull($m->inDescription($d), $d);
+        }
+
+        // A typed reference: any of the three, case and hyphens aside; one that could mean two orders is refused.
+        $this->receipt(10, null, 'x');
+        $add = fn (string $ref) => $this->actingAs($this->admin)->post(route('finance.allocation.receipts.store'),
+            ['received_on' => BusinessDate::today(), 'description' => 'EFT', 'amount' => '22', 'order_number' => $ref]);
+        $add('ord-10457')->assertSessionHasNoErrors();
+        $add('INV0042')->assertSessionHasNoErrors();
+        $this->assertSame([$portal->id, $om->id], AllocationReceipt::whereNotNull('order_id')->orderBy('id')->pluck('order_id')->all());
+        $this->channelOrder(OrderChannel::Portal, '88231', 1, [[$this->milk, 1]]);
+        $add('88231')->assertSessionHasErrors(['order_number' => '88231 matches more than one order: use the SO number.']);
+    }
+
+    public function test_cash_basis_uses_the_matched_portal_or_ordermentum_order()
+    {
+        $this->settings([AllocationSettings::GST_BASIS => 'cash']);
+        $this->dispatchedSale($this->manager, $this->milk, 10, null, '5.00'); // period share: all taxable
+        $portal = $this->channelOrder(OrderChannel::Portal, 'ORD-555', 1, [[$this->apples, 4]]); // GST-free
+        $portal->lines()->update(['unit_price' => '2.50']);
+        $om = $this->channelOrder(OrderChannel::Ordermentum, 'om-1', 1, [[$this->milk, 2]]); // taxable
+        $om->lines()->update(['unit_price' => '5.00']);
+        $om->forceFill(['channel_invoice_number' => 'INV-7001'])->save();
+
+        $csv = "Date,Description,Amount\n".BusinessDate::today().",Cafe ORD-555,10.00\n".BusinessDate::today().",Ordermentum INV-7001,11.00\n";
+        $csv = str_replace(BusinessDate::today(), Carbon::parse(BusinessDate::today())->format('d/m/Y'), $csv);
+        $this->actingAs($this->admin)->post(route('finance.allocation.receipts.import'),
+            ['file' => UploadedFile::fake()->createWithContent('s.csv', $csv)])->assertSessionHas('success');
+
+        $c = $this->calc();
+        // GST-free portal order: none; taxable Ordermentum order: 11 ÷ 11 = 1.00. Unmatched, both would be 1/11.
+        $this->assertSame(['matched' => 2, 'unmatched' => 0], array_intersect_key($c['gst']['cash'], ['matched' => 0, 'unmatched' => 0]));
+        $this->assertSame(1.0, $c['tax']['gst']);
     }
 
     public function test_bank_csv_formats()

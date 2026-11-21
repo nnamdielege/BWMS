@@ -19,6 +19,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Services\Orders\AvailabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -121,6 +122,29 @@ class OrdermentumIngestTest extends TestCase
         $this->assertSame('ret-abc-123', Customer::find($order->customer_id)->ordermentum_retailer_id);
         $this->assertSame('processed', IntegrationInbox::sole()->status);
         Http::assertSent(fn (Request $r) => $r->url() === 'https://api.om.test/v1/orders/o-1?includeLines=true');
+    }
+
+    public function test_invoice_and_order_numbers_are_kept_for_matching_bank_receipts()
+    {
+        $p = Product::factory()->create();
+        $this->stockIn($p, 10);
+        $this->listing($p, 'var-1');
+        $lines = [['id' => 'li-1', 'variantId' => 'var-1', 'quantity' => 1]];
+        $this->fakeOrder($this->omOrder('o-1', $lines, extra: ['number' => 'OM10042', 'invoiceNumber' => 'INV-0042']));
+        app(OrderIngestor::class)->ingest('o-1');
+        $order = Order::sole();
+        $this->assertSame(['INV-0042', 'OM10042'], [$order->channel_invoice_number, $order->channel_order_number]);
+
+        // A later version without the invoice number keeps the one we have.
+        Http::swap(new Factory);
+        $this->fakeOrder($this->omOrder('o-1', $lines, '2026-11-02T02:00:00.000Z', ['number' => 'OM10042']));
+        app(OrderIngestor::class)->ingest('o-1');
+        $this->assertSame('INV-0042', $order->fresh()->channel_invoice_number);
+
+        // The fields are configurable.
+        config(['bwms.ordermentum.order_mapping.invoice_number' => ['invoice.ref']]);
+        $this->assertSame(['invoice_number' => 'X-9', 'order_number' => null],
+            (new OrdermentumOrderMapper)->numbers(['invoice' => ['ref' => 'X-9']]));
     }
 
     public function test_ordermentum_order_beyond_stock_is_accepted_and_flagged()

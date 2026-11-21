@@ -88,6 +88,10 @@ return [
             'unit_price' => 'price',
             'sku' => ['sku', 'variant.sku', 'SKU'],
             'name' => ['name', 'productName', 'product.name'],
+            // The numbers the café sees, kept so a bank receipt quoting one finds its order (Income allocation).
+            // Not yet confirmed on a live order: check with om:probe and set the env vars if they differ.
+            'invoice_number' => array_values(array_filter(explode(',', (string) (env('ORDERMENTUM_INVOICE_NUMBER_FIELDS') ?: 'invoiceNumber,invoice.number,invoice.invoiceNumber')))),
+            'order_number' => array_values(array_filter(explode(',', (string) (env('ORDERMENTUM_ORDER_NUMBER_FIELDS') ?: 'orderNumber,number,reference')))),
         ],
     ],
 

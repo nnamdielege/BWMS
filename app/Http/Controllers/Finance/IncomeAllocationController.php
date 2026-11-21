@@ -51,7 +51,7 @@ class IncomeAllocationController extends Controller
             'received_on' => ['required', 'date_format:Y-m-d'],
             'description' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999'],
-            'order_number' => ['nullable', 'string', 'max:30'],
+            'order_number' => ['nullable', 'string', 'max:64'],
         ]);
         $r = $this->allocator->addReceipt($request->user(), $data);
 

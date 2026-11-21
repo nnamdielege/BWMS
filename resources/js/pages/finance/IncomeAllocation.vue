@@ -233,8 +233,9 @@ const historyRoles = computed(() =>
                 <h2 class="font-semibold">Receipts waiting in Income · {{ money(calc.receipts.total) }}</h2>
                 <p class="text-xs text-muted-foreground">
                     Everything that landed in Income since the last allocation. Import the bank statement (credits only; rows already imported are
-                    skipped) or add receipts by hand — not both for the same money. An order number (SO-2026-00042) ties a receipt to its order for
-                    the cash GST basis.
+                    skipped) or add receipts by hand — not both for the same money. An order reference ties a receipt to its order for the cash GST
+                    basis: the BWMS number (SO-2026-00042), the portal's ORD-… ref, or Ordermentum's invoice or order number, typed here or found in
+                    the bank description.
                 </p>
                 <table v-if="receipts.length" class="w-full text-left text-sm">
                     <thead class="border-b text-muted-foreground">
@@ -273,7 +274,7 @@ const historyRoles = computed(() =>
                     </div>
                     <div class="grid gap-1">
                         <label class="text-xs text-muted-foreground" for="r-order">Order (optional)</label>
-                        <Input id="r-order" v-model="receiptForm.order_number" class="w-40" placeholder="SO-2026-00042" />
+                        <Input id="r-order" v-model="receiptForm.order_number" class="w-40" placeholder="SO-, ORD- or invoice no." />
                     </div>
                     <Button type="submit" :disabled="receiptForm.processing">Add receipt</Button>
                     <label class="cursor-pointer text-sm underline">

@@ -1497,7 +1497,9 @@ Filter by event (for example `roles_changed`) or subject (for example `User`).
 **1. Receipts.** Everything that landed in Income since the last allocation. Either:
 
 - **Import bank CSV:** the Income account's statement. Only credits are taken; debits are skipped. Rows already imported are skipped, so an overlapping statement is fine. Two identical payments on the same day in one file both count.
-- **Add receipt:** date, description, amount (inc GST), and optionally the order number it pays (SO-2026-00042).
+- **Add receipt:** date, description, amount (inc GST), and optionally the order it pays.
+
+The order can be given as the BWMS number (SO-2026-00042), the portal's order ref (ORD-…) or Ordermentum's invoice or order number. An imported bank line is matched the same way from its description. Spaces, hyphens and capitals don't matter (`ord 1234` finds ORD-1234). A description that could mean more than one order is left unmatched.
 
 Use one or the other for the same money, or it's counted twice. **Remove** takes out a receipt entered by mistake.
 
